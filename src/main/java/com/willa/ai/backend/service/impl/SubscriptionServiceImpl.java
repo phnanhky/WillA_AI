@@ -1,0 +1,164 @@
+package com.willa.ai.backend.service.impl;
+
+import com.willa.ai.backend.dto.request.SubscriptionRequest;
+import com.willa.ai.backend.dto.response.SubscriptionResponse;
+import com.willa.ai.backend.entity.Plan;
+import com.willa.ai.backend.entity.Subscription;
+import com.willa.ai.backend.entity.User;
+import com.willa.ai.backend.entity.Wallet;
+import com.willa.ai.backend.entity.enums.SubscriptionStatus;
+import com.willa.ai.backend.exception.ResourceNotFoundException;
+import com.willa.ai.backend.repository.PlanRepository;
+import com.willa.ai.backend.repository.SubscriptionRepository;
+import com.willa.ai.backend.repository.UserRepository;
+import com.willa.ai.backend.repository.WalletRepository;
+import com.willa.ai.backend.service.SubscriptionService;
+import com.willa.ai.backend.service.WalletService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+
+@Service
+@RequiredArgsConstructor
+public class SubscriptionServiceImpl implements SubscriptionService {
+
+    private final SubscriptionRepository subscriptionRepository;
+    private final PlanRepository planRepository;
+    private final UserRepository userRepository;
+    private final WalletRepository walletRepository;
+
+    @Override
+    @Transactional
+    public SubscriptionResponse subscribe(String email, SubscriptionRequest request) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+
+        Plan plan = planRepository.findById(request.getPlanId())
+                .orElseThrow(() -> new ResourceNotFoundException("Plan not found"));
+
+        if (!plan.getIsActive()) {
+            throw new IllegalArgumentException("Cannot subscribe to an inactive plan");
+        }
+
+        LocalDateTime startDate = LocalDateTime.now();
+        LocalDateTime endDate = calculateEndDate(startDate, plan.getBillingCycle());
+
+        Subscription subscription = Subscription.builder()
+                .user(user)
+                .plan(plan)
+                .startDate(startDate)
+                .endDate(endDate)
+                .status(SubscriptionStatus.ACTIVE)
+                .build();
+
+        Subscription savedSubscription = subscriptionRepository.save(subscription);
+
+        // Nạp token vào ví user (Wallet)
+        updateUserWallet(user, plan.getTokenLimit());
+
+        return mapToResponse(savedSubscription);
+    }
+
+    private LocalDateTime calculateEndDate(LocalDateTime startDate, com.willa.ai.backend.entity.enums.BillingCycle cycle) {
+        return switch (cycle) {
+            case MONTHLY -> startDate.plusMonths(1);
+            case YEARLY -> startDate.plusYears(1);
+            case ONE_TIME -> startDate.plusYears(100); // Mua vĩnh viễn hoặc trọn đời
+        };
+    }
+
+    private void updateUserWallet(User user, Integer limitToAdd) {
+        Wallet wallet = walletRepository.findByUserId(user.getId())
+                .orElse(Wallet.builder().user(user).tokenBalance(0L).totalRecharged(0L).build());
+
+        wallet.setTokenBalance(wallet.getTokenBalance() + limitToAdd);
+        wallet.setTotalRecharged(wallet.getTotalRecharged() + limitToAdd);
+
+        walletRepository.save(wallet);
+    }
+
+    @Override
+    public Page<SubscriptionResponse> getUserSubscriptions(String email, int page, int size) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+
+        Pageable pageable = PageRequest.of(page, size);
+        return subscriptionRepository.findByUserId(user.getId(), pageable).map(this::mapToResponse);
+    }
+
+    @Override
+    public Page<SubscriptionResponse> getAllSubscriptions(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return subscriptionRepository.findAll(pageable).map(this::mapToResponse);
+    }
+
+    @Override
+    @Transactional
+    public SubscriptionResponse cancelSubscription(String email, Long subscriptionId) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+
+        Subscription subscription = subscriptionRepository.findById(subscriptionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Subscription not found"));
+
+        if (!subscription.getUser().getId().equals(user.getId()) && !user.getRole().name().equals("ADMIN")) {
+            throw new IllegalArgumentException("Not authorized to cancel this subscription");
+        }
+
+        if (subscription.getStatus() != SubscriptionStatus.ACTIVE) {
+            throw new IllegalArgumentException("Only active subscriptions can be cancelled");
+        }
+
+        subscription.setStatus(SubscriptionStatus.CANCELLED);
+        // Có thể tính toán hoàn lại token nếu cần, nhưng tạm thời giữ nguyên ví.
+
+        Subscription updatedSubscription = subscriptionRepository.save(subscription);
+        return mapToResponse(updatedSubscription);
+    }
+
+    @Override
+    @Transactional
+    public void createOrUpdateSubscription(String email, Long planId) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
+
+        Plan plan = planRepository.findById(planId)
+                .orElseThrow(() -> new ResourceNotFoundException("Plan not found with id: " + planId));
+
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime endDate = plan.getBillingCycle().name().equals("MONTHLY") ? now.plusMonths(1) : now.plusYears(1);
+
+        Subscription subscription = new Subscription();
+        subscription.setUser(user);
+        subscription.setPlan(plan);
+        subscription.setStartDate(now);
+        subscription.setEndDate(endDate);
+        subscription.setStatus(SubscriptionStatus.ACTIVE);
+
+        subscriptionRepository.save(subscription);
+
+        // Manage Wallet tokens when subscription is paid
+        updateUserWallet(user, plan.getTokenLimit());
+    }
+
+    private SubscriptionResponse mapToResponse(Subscription subscription) {
+        return SubscriptionResponse.builder()
+                .id(subscription.getId())
+                .userId(subscription.getUser().getId())
+                .userEmail(subscription.getUser().getEmail())
+                .planId(subscription.getPlan().getId())
+                .planName(subscription.getPlan().getName())
+                .limitGranted(subscription.getPlan().getTokenLimit())
+                .startDate(subscription.getStartDate())
+                .endDate(subscription.getEndDate())
+                .status(subscription.getStatus())
+                .createdAt(subscription.getCreatedAt())
+                .build();
+    }
+}

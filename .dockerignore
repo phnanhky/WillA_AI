@@ -1,0 +1,30 @@
+# Maven / build
+target/
+.mvn/
+*.iml
+.idea/
+.classpath
+.project
+.settings/
+
+# Logs & temp
+*.log
+*.tmp
+*.swp
+*.swo
+
+# VCS
+.git
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (if present)
+node_modules/
+
+# Local env/config
+.env.example
+.env.*
+firebase-service-account.json
