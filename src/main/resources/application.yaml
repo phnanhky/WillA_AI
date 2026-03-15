@@ -54,6 +54,12 @@ app:
     from: ${MAIL_FROM}
   baseUrl: ${APP_BASE_URL}
 
+admin:
+  default:
+    email: ${ADMIN_EMAIL}
+    password: ${ADMIN_PASSWORD}
+    name: ${ADMIN_NAME:System Admin}
+
 springdoc:
   api-docs:
     enabled: ${SWAGGER_ENABLED:true}
