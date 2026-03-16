@@ -84,6 +84,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<SubscriptionResponse> getUserSubscriptions(String email, int page, int size) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
@@ -93,6 +94,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<SubscriptionResponse> getAllSubscriptions(int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
         return subscriptionRepository.findAll(pageable).map(this::mapToResponse);
