@@ -66,8 +66,8 @@ springdoc:
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:true}
   server:
-    local-url: ${SWAGGER_LOCAL_URL:http://localhost:8080}
-    prod-url: ${SWAGGER_PROD_URL:https://willaai.tech}
+    local-url: ${SWAGGER_LOCAL_URL}
+    prod-url: ${SWAGGER_PROD_URL}
 
 firebase:
   project-id: ${FIREBASE_PROJECT_ID:}
