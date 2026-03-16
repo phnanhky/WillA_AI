@@ -1,7 +1,5 @@
 package com.willa.ai.backend.controller;
 
-import io.swagger.v3.oas.annotations.Operation;
-
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import com.willa.ai.backend.dto.ApiResponse;
@@ -29,6 +27,13 @@ public class PaymentController {
             @RequestBody Map<String, Object> request,
             Authentication authentication) {
         try {
+            if (!request.containsKey("planId") || request.get("planId") == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.<CheckoutResponseData>builder()
+                        .success(false)
+                        .message("Missing 'planId' in request body")
+                        .build());
+            }
+            
             Long planId = Long.parseLong(request.get("planId").toString());
             String email = authentication.getName(); // Từ token
 

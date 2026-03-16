@@ -15,15 +15,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.payos.PayOS;
 import vn.payos.type.CheckoutResponseData;
-import vn.payos.type.ItemData;
-import vn.payos.type.PaymentData;
 import vn.payos.type.Webhook;
 import vn.payos.type.WebhookData;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
+
+import org.springframework.beans.factory.annotation.Value;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 @Service
 public class PaymentServiceImpl implements PaymentService {
@@ -43,6 +51,15 @@ public class PaymentServiceImpl implements PaymentService {
     @Autowired
     private SubscriptionService subscriptionService;
 
+    @Value("${payos.client-id}")
+    private String clientId;
+
+    @Value("${payos.api-key}")
+    private String apiKey;
+
+    @Value("${payos.checksum-key}")
+    private String checksumKey;
+
     @Override
     @Transactional
     public CheckoutResponseData createPaymentLink(String userEmail, Long planId) {
@@ -53,10 +70,12 @@ public class PaymentServiceImpl implements PaymentService {
             Plan plan = planRepository.findById(planId)
                     .orElseThrow(() -> new ResourceNotFoundException("Plan not found with id: " + planId));
 
-            // Chuyển BigDecimal sang Long (VND)
             Long amount = plan.getPrice().longValue();
             Long orderCode = System.currentTimeMillis() / 1000;
-            String description = "WillA_AI Plan " + plan.getName();
+            String originalName = plan.getName();
+            // PayOS không nhận các ký tự đặc biệt, dễ làm sai lệch signature khi check
+            String safeName = originalName.replaceAll("[^a-zA-Z0-9 ]", ""); 
+            String description = "WillA AI Plan";
 
             // Lưu lịch sử thanh toán vào database với trạng thái PENDING
             Payment payment = Payment.builder()
@@ -74,27 +93,61 @@ public class PaymentServiceImpl implements PaymentService {
             String returnUrl = "http://localhost:3000/success?orderCode=" + orderCode;
             String cancelUrl = "http://localhost:3000/cancel?orderCode=" + orderCode;
 
-            ItemData item = ItemData.builder()
-                    .name(plan.getName())
-                    .quantity(1)
-                    .price(amount.intValue())
+            // Xử lý trực tiếp với API PayOS để bỏ qua lỗi SDK (Signature mismatch do expiredAt)
+            String dataStr = "amount=" + amount + "&cancelUrl=" + cancelUrl + "&description=" + description + "&orderCode=" + orderCode + "&returnUrl=" + returnUrl;
+            
+            Mac hmacSHA256 = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secretKeySpec = new SecretKeySpec(checksumKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            hmacSHA256.init(secretKeySpec);
+            byte[] hashBytes = hmacSHA256.doFinal(dataStr.getBytes(StandardCharsets.UTF_8));
+            
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hashBytes) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+            String signature = hexString.toString();
+
+            String rawJson = String.format("{\"orderCode\": %d, \"amount\": %d, \"description\": \"%s\", \"cancelUrl\": \"%s\", \"returnUrl\": \"%s\", \"signature\": \"%s\"}",
+                    orderCode, amount, description, cancelUrl, returnUrl, signature);
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api-merchant.payos.vn/v2/payment-requests"))
+                    .header("Content-Type", "application/json")
+                    .header("x-client-id", clientId)
+                    .header("x-api-key", apiKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(rawJson))
                     .build();
 
-            List<ItemData> items = new ArrayList<>();
-            items.add(item);
+            HttpResponse<String> res = client.send(req, HttpResponse.BodyHandlers.ofString());
 
-            PaymentData paymentData = PaymentData.builder()
-                    .orderCode(orderCode)
-                    .amount(amount.intValue())
-                    .description(description.length() > 25 ? description.substring(0, 25) : description) // PayOS giới hạn 25 ký tự
-                    .returnUrl(returnUrl)
-                    .cancelUrl(cancelUrl)
-                    .item(item)
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode rootNode = mapper.readTree(res.body());
+            
+            if (!"00".equals(rootNode.get("code").asText())) {
+                throw new RuntimeException("PayOS API Error: " + rootNode.get("desc").asText());
+            }
+
+            JsonNode dataNode = rootNode.get("data");
+
+            return vn.payos.type.CheckoutResponseData.builder()
+                    .bin(dataNode.has("bin") && !dataNode.get("bin").isNull() ? dataNode.get("bin").asText() : "N/A")
+                    .accountNumber(dataNode.has("accountNumber") && !dataNode.get("accountNumber").isNull() ? dataNode.get("accountNumber").asText() : "N/A")
+                    .accountName(dataNode.has("accountName") && !dataNode.get("accountName").isNull() ? dataNode.get("accountName").asText() : "N/A")
+                    .amount(dataNode.has("amount") ? dataNode.get("amount").asInt() : amount.intValue())
+                    .description(dataNode.has("description") && !dataNode.get("description").isNull() ? dataNode.get("description").asText() : description)
+                    .orderCode(dataNode.has("orderCode") ? dataNode.get("orderCode").asLong() : orderCode)
+                    .currency(dataNode.has("currency") ? dataNode.get("currency").asText() : "VND")
+                    .paymentLinkId(dataNode.has("paymentLinkId") ? dataNode.get("paymentLinkId").asText() : null)
+                    .status(dataNode.has("status") ? dataNode.get("status").asText() : "PENDING")
+                    .checkoutUrl(dataNode.has("checkoutUrl") ? dataNode.get("checkoutUrl").asText() : "")
+                    .qrCode(dataNode.has("qrCode") ? dataNode.get("qrCode").asText() : "")
                     .build();
 
-            return payOS.createPaymentLink(paymentData);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to generate payment link: " + e.getMessage());
+            throw new RuntimeException(e.getMessage());
         }
     }
 
