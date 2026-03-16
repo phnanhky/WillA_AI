@@ -60,6 +60,12 @@ public class PaymentServiceImpl implements PaymentService {
     @Value("${payos.checksum-key}")
     private String checksumKey;
 
+    @Value("${payos.return-url}")
+    private String baseReturnUrl;
+
+    @Value("${payos.cancel-url}")
+    private String baseCancelUrl;
+
     @Override
     @Transactional
     public CheckoutResponseData createPaymentLink(String userEmail, Long planId) {
@@ -90,8 +96,8 @@ public class PaymentServiceImpl implements PaymentService {
                     .build();
             paymentRepository.save(payment);
 
-            String returnUrl = "http://localhost:3000/success?orderCode=" + orderCode;
-            String cancelUrl = "http://localhost:3000/cancel?orderCode=" + orderCode;
+            String returnUrl = baseReturnUrl + "?orderCode=" + orderCode;
+            String cancelUrl = baseCancelUrl + "?orderCode=" + orderCode;
 
             // Xử lý trực tiếp với API PayOS để bỏ qua lỗi SDK (Signature mismatch do expiredAt)
             String dataStr = "amount=" + amount + "&cancelUrl=" + cancelUrl + "&description=" + description + "&orderCode=" + orderCode + "&returnUrl=" + returnUrl;
@@ -157,6 +163,7 @@ public class PaymentServiceImpl implements PaymentService {
         try {
             // Xác thực WebhookData từ PayOS
             WebhookData data = payOS.verifyPaymentWebhookData(webhookData);
+            // WebhookData data = webhookData.getData();
 
             if ("00".equals(data.getCode()) || "00".equals(webhookData.getCode())) {
                 Long orderCode = data.getOrderCode();
