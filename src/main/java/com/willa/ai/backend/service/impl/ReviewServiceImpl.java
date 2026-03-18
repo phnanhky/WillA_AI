@@ -40,6 +40,7 @@ public class ReviewServiceImpl implements ReviewService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public ReviewResponse getReviewById(Long id) {
         Review review = reviewRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Review not found with id: " + id));
@@ -47,12 +48,14 @@ public class ReviewServiceImpl implements ReviewService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<ReviewResponse> getAllReviews(int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
         return reviewRepository.findAll(pageable).map(this::mapToResponse);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<ReviewResponse> getReviewsByUser(Long userId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
         return reviewRepository.findByUserId(userId, pageable).map(this::mapToResponse);

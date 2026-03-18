@@ -20,6 +20,7 @@ public class WalletServiceImpl implements WalletService {
     private final UserRepository userRepository;
 
     @Override
+    @Transactional
     public WalletResponse getMyWallet(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
@@ -27,6 +28,7 @@ public class WalletServiceImpl implements WalletService {
     }
 
     @Override
+    @Transactional
     public WalletResponse getWalletByUserId(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with ID: " + userId));

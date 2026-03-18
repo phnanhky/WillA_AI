@@ -53,6 +53,7 @@ app:
   mail:
     from: ${MAIL_FROM}
   baseUrl: ${APP_BASE_URL}
+  frontendUrl: ${APP_FRONTEND_URL:${APP_BASE_URL}}
 
 admin:
   default:
@@ -99,6 +100,12 @@ cloudflare:
     endpoint: ${R2_ENDPOINT}
     bucket: ${R2_BUCKET}
     public-url: ${R2_PUBLIC_URL}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
 
 ---
 spring:
