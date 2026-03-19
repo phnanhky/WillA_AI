@@ -20,4 +20,7 @@ public interface ChatService {
     ChatMessageResponse addMessageToSession(String email, Long sessionId, ChatMessageRequest request);
     Page<ChatMessageResponse> getSessionMessages(String email, Long sessionId, int page, int size);
     List<ChatMessageResponse> getAllSessionMessages(String email, Long sessionId);
+    
+    // AI Chat Integration
+    ChatMessageResponse sendMessageToAi(String email, Long sessionId, ChatMessageRequest request);
 }

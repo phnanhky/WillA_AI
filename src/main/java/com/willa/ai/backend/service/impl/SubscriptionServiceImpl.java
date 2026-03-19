@@ -84,7 +84,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     }
 
     @Override
-git checkout -b deploy-updates    @Transactional(readOnly = true)
+    @Transactional(readOnly = true)
     public Page<SubscriptionResponse> getUserSubscriptions(String email, int page, int size) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));

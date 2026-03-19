@@ -128,4 +128,26 @@ public class ChatController {
                 .data(messages)
                 .build());
     }
+
+    @PostMapping("/sessions/{sessionId}/send-message")
+    @Operation(summary = "Gửi tin nhắn từ User lên AI qua trung gian BE")
+    public ResponseEntity<ApiResponse> sendMessageToAi(
+            @PathVariable Long sessionId,
+            @Valid @RequestBody ChatMessageRequest request,
+            Authentication authentication) {
+
+        try {
+            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, request);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Message processed by AI")
+                    .data(response)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder()
+                    .status(false)
+                    .message(e.getMessage() != null ? e.getMessage() : "Error occurred while calling AI")
+                    .build());
+        }
+    }
 }

@@ -55,6 +55,10 @@ app:
   baseUrl: ${APP_BASE_URL}
   frontendUrl: ${APP_FRONTEND_URL:${APP_BASE_URL}}
 
+ai:
+  server:
+    url: ${AI_SERVER_URL}
+
 admin:
   default:
     email: ${ADMIN_EMAIL}
