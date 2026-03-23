@@ -15,9 +15,13 @@ import com.willa.ai.backend.repository.ChatMessageRepository;
 import com.willa.ai.backend.repository.ChatSessionRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.service.ChatService;
+import com.willa.ai.backend.service.FileService;
 import com.willa.ai.backend.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -28,14 +32,19 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.URI;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
@@ -45,6 +54,7 @@ public class ChatServiceImpl implements ChatService {
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
     private final WalletService walletService; 
+    private final FileService fileService;
     private final RestTemplate restTemplate;
     private final AITokenUsageRepository aiTokenUsageRepository;
 
@@ -136,67 +146,127 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     @Transactional
-    public ChatMessageResponse sendMessageToAi(String email, Long sessionId, ChatMessageRequest request) {
+    public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, MultipartFile file) {
         User user = getUserByEmail(email);
         ChatSession session = getSessionEntity(email, sessionId);
         
+        String imageUrl = null;
+        if (file != null && !file.isEmpty()) {
+            imageUrl = fileService.uploadFile(file);
+        }
+
         // 1. Lưu message của user
         ChatMessage userMessage = ChatMessage.builder()
                 .session(session)
                 .role(MessageRole.USER)
-                .content(request.getContent())
-                .imageUrl(request.getImageUrl())
+                .content(content)
+                .imageUrl(imageUrl)
                 .tokensUsed(0) 
                 .build();
         chatMessageRepository.save(userMessage);
 
-        // 2. Gọi sang AI Server
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        
-        // Giả lập DTO body chuẩn cho /v1/chat/completions
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", "qwen3-vl-flash");
-        body.put("messages", List.of(Map.of("role", "user", "content", request.getContent())));
-        
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-        
-        ResponseEntity<String> responseEntity = restTemplate.postForEntity(aiServerUrl, entity, String.class);
-        
-        // 3. Phân tích kết quả JSON trả về
-        String responseBody = responseEntity.getBody();
         String aiResponseContent = "";
         int totalTokens = 0;
         int promptTokens = 0;
         int completionTokens = 0;
-        String modelUsed = "unknown";
+        String modelUsed = "qwen3-vl-flash"; // Fixed model name
         
         try {
             ObjectMapper mapper = new ObjectMapper();
-            JsonNode rootNode = mapper.readTree(responseBody);
+            JsonNode rootNode;
+
+            // GỌI UNIFIED API /chat (BẮT BUỘC MULTIPART)
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             
-            // Lấy content
-            if (rootNode.has("choices")) {
-                JsonNode messageNode = rootNode.get("choices").get(0).get("message");
-                if (messageNode != null && messageNode.has("content")) {
-                    aiResponseContent = messageNode.get("content").asText();
+            if (content != null && !content.trim().isEmpty()) {
+                body.add("message", content);
+            }
+            body.add("session_id", sessionId.toString());
+            body.add("user_id", user.getId().toString());
+
+            if (actionType != null && !actionType.trim().isEmpty()) {
+                body.add("action_type", actionType);
+            }
+            if (errorIndex != null) {
+                body.add("error_index", errorIndex.toString());
+            }
+
+            if (file != null && !file.isEmpty()) {
+                body.add("file", file.getResource());
+            } else if (imageUrl != null && !imageUrl.trim().isEmpty()) {
+                // TỐI ƯU MEMORY STREAMING: Tránh OOM (Tràn RAM) khi có nhiều user tải ảnh
+                if (imageUrl.startsWith("data:image")) {
+                    // Nếu là base64, buộc phải parse ở RAM
+                    String[] parts = imageUrl.split(",");
+                    if (parts.length > 1) {
+                        byte[] imageBytes = java.util.Base64.getDecoder().decode(parts[1]);
+                        ByteArrayResource contentsAsResource = new ByteArrayResource(imageBytes) {
+                            @Override
+                            public String getFilename() {
+                                return "image.jpg";
+                            }
+                        };
+                        body.add("file", contentsAsResource);
+                    } else {
+                        throw new RuntimeException("Invalid base64 image data");
+                    }
+                } else {
+                    // Nếu là URL, dùng InputStreamResource truyền trực tiếp theo luồng (Stream) sang Python
+                    String urlStr = imageUrl;
+                    String filename = "image.jpg";
+                    if (urlStr.contains("/")) {
+                        String[] parts = urlStr.split("/");
+                        filename = parts[parts.length - 1];
+                        if (filename.contains("?")) filename = filename.split("\\?")[0];
+                    }
+                    final String finalFilename = (!filename.isEmpty()) ? filename : "image.jpg";
+                    
+                    try {
+                        URL urlToStream = new URI(urlStr).toURL();
+                        InputStreamResource streamResource = new InputStreamResource(urlToStream.openStream()) {
+                            @Override
+                            public String getFilename() {
+                                return finalFilename;
+                            }
+                            @Override
+                            public long contentLength() {
+                                return -1; // Để RestTemplate tự chia chunk
+                            }
+                        };
+                        body.add("file", streamResource);
+                    } catch (Exception ex) {
+                        throw new RuntimeException("Failed to stream image from URL: " + ex.getMessage());
+                    }
                 }
             }
+
+            HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+            String chatUrl = aiServerUrl.endsWith("/") ? aiServerUrl + "chat" : aiServerUrl + "/chat";
             
-            // Lấy token và lưu
+            ResponseEntity<String> responseEntity = restTemplate.postForEntity(chatUrl, entity, String.class);
+            rootNode = mapper.readTree(responseEntity.getBody());
+            
+            // Xử lý kết quả trả về
+            aiResponseContent = responseEntity.getBody(); // Giữ nguyên toàn bộ JSON trả về để Frontend dùng
+            
+            // Lấy token chuẩn từ Usage của Server AI trả về
             if (rootNode.has("usage")) {
                 JsonNode usageNode = rootNode.get("usage");
                 if (usageNode.has("total_tokens")) totalTokens = usageNode.get("total_tokens").asInt();
-                if (usageNode.has("prompt_tokens")) promptTokens = usageNode.get("prompt_tokens").asInt();
-                if (usageNode.has("completion_tokens")) completionTokens = usageNode.get("completion_tokens").asInt();
-            }
-            
-            if (rootNode.has("model")) {
-                modelUsed = rootNode.get("model").asText();
+                if (usageNode.has("input_tokens")) promptTokens = usageNode.get("input_tokens").asInt();
+                if (usageNode.has("output_tokens")) completionTokens = usageNode.get("output_tokens").asInt();
+            } else {
+                // Sẽ không nhảy vào đây nếu AI trả về chuẩn, dự phòng:
+                promptTokens = 1000;
+                completionTokens = 500;
+                totalTokens = 1500;
             }
             
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse AI response: " + e.getMessage());
+            throw new RuntimeException("Failed to call AI or parse response: " + e.getMessage());
         }
 
         // 4. Trừ Token
@@ -205,7 +275,7 @@ public class ChatServiceImpl implements ChatService {
             if (!success) {
                 throw new RuntimeException("Insufficient tokens for this AI operation.");
             }
-            
+              
             // Lưu log token Usage
             AITokenUsage aiTokenUsage = AITokenUsage.builder()
                 .user(user)
@@ -213,7 +283,7 @@ public class ChatServiceImpl implements ChatService {
                 .promptTokens(promptTokens)
                 .completionTokens(completionTokens)
                 .totalTokens(totalTokens)
-                .serviceType("CHAT")
+                .serviceType((imageUrl != null && !imageUrl.trim().isEmpty()) ? "ANALYZE" : "CHAT")
                 .build();
             aiTokenUsageRepository.save(aiTokenUsage);
         }
@@ -223,6 +293,7 @@ public class ChatServiceImpl implements ChatService {
                 .session(session)
                 .role(MessageRole.AI)
                 .content(aiResponseContent)
+                .imageUrl(imageUrl)
                 .tokensUsed(totalTokens)
                 .build();
                 
@@ -253,11 +324,23 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private ChatMessageResponse mapToMessageResponse(ChatMessage message) {
+        ObjectMapper mapper = new ObjectMapper();
+        Object contentObj;
+        try {
+            if (message.getContent() != null && (message.getContent().trim().startsWith("{") || message.getContent().trim().startsWith("["))) {
+                contentObj = mapper.readTree(message.getContent());
+            } else {
+                contentObj = message.getContent();
+            }
+        } catch (Exception e) {
+            contentObj = message.getContent();
+        }
+
         return ChatMessageResponse.builder()
                 .id(message.getId())
                 .sessionId(message.getSession().getId())
                 .role(message.getRole())
-                .content(message.getContent())
+                .content(contentObj)
                 .imageUrl(message.getImageUrl())
                 .tokensUsed(message.getTokensUsed())
                 .createdAt(message.getCreatedAt())

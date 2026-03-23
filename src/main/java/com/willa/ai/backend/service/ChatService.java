@@ -22,5 +22,5 @@ public interface ChatService {
     List<ChatMessageResponse> getAllSessionMessages(String email, Long sessionId);
     
     // AI Chat Integration
-    ChatMessageResponse sendMessageToAi(String email, Long sessionId, ChatMessageRequest request);
+    ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, org.springframework.web.multipart.MultipartFile file);
 }

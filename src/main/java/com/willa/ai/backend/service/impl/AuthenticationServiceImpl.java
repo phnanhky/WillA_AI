@@ -136,6 +136,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             return AuthResponse.builder()
                     .userId(user.getId())
                     .email(user.getEmail())
+                    .fullName(user.getFullName())
+                    .role(user.getRole() != null ? user.getRole().name() : null)
                     .accessToken(accessToken)
                     .refreshToken(refreshToken)
                     .build();
@@ -222,6 +224,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             return AuthResponse.builder()
                     .userId(user.getId())
                     .email(user.getEmail())
+                    .fullName(user.getFullName())
+                    .role(user.getRole() != null ? user.getRole().name() : null)
                     .accessToken(accessToken)
                     .refreshToken(refreshToken)
                     .build();

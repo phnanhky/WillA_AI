@@ -20,4 +20,8 @@ public class ChatMessageRequest {
     private String imageUrl;
 
     private Integer tokensUsed;
+
+    // Optional fields for AI Unified endpoint
+    private String actionType;
+    private Integer errorIndex;
 }

@@ -30,6 +30,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ai-server:
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -37,6 +39,7 @@ services:
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      AI_SERVER_URL: http://ai-server:8000
     ports:
       - "8080:8080"
     networks:
@@ -46,6 +49,20 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    restart: unless-stopped
+
+  # Python AI Server (Qwen)
+  ai-server:
+    build:
+      context: ../qwenv3x2
+      dockerfile: Dockerfile
+    container_name: willa-ai-server
+    env_file:
+      - .env       # Tái sử dụng file .env từ thư mục Java BE để lấy DASHSCOPE_API_KEY
+    ports:
+      - "8000:8000"
+    networks:
+      - willa-ai-network
     restart: unless-stopped
 
 volumes:

@@ -16,7 +16,7 @@ public class ChatMessageResponse {
     private Long id;
     private Long sessionId;
     private MessageRole role;
-    private String content;
+    private Object content;
     private String imageUrl;
     private Integer tokensUsed;
     private LocalDateTime createdAt;

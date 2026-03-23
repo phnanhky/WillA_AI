@@ -7,6 +7,8 @@ import com.willa.ai.backend.dto.response.ChatMessageResponse;
 import com.willa.ai.backend.dto.response.ChatSessionResponse;
 import com.willa.ai.backend.service.ChatService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +16,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.MediaType;
 
 import java.util.List;
 
@@ -21,6 +25,7 @@ import java.util.List;
 @RequestMapping("/api/v1/chats")
 @RequiredArgsConstructor
 @Tag(name = "Chat", description = "AI Chat Sessions and Messages APIs")
+@SecurityRequirement(name = "bearerAuth") // THÊM SECURITY CHO SWAGGER HIỂU
 public class ChatController {
 
     private final ChatService chatService;
@@ -129,15 +134,25 @@ public class ChatController {
                 .build());
     }
 
-    @PostMapping("/sessions/{sessionId}/send-message")
-    @Operation(summary = "Gửi tin nhắn từ User lên AI qua trung gian BE")
+    @PostMapping(value = "/sessions/{sessionId}/send-message", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
+    @Operation(summary = "Gửi tin nhắn từ User lên AI qua trung gian BE (Hỗ trợ upload ảnh)")
     public ResponseEntity<ApiResponse> sendMessageToAi(
             @PathVariable Long sessionId,
-            @Valid @RequestBody ChatMessageRequest request,
+            @Parameter(description = "Nội dung tin nhắn") @RequestParam(value = "content", required = false) String content,
+            @Parameter(description = "Loại hành động (VD: zoom)") @RequestParam(value = "actionType", required = false) String actionType,
+            @Parameter(description = "Index của lỗi nếu dùng zoom") @RequestParam(value = "errorIndex", required = false) Integer errorIndex,
+            @Parameter(description = "File ảnh upload lên") @RequestPart(value = "file", required = false) MultipartFile file,
             Authentication authentication) {
 
         try {
-            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, request);
+            if (authentication == null || authentication.getName() == null) {
+                return ResponseEntity.status(401).body(ApiResponse.builder()
+                        .status(false)
+                        .message("Unauthorized: Security token is missing or invalid in multipart form data")
+                        .build());
+            }
+
+            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, content, actionType, errorIndex, file);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Message processed by AI")
