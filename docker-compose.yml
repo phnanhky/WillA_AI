@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: willa-ai-postgres
+    environment:
+      POSTGRES_DB: willa_ai
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - willa-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # WillaAI Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: willa-ai-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-server:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/willa_ai
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      AI_SERVER_URL: http://ai-server:8000
+    ports:
+      - "8080:8080"
+    networks:
+      - willa-ai-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/swagger-ui/index.html"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Python AI Server (Qwen)
+  ai-server:
+    build:
+      context: ../qwenv3x2
+      dockerfile: Dockerfile
+    container_name: willa-ai-server
+    env_file:
+      - .env       # Tái sử dụng file .env từ thư mục Java BE để lấy DASHSCOPE_API_KEY
+    ports:
+      - "8000:8000"
+    networks:
+      - willa-ai-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  willa-ai-network:
+    driver: bridge
