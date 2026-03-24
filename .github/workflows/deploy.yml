@@ -19,4 +19,4 @@ jobs:
             cd /opt/willa/be
             git pull --ff-only
             cd /opt/willa/infra
-            docker compose --env-file .env up -d --build backend
+            docker compose --env-file .env up -d --no-deps --build backend
