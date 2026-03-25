@@ -64,7 +64,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                     .phoneNumber(request.getPhoneNumber())
                     .password(passwordEncoder.encode(request.getPassword()))
                     .role(Role.USER)
-                    .isEnabled(true)
+                    .isEnabled(false)
                     .isActive(true)
                     .verificationToken(UUID.randomUUID().toString())
                     .build();
