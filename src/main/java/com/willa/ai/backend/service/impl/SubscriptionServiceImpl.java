@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -46,6 +47,20 @@ public class SubscriptionServiceImpl implements SubscriptionService {
             throw new IllegalArgumentException("Cannot subscribe to an inactive plan");
         }
 
+        // --- UPGRADE HANDLING ---
+        // Find existing active subscriptions for this user and mark them as cancelled/expired
+        // because the new plan replaces the old one. We could also carry over the remaining days, 
+        // but typically an upgrade starts a fresh cycle.
+        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE);
+        for (Subscription sub : activeSubs) {
+            sub.setStatus(SubscriptionStatus.CANCELLED);
+            subscriptionRepository.save(sub);
+        }
+
+        // Optionally, reset wallet balance instead of adding if upgrading. 
+        // Here we just add tokens, but for explicit tiering we might reset to the new limit
+        // if substituting an active plan. Let's assume the new plan replaces the limits.
+
         LocalDateTime startDate = LocalDateTime.now();
         LocalDateTime endDate = calculateEndDate(startDate, plan.getBillingCycle());
 
@@ -59,8 +74,12 @@ public class SubscriptionServiceImpl implements SubscriptionService {
 
         Subscription savedSubscription = subscriptionRepository.save(subscription);
 
-        // Nạp token vào ví user (Wallet)
-        updateUserWallet(user, plan.getTokenLimit());
+        // Manage tokens (Overwrite wallet token balance with new plan's limit to match exactly)
+        Wallet wallet = walletRepository.findByUserId(user.getId())
+                .orElse(Wallet.builder().user(user).tokenBalance(0L).totalRecharged(0L).build());
+        wallet.setTokenBalance(Long.valueOf(plan.getTokenLimit()));
+        wallet.setTotalRecharged(wallet.getTotalRecharged() + plan.getTokenLimit());
+        walletRepository.save(wallet);
 
         return mapToResponse(savedSubscription);
     }
@@ -71,16 +90,6 @@ public class SubscriptionServiceImpl implements SubscriptionService {
             case YEARLY -> startDate.plusYears(1);
             case ONE_TIME -> startDate.plusYears(100); // Mua vĩnh viễn hoặc trọn đời
         };
-    }
-
-    private void updateUserWallet(User user, Integer limitToAdd) {
-        Wallet wallet = walletRepository.findByUserId(user.getId())
-                .orElse(Wallet.builder().user(user).tokenBalance(0L).totalRecharged(0L).build());
-
-        wallet.setTokenBalance(wallet.getTokenBalance() + limitToAdd);
-        wallet.setTotalRecharged(wallet.getTotalRecharged() + limitToAdd);
-
-        walletRepository.save(wallet);
     }
 
     @Override
@@ -133,6 +142,13 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         Plan plan = planRepository.findById(planId)
                 .orElseThrow(() -> new ResourceNotFoundException("Plan not found with id: " + planId));
 
+        // Disable existing active subscriptions
+        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE);
+        for (Subscription sub : activeSubs) {
+            sub.setStatus(SubscriptionStatus.CANCELLED);
+            subscriptionRepository.save(sub);
+        }
+
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime endDate = plan.getBillingCycle().name().equals("MONTHLY") ? now.plusMonths(1) : now.plusYears(1);
 
@@ -145,8 +161,12 @@ public class SubscriptionServiceImpl implements SubscriptionService {
 
         subscriptionRepository.save(subscription);
 
-        // Manage Wallet tokens when subscription is paid
-        updateUserWallet(user, plan.getTokenLimit());
+        // Reset Wallet to the new plan tokens
+        Wallet wallet = walletRepository.findByUserId(user.getId())
+                .orElse(Wallet.builder().user(user).tokenBalance(0L).totalRecharged(0L).build());
+        wallet.setTokenBalance(Long.valueOf(plan.getTokenLimit()));
+        wallet.setTotalRecharged(wallet.getTotalRecharged() + plan.getTokenLimit());
+        walletRepository.save(wallet);
     }
 
     private SubscriptionResponse mapToResponse(Subscription subscription) {
