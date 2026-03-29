@@ -9,4 +9,5 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface PlanRepository extends JpaRepository<Plan, Long> {
     Page<Plan> findByIsActiveTrue(Pageable pageable);
+    java.util.Optional<Plan> findByName(String name);
 }

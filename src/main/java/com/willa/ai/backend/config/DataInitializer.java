@@ -1,14 +1,26 @@
 package com.willa.ai.backend.config;
 
+import com.willa.ai.backend.entity.Plan;
+import com.willa.ai.backend.entity.Subscription;
 import com.willa.ai.backend.entity.User;
+import com.willa.ai.backend.entity.Wallet;
+import com.willa.ai.backend.entity.enums.BillingCycle;
 import com.willa.ai.backend.entity.enums.Role;
+import com.willa.ai.backend.entity.enums.SubscriptionStatus;
+import com.willa.ai.backend.repository.PlanRepository;
+import com.willa.ai.backend.repository.SubscriptionRepository;
 import com.willa.ai.backend.repository.UserRepository;
+import com.willa.ai.backend.repository.WalletRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Component
 @RequiredArgsConstructor
@@ -17,6 +29,9 @@ public class DataInitializer implements CommandLineRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final PlanRepository planRepository;
+    private final SubscriptionRepository subscriptionRepository;
+    private final WalletRepository walletRepository;
 
     @Value("${admin.default.email}")
     private String adminEmail;
@@ -48,5 +63,49 @@ public class DataInitializer implements CommandLineRunner {
         } else {
             log.info("Default ADMIN user already exists.");
         }
+
+        // Initialize Plans
+        Plan freePlan = initPlan("Free", "Gói miễn phí cơ bản", BigDecimal.ZERO, BillingCycle.MONTHLY, 60000);
+        Plan proPlan = initPlan("Pro", "Gói chuyên nghiệp", new BigDecimal("160000"), BillingCycle.MONTHLY, 105000);
+        Plan premiumPlan = initPlan("Premium", "Gói cao cấp", new BigDecimal("310000"), BillingCycle.MONTHLY, 249000);
+
+        // Update existing users to Free plan if they don't have an active subscription
+        List<User> allUsers = userRepository.findAll();
+        for (User u : allUsers) {
+            List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(u.getId(), SubscriptionStatus.ACTIVE);
+            if (activeSubs.isEmpty()) {
+                Subscription freeSub = Subscription.builder()
+                        .user(u)
+                        .plan(freePlan)
+                        .startDate(LocalDateTime.now())
+                        .endDate(LocalDateTime.now().plusMonths(1))
+                        .status(SubscriptionStatus.ACTIVE)
+                        .build();
+                subscriptionRepository.save(freeSub);
+
+                Wallet wallet = walletRepository.findByUserId(u.getId()).orElseGet(() -> 
+                        walletRepository.save(Wallet.builder().user(u).tokenBalance(0L).totalRecharged(0L).build())
+                );
+
+                wallet.setTokenBalance((long) freePlan.getTokenLimit());
+                walletRepository.save(wallet);
+                log.info("Updated User {} to Free Plan", u.getEmail());
+            }
+        }
+    }
+
+    private Plan initPlan(String name, String desc, BigDecimal price, BillingCycle cycle, Integer tokens) {
+        return planRepository.findByName(name).orElseGet(() -> {
+            Plan plan = Plan.builder()
+                    .name(name)
+                    .description(desc)
+                    .price(price)
+                    .billingCycle(cycle)
+                    .tokenLimit(tokens)
+                    .isActive(true)
+                    .build();
+            log.info("Creating plan: {}", name);
+            return planRepository.save(plan);
+        });
     }
 }
