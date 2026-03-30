@@ -249,6 +249,35 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .isEnabled(true)
                         .isActive(true)
                         .build();
+                user = userRepository.save(user);
+
+                // Assign Free Plan and initialize Wallet
+                Optional<Plan> defaultPlanOpt = planRepository.findByName("Free");
+                if (defaultPlanOpt.isPresent()) {
+                    Plan freePlan = defaultPlanOpt.get();
+                    Subscription freeSub = Subscription.builder()
+                            .user(user)
+                            .plan(freePlan)
+                            .startDate(LocalDateTime.now())
+                            .endDate(LocalDateTime.now().plusMonths(1))
+                            .status(SubscriptionStatus.ACTIVE)
+                            .build();
+                    subscriptionRepository.save(freeSub);
+
+                    Wallet wallet = Wallet.builder()
+                            .user(user)
+                            .tokenBalance(Long.valueOf(freePlan.getTokenLimit()))
+                            .totalRecharged(Long.valueOf(freePlan.getTokenLimit()))
+                            .build();
+                    walletRepository.save(wallet);
+                } else {
+                    Wallet wallet = Wallet.builder()
+                            .user(user)
+                            .tokenBalance(60000L)
+                            .totalRecharged(60000L)
+                            .build();
+                    walletRepository.save(wallet);
+                }
             }
 
             String accessToken = jwtTokenProvider.generateAccessToken(user.getEmail(), user.getId());
