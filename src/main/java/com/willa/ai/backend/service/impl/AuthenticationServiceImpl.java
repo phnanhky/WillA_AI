@@ -7,7 +7,14 @@ import com.willa.ai.backend.dto.response.AuthResponse;
 import com.willa.ai.backend.dto.response.TokenResponse;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.enums.Role;
+import com.willa.ai.backend.entity.Plan;
+import com.willa.ai.backend.entity.Subscription;
+import com.willa.ai.backend.entity.Wallet;
+import com.willa.ai.backend.entity.enums.SubscriptionStatus;
+import com.willa.ai.backend.repository.PlanRepository;
+import com.willa.ai.backend.repository.SubscriptionRepository;
 import com.willa.ai.backend.repository.UserRepository;
+import com.willa.ai.backend.repository.WalletRepository;
 import com.willa.ai.backend.security.JwtTokenProvider;
 import com.willa.ai.backend.service.AuthenticationService;
 import com.willa.ai.backend.service.EmailService;
@@ -19,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.time.LocalDateTime;
 
 @Service
 @Transactional
@@ -26,6 +34,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private PlanRepository planRepository;
+
+    @Autowired
+    private SubscriptionRepository subscriptionRepository;
+
+    @Autowired
+    private WalletRepository walletRepository;
 
     @Autowired
     private JwtTokenProvider jwtTokenProvider;
@@ -77,6 +94,35 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
             user.setRefreshToken(refreshToken);
             userRepository.save(user);
+
+            // Assign Free Plan and initialize Wallet
+            Optional<Plan> defaultPlanOpt = planRepository.findByName("Free");
+            if (defaultPlanOpt.isPresent()) {
+                Plan freePlan = defaultPlanOpt.get();
+                Subscription freeSub = Subscription.builder()
+                        .user(user)
+                        .plan(freePlan)
+                        .startDate(LocalDateTime.now())
+                        .endDate(LocalDateTime.now().plusMonths(1))
+                        .status(SubscriptionStatus.ACTIVE)
+                        .build();
+                subscriptionRepository.save(freeSub);
+
+                Wallet wallet = Wallet.builder()
+                        .user(user)
+                        .tokenBalance(Long.valueOf(freePlan.getTokenLimit()))
+                        .totalRecharged(Long.valueOf(freePlan.getTokenLimit()))
+                        .build();
+                walletRepository.save(wallet);
+            } else {
+                // Fallback if Free plan doesn't exist
+                Wallet wallet = Wallet.builder()
+                        .user(user)
+                        .tokenBalance(60000L)
+                        .totalRecharged(60000L)
+                        .build();
+                walletRepository.save(wallet);
+            }
 
             // Send verification email
             String verificationLink = frontendUrl + "/verify-email?token=" + user.getVerificationToken();
@@ -203,6 +249,35 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .isEnabled(true)
                         .isActive(true)
                         .build();
+                user = userRepository.save(user);
+
+                // Assign Free Plan and initialize Wallet
+                Optional<Plan> defaultPlanOpt = planRepository.findByName("Free");
+                if (defaultPlanOpt.isPresent()) {
+                    Plan freePlan = defaultPlanOpt.get();
+                    Subscription freeSub = Subscription.builder()
+                            .user(user)
+                            .plan(freePlan)
+                            .startDate(LocalDateTime.now())
+                            .endDate(LocalDateTime.now().plusMonths(1))
+                            .status(SubscriptionStatus.ACTIVE)
+                            .build();
+                    subscriptionRepository.save(freeSub);
+
+                    Wallet wallet = Wallet.builder()
+                            .user(user)
+                            .tokenBalance(Long.valueOf(freePlan.getTokenLimit()))
+                            .totalRecharged(Long.valueOf(freePlan.getTokenLimit()))
+                            .build();
+                    walletRepository.save(wallet);
+                } else {
+                    Wallet wallet = Wallet.builder()
+                            .user(user)
+                            .tokenBalance(60000L)
+                            .totalRecharged(60000L)
+                            .build();
+                    walletRepository.save(wallet);
+                }
             }
 
             String accessToken = jwtTokenProvider.generateAccessToken(user.getEmail(), user.getId());
