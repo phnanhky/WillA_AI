@@ -34,10 +34,17 @@ public class SubscriptionCronTask {
         log.info("Running cron job: processExpiredSubscriptions");
         LocalDateTime now = LocalDateTime.now();
         List<Subscription> activeSubscriptions = subscriptionRepository.findAll();
+        Plan freePlan = planRepository.findByName("Free").orElse(null);
         
         for (Subscription sub : activeSubscriptions) {
             if ((sub.getStatus() == SubscriptionStatus.ACTIVE || sub.getStatus() == SubscriptionStatus.CANCELLED) 
                     && sub.getEndDate().isBefore(now)) {
+                
+                // Skip Free plan, as it is handled by resetFreePlanTokens
+                if (freePlan != null && sub.getPlan().getId().equals(freePlan.getId())) {
+                    continue;
+                }
+
                 log.info("Subscription id {} has expired. User: {}", sub.getId(), sub.getUser().getEmail());
                 sub.setStatus(SubscriptionStatus.EXPIRED);
                 subscriptionRepository.save(sub);
@@ -49,24 +56,33 @@ public class SubscriptionCronTask {
     }
 
     /**
-     * Run at 00:00 on the 1st day of each month.
-     * Reset token balances for users who ONLY have the Free plan.
+     * Run daily at 00:00 to reset token balances for Free plan users who reached their 1-month cycle.
      */
-    @Scheduled(cron = "0 0 0 1 * *")
+    @Scheduled(cron = "0 0 0 * * *")
     public void resetFreePlanTokens() {
         log.info("Running cron job: resetFreePlanTokens");
         Plan freePlan = planRepository.findByName("Free").orElse(null);
         if (freePlan == null) return;
         
+        LocalDateTime now = LocalDateTime.now();
         List<Subscription> allSubscriptions = subscriptionRepository.findAll();
+        
         for (Subscription sub : allSubscriptions) {
             if (sub.getStatus() == SubscriptionStatus.ACTIVE && sub.getPlan().getId().equals(freePlan.getId())) {
-                walletRepository.findByUserId(sub.getUser().getId()).ifPresent(wallet -> {
-                    // Update tokens to 60000 limit
-                    wallet.setTokenBalance((long) freePlan.getTokenLimit());
-                    walletRepository.save(wallet);
-                    log.info("Reset tokens for Free plan user: {}", sub.getUser().getEmail());
-                });
+                // If it's been 1 month (meaning now is exactly at or past the end date)
+                if (sub.getEndDate() != null && !now.isBefore(sub.getEndDate())) {
+                    walletRepository.findByUserId(sub.getUser().getId()).ifPresent(wallet -> {
+                        // Reset tokens back to the free plan limit
+                        wallet.setTokenBalance((long) freePlan.getTokenLimit());
+                        walletRepository.save(wallet);
+                        log.info("Reset tokens for Free plan user: {}", sub.getUser().getEmail());
+                    });
+                    
+                    // Extend the Free subscription for another month
+                    sub.setStartDate(now);
+                    sub.setEndDate(now.plusMonths(1));
+                    subscriptionRepository.save(sub);
+                }
             }
         }
     }
