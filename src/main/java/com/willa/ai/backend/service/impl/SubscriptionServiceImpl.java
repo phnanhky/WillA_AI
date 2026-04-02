@@ -172,6 +172,12 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         wallet.setTokenBalance(wallet.getTokenBalance() + Long.valueOf(plan.getTokenLimit()));
         wallet.setTotalRecharged(wallet.getTotalRecharged() + plan.getTokenLimit());
         walletRepository.save(wallet);
+
+        // Nâng cấp lên gói trả phí -> Tắt yêu cầu đánh giá tự động block Chat
+        if (!plan.getName().equalsIgnoreCase("Free")) {
+            user.setRequiresReview(false);
+            userRepository.save(user);
+        }
     }
 
     private SubscriptionResponse mapToResponse(Subscription subscription) {
