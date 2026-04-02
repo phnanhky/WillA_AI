@@ -169,4 +169,22 @@ public class UserController {
                             .build());
         }
     }
+
+    @PostMapping("/verify-student")
+    public ResponseEntity<ApiResponse> requestStudentVerification(@RequestParam String eduEmail) {
+        userService.requestStudentVerification(eduEmail);
+        return ResponseEntity.ok(ApiResponse.builder()
+                .status(true)
+                .message("Mã OTP đã được gửi tới email sinh viên của bạn")
+                .build());
+    }
+
+    @PostMapping("/confirm-student")
+    public ResponseEntity<ApiResponse> confirmStudentVerification(@RequestParam String eduEmail, @RequestParam String otp) {
+        userService.confirmStudentVerification(eduEmail, otp);
+        return ResponseEntity.ok(ApiResponse.builder()
+                .status(true)
+                .message("Xác thực sinh viên thành công")
+                .build());
+    }
 }

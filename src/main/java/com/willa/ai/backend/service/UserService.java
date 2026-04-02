@@ -11,4 +11,6 @@ public interface UserService {
     UserResponse updateUser(Long userId, String fullName, String phoneNumber);
     void activeUser(Long userId);
     void deactivateUser(Long userId);
+    void requestStudentVerification(String eduEmail);
+    void confirmStudentVerification(String eduEmail, String otp);
 }

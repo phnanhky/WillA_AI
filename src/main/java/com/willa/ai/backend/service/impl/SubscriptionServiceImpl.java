@@ -47,6 +47,9 @@ public class SubscriptionServiceImpl implements SubscriptionService {
             throw new IllegalArgumentException("Cannot subscribe to an inactive plan");
         }
 
+        if (plan.getName().toLowerCase().contains("student") && !Boolean.TRUE.equals(user.getIsStudent())) {
+            throw new IllegalArgumentException("Chỉ tài khoản đã xác thực sinh viên mới được đăng ký gói Student.");
+        }
         // --- UPGRADE HANDLING ---
         // Find existing active subscriptions for this user and mark them as cancelled/expired
         // because the new plan replaces the old one. We could also carry over the remaining days, 
@@ -74,10 +77,9 @@ public class SubscriptionServiceImpl implements SubscriptionService {
 
         Subscription savedSubscription = subscriptionRepository.save(subscription);
 
-        // Manage tokens (Overwrite wallet token balance with new plan's limit to match exactly)
         Wallet wallet = walletRepository.findByUserId(user.getId())
                 .orElse(Wallet.builder().user(user).tokenBalance(0L).totalRecharged(0L).build());
-        wallet.setTokenBalance(Long.valueOf(plan.getTokenLimit()));
+        wallet.setTokenBalance(wallet.getTokenBalance() + Long.valueOf(plan.getTokenLimit()));
         wallet.setTotalRecharged(wallet.getTotalRecharged() + plan.getTokenLimit());
         walletRepository.save(wallet);
 
@@ -149,6 +151,9 @@ public class SubscriptionServiceImpl implements SubscriptionService {
             subscriptionRepository.save(sub);
         }
 
+        if (plan.getName().toLowerCase().contains("student") && !Boolean.TRUE.equals(user.getIsStudent())) {
+            throw new IllegalArgumentException("Chỉ tài khoản đã xác thực sinh viên mới được đăng ký gói Student.");
+        }
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime endDate = plan.getBillingCycle().name().equals("MONTHLY") ? now.plusMonths(1) : now.plusYears(1);
 
@@ -164,7 +169,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         // Reset Wallet to the new plan tokens
         Wallet wallet = walletRepository.findByUserId(user.getId())
                 .orElse(Wallet.builder().user(user).tokenBalance(0L).totalRecharged(0L).build());
-        wallet.setTokenBalance(Long.valueOf(plan.getTokenLimit()));
+        wallet.setTokenBalance(wallet.getTokenBalance() + Long.valueOf(plan.getTokenLimit()));
         wallet.setTotalRecharged(wallet.getTotalRecharged() + plan.getTokenLimit());
         walletRepository.save(wallet);
     }

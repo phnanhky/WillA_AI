@@ -36,6 +36,14 @@ public class ReviewServiceImpl implements ReviewService {
                 .build();
 
         Review savedReview = reviewRepository.save(review);
+        if (Boolean.TRUE.equals(user.getRequiresReview())) {
+            user.setRequiresReview(false);
+            userRepository.save(user);
+        }
+        if (Boolean.TRUE.equals(user.getRequiresReview())) {
+            user.setRequiresReview(false);
+            userRepository.save(user);
+        }
         return mapToResponse(savedReview);
     }
 

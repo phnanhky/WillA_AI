@@ -64,34 +64,6 @@ public class DataInitializer implements CommandLineRunner {
             log.info("Default ADMIN user already exists.");
         }
 
-        // Initialize Plans
-        Plan freePlan = initPlan("Free", "Gói miễn phí cơ bản", BigDecimal.ZERO, BillingCycle.MONTHLY, 60000);
-        Plan proPlan = initPlan("Pro", "Gói chuyên nghiệp", new BigDecimal("160000"), BillingCycle.MONTHLY, 105000);
-        Plan premiumPlan = initPlan("Premium", "Gói cao cấp", new BigDecimal("310000"), BillingCycle.MONTHLY, 249000);
-
-        // Update existing users to Free plan if they don't have an active subscription
-        List<User> allUsers = userRepository.findAll();
-        for (User u : allUsers) {
-            List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(u.getId(), SubscriptionStatus.ACTIVE);
-            if (activeSubs.isEmpty()) {
-                Subscription freeSub = Subscription.builder()
-                        .user(u)
-                        .plan(freePlan)
-                        .startDate(LocalDateTime.now())
-                        .endDate(LocalDateTime.now().plusMonths(1))
-                        .status(SubscriptionStatus.ACTIVE)
-                        .build();
-                subscriptionRepository.save(freeSub);
-
-                Wallet wallet = walletRepository.findByUserId(u.getId()).orElseGet(() -> 
-                        walletRepository.save(Wallet.builder().user(u).tokenBalance(0L).totalRecharged(0L).build())
-                );
-
-                wallet.setTokenBalance((long) freePlan.getTokenLimit());
-                walletRepository.save(wallet);
-                log.info("Updated User {} to Free Plan", u.getEmail());
-            }
-        }
     }
 
     private Plan initPlan(String name, String desc, BigDecimal price, BillingCycle cycle, Integer tokens) {
