@@ -4,16 +4,11 @@ import com.willa.ai.backend.dto.request.ChatMessageRequest;
 import com.willa.ai.backend.dto.request.ChatSessionRequest;
 import com.willa.ai.backend.dto.response.ChatMessageResponse;
 import com.willa.ai.backend.dto.response.ChatSessionResponse;
-import com.willa.ai.backend.entity.ChatMessage;
-import com.willa.ai.backend.entity.ChatSession;
-import com.willa.ai.backend.entity.User;
-import com.willa.ai.backend.entity.AITokenUsage;
+import com.willa.ai.backend.entity.*;
 import com.willa.ai.backend.entity.enums.MessageRole;
+import com.willa.ai.backend.entity.enums.SubscriptionStatus;
 import com.willa.ai.backend.exception.ResourceNotFoundException;
-import com.willa.ai.backend.repository.AITokenUsageRepository;
-import com.willa.ai.backend.repository.ChatMessageRepository;
-import com.willa.ai.backend.repository.ChatSessionRepository;
-import com.willa.ai.backend.repository.UserRepository;
+import com.willa.ai.backend.repository.*;
 import com.willa.ai.backend.service.ChatService;
 import com.willa.ai.backend.service.FileService;
 import com.willa.ai.backend.service.WalletService;
@@ -52,6 +47,8 @@ public class ChatServiceImpl implements ChatService {
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
+    private final SubscriptionRepository subscriptionRepository;
+    private final WalletRepository walletRepository;
     private final UserRepository userRepository;
     private final WalletService walletService; 
     private final FileService fileService;
@@ -65,6 +62,9 @@ public class ChatServiceImpl implements ChatService {
     @Transactional
     public ChatSessionResponse createSession(String email, ChatSessionRequest request) {
         User user = getUserByEmail(email);
+//        if (Boolean.TRUE.equals(user.getRequiresReview())) {
+//            throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
+//        }
         
         ChatSession session = ChatSession.builder()
                 .user(user)
@@ -79,6 +79,9 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public Page<ChatSessionResponse> getUserSessions(String email, int page, int size) {
         User user = getUserByEmail(email);
+//        if (Boolean.TRUE.equals(user.getRequiresReview())) {
+//            throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
+//        }
         Pageable pageable = PageRequest.of(page, size);
         return chatSessionRepository.findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(user.getId(), pageable)
                 .map(this::mapToSessionResponse);
@@ -148,6 +151,17 @@ public class ChatServiceImpl implements ChatService {
     @Transactional
     public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, MultipartFile file) {
         User user = getUserByEmail(email);
+
+//        if (Boolean.TRUE.equals(user.getRequiresReview())) {
+//            throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
+//        }
+        Wallet wallet = walletRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new RuntimeException("Wallet not found"));
+
+        if (wallet.getTokenBalance() <= 0) {
+            throw new RuntimeException("Số dư token của bạn đã hết. Vui lòng nạp thêm hoặc nâng cấp gói để tiếp tục.");
+        }
+
         ChatSession session = getSessionEntity(email, sessionId);
         
         String imageUrl = null;
@@ -269,25 +283,26 @@ public class ChatServiceImpl implements ChatService {
             throw new RuntimeException("Failed to call AI or parse response: " + e.getMessage());
         }
 
-        // 4. Trừ Token
+        // 4. Trừ Token (Cho phép về 0 nếu totalTokens > tokenBalance)
         if (totalTokens > 0) {
-            boolean success = walletService.deductTokens(email, (long) totalTokens);
-            if (!success) {
-                throw new RuntimeException("Insufficient tokens for this AI operation.");
+            Long currentBalance = wallet.getTokenBalance();
+            Long newBalance = currentBalance - totalTokens;
+            if (newBalance < 0) {
+                newBalance = 0L;
             }
-              
-            // Lưu log token Usage
+            wallet.setTokenBalance(newBalance);
+            walletRepository.save(wallet);
+
             AITokenUsage aiTokenUsage = AITokenUsage.builder()
-                .user(user)
-                .model(modelUsed)
-                .promptTokens(promptTokens)
-                .completionTokens(completionTokens)
-                .totalTokens(totalTokens)
-                .serviceType((imageUrl != null && !imageUrl.trim().isEmpty()) ? "ANALYZE" : "CHAT")
-                .build();
+                    .user(user)
+                    .model(modelUsed)
+                    .promptTokens(promptTokens)
+                    .completionTokens(completionTokens)
+                    .totalTokens(totalTokens)
+                    .serviceType((imageUrl != null && !imageUrl.trim().isEmpty()) ? "ANALYZE" : "CHAT")
+                    .build();
             aiTokenUsageRepository.save(aiTokenUsage);
         }
-
         // 5. Lưu kết quả của AI
         ChatMessage aiMessage = ChatMessage.builder()
                 .session(session)
@@ -299,6 +314,14 @@ public class ChatServiceImpl implements ChatService {
                 
         ChatMessage savedAiMessage = chatMessageRepository.save(aiMessage);
         
+//        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE);
+//        if (!activeSubs.isEmpty()) {
+//            Plan currentPlan = activeSubs.get(0).getPlan();
+//            if (currentPlan.getName().equalsIgnoreCase("Free")) {
+//                user.setRequiresReview(true);
+//                userRepository.save(user);
+//            }
+//        }
         return mapToMessageResponse(savedAiMessage);
     }
 
@@ -309,6 +332,9 @@ public class ChatServiceImpl implements ChatService {
 
     private ChatSession getSessionEntity(String email, Long sessionId) {
         User user = getUserByEmail(email);
+//        if (Boolean.TRUE.equals(user.getRequiresReview())) {
+//            throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
+//        }
         return chatSessionRepository.findByIdAndUserIdAndIsActiveTrue(sessionId, user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Chat Session not found or deleted"));
     }

@@ -48,6 +48,23 @@ public class User implements UserDetails {
     @Builder.Default
     private Boolean isActive = true;
 
+    @Column(name = "is_student")
+    @Builder.Default
+    private Boolean isStudent = false;
+
+    @Column(name = "requires_review")
+    @Builder.Default
+    private Boolean requiresReview = false;
+
+    @Column(name = "student_otp")
+    private String studentOtp;
+
+    @Column(name = "student_otp_expiry")
+    private LocalDateTime studentOtpExpiry;
+
+    @Column(name = "student_verified_at")
+    private LocalDateTime studentVerifiedAt;
+
     @Column(name = "firebase_uid")
     private String firebaseUid;
 

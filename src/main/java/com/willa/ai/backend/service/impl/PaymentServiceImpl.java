@@ -182,6 +182,20 @@ public class PaymentServiceImpl implements PaymentService {
                         System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã cộng token/subscription.");
                     }
                 }
+            } else if ("01".equals(data.getCode()) || "01".equals(webhookData.getCode()) || "11".equals(data.getCode()) || "11".equals(webhookData.getCode())) {
+                // Code 01/11 tuỳ vào tài liệu PayOS - thường là huỷ hoặc thất bại.
+                Long orderCode = data.getOrderCode();
+                Optional<Payment> paymentOpt = paymentRepository.findByOrderCode(orderCode);
+
+                if (paymentOpt.isPresent()) {
+                    Payment payment = paymentOpt.get();
+
+                    if (payment.getStatus() == PaymentStatus.PENDING) {
+                        payment.setStatus(PaymentStatus.CANCELLED);
+                        paymentRepository.save(payment);
+                        System.out.println("Thanh toán bị HỦY đơn hàng: " + orderCode);
+                    }
+                }
             }
         } catch (Exception e) {
             throw new RuntimeException("Webhook processing error: " + e.getMessage());
