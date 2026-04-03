@@ -13,6 +13,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+
 @Service
 @RequiredArgsConstructor
 public class PlanServiceImpl implements PlanService {
@@ -22,12 +24,17 @@ public class PlanServiceImpl implements PlanService {
     @Override
     @Transactional
     public PlanResponse createPlan(PlanRequest request) {
+        BigDecimal base = request.getPrice();
+        BigDecimal promo = calculatePromo(base, request.getDiscountPercentage());
+        
         Plan plan = Plan.builder()
                 .name(request.getName())
                 .description(request.getDescription())
-                .price(request.getPrice())
+                .price(base)
                 .billingCycle(request.getBillingCycle())
                 .tokenLimit(request.getTokenLimit())
+                .discountPercentage(request.getDiscountPercentage())
+                .promotionalPrice(promo)
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
                 .build();
 
@@ -67,6 +74,8 @@ public class PlanServiceImpl implements PlanService {
         plan.setPrice(request.getPrice());
         plan.setBillingCycle(request.getBillingCycle());
         plan.setTokenLimit(request.getTokenLimit());
+        plan.setDiscountPercentage(request.getDiscountPercentage());
+        plan.setPromotionalPrice(calculatePromo(request.getPrice(), request.getDiscountPercentage()));
         
         if (request.getIsActive() != null) {
             plan.setIsActive(request.getIsActive());
@@ -86,6 +95,18 @@ public class PlanServiceImpl implements PlanService {
         planRepository.save(plan);
     }
 
+    private BigDecimal calculatePromo(BigDecimal basePrice, Double discountPercentage) {
+        BigDecimal promo = basePrice;
+        if (discountPercentage != null && discountPercentage > 0) {
+            promo = basePrice.subtract(basePrice.multiply(BigDecimal.valueOf(discountPercentage / 100.0)));
+        }
+        
+        if (promo.compareTo(BigDecimal.ZERO) < 0) {
+            promo = BigDecimal.ZERO;
+        }
+        return promo;
+    }
+
     private PlanResponse mapToResponse(Plan plan) {
         return PlanResponse.builder()
                 .id(plan.getId())
@@ -94,6 +115,8 @@ public class PlanServiceImpl implements PlanService {
                 .price(plan.getPrice())
                 .billingCycle(plan.getBillingCycle())
                 .tokenLimit(plan.getTokenLimit())
+                .discountPercentage(plan.getDiscountPercentage())
+                .promotionalPrice(plan.getPromotionalPrice())
                 .isActive(plan.getIsActive())
                 .createdAt(plan.getCreatedAt())
                 .updatedAt(plan.getUpdatedAt())

@@ -76,7 +76,8 @@ public class PaymentServiceImpl implements PaymentService {
             Plan plan = planRepository.findById(planId)
                     .orElseThrow(() -> new ResourceNotFoundException("Plan not found with id: " + planId));
 
-            Long amount = plan.getPrice().longValue();
+            Long amount = plan.getPromotionalPrice() != null ? plan.getPromotionalPrice().longValue() : plan.getPrice().longValue();
+
             Long orderCode = System.currentTimeMillis() / 1000;
             String originalName = plan.getName();
             // PayOS không nhận các ký tự đặc biệt, dễ làm sai lệch signature khi check

@@ -33,6 +33,8 @@ public class PlanRequest {
     @Min(value = 0, message = "Token limit cannot be negative")
     private Integer tokenLimit;
 
+    private Double discountPercentage;
+
     @Builder.Default
     private Boolean isActive = true;
 }

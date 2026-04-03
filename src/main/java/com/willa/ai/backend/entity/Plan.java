@@ -45,6 +45,12 @@ public class Plan {
     @Builder.Default
     private Boolean isActive = true;
 
+    @Column(name = "discount_percentage")
+    private Double discountPercentage;
+
+    @Column(name = "promotional_price")
+    private BigDecimal promotionalPrice;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
