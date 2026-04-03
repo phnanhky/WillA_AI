@@ -20,6 +20,8 @@ public class PlanResponse {
     private BigDecimal price;
     private BillingCycle billingCycle;
     private Integer tokenLimit;
+    private Double discountPercentage;
+    private BigDecimal promotionalPrice;
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
