@@ -149,7 +149,7 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     @Transactional
-    public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, MultipartFile file) {
+    public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, List<MultipartFile> files) {
         User user = getUserByEmail(email);
 
 //        if (Boolean.TRUE.equals(user.getRequiresReview())) {
@@ -161,170 +161,175 @@ public class ChatServiceImpl implements ChatService {
         if (wallet.getTokenBalance() <= 0) {
             throw new RuntimeException("Số dư token của bạn đã hết. Vui lòng nạp thêm hoặc nâng cấp gói để tiếp tục.");
         }
+        
+        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE);
+        String planName = "Free";
+        if (!activeSubs.isEmpty()) {
+            planName = activeSubs.get(0).getPlan().getName();
+        }
+
+        if (files != null && files.size() > 1) {
+            if (planName.equalsIgnoreCase("Student") || planName.equalsIgnoreCase("Free")) {
+                throw new RuntimeException("Gói " + planName + " chỉ cho phép gửi 1 ảnh mỗi lần phân tích. Vui lòng nâng cấp gói Pro để gửi nhiều ảnh cùng lúc.");
+            }
+        }
 
         ChatSession session = getSessionEntity(email, sessionId);
-        
-        String imageUrl = null;
-        if (file != null && !file.isEmpty()) {
-            imageUrl = fileService.uploadFile(file);
+
+        List<String> uploadedUrls = new java.util.ArrayList<>();
+        if (files != null && !files.isEmpty()) {
+            for (MultipartFile file : files) {
+                if (file != null && !file.isEmpty()) {
+                    uploadedUrls.add(fileService.uploadFile(file));
+                }
+            }
         }
+        String imageUrlStr = uploadedUrls.isEmpty() ? null : String.join(",", uploadedUrls);
 
         // 1. Lưu message của user
         ChatMessage userMessage = ChatMessage.builder()
                 .session(session)
                 .role(MessageRole.USER)
                 .content(content)
-                .imageUrl(imageUrl)
+                .imageUrl(imageUrlStr)
                 .tokensUsed(0) 
                 .build();
         chatMessageRepository.save(userMessage);
 
         String aiResponseContent = "";
-        int totalTokens = 0;
-        int promptTokens = 0;
-        int completionTokens = 0;
-        String modelUsed = "qwen3-vl-flash"; // Fixed model name
+        int totalTokensCombined = 0;
+        String modelUsed = "qwen3-vl-flash"; 
         
         try {
             ObjectMapper mapper = new ObjectMapper();
-            JsonNode rootNode;
 
-            // GỌI UNIFIED API /chat (BẮT BUỘC MULTIPART)
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            if (files == null || files.isEmpty()) {
+                // --- KỊCH BẢN CHỈ CHAT TEXT ---
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+                MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+                
+                if (content != null && !content.trim().isEmpty()) body.add("message", content);
+                body.add("session_id", sessionId.toString());
+                body.add("user_id", user.getId().toString());
+                if (actionType != null && !actionType.trim().isEmpty()) body.add("action_type", actionType);
+                if (errorIndex != null) body.add("error_index", errorIndex.toString());
 
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            
-            if (content != null && !content.trim().isEmpty()) {
-                body.add("message", content);
-            }
-            body.add("session_id", sessionId.toString());
-            body.add("user_id", user.getId().toString());
-
-            if (actionType != null && !actionType.trim().isEmpty()) {
-                body.add("action_type", actionType);
-            }
-            if (errorIndex != null) {
-                body.add("error_index", errorIndex.toString());
-            }
-
-            if (file != null && !file.isEmpty()) {
-                body.add("file", file.getResource());
-            } else if (imageUrl != null && !imageUrl.trim().isEmpty()) {
-                // TỐI ƯU MEMORY STREAMING: Tránh OOM (Tràn RAM) khi có nhiều user tải ảnh
-                if (imageUrl.startsWith("data:image")) {
-                    // Nếu là base64, buộc phải parse ở RAM
-                    String[] parts = imageUrl.split(",");
-                    if (parts.length > 1) {
-                        byte[] imageBytes = java.util.Base64.getDecoder().decode(parts[1]);
-                        ByteArrayResource contentsAsResource = new ByteArrayResource(imageBytes) {
-                            @Override
-                            public String getFilename() {
-                                return "image.jpg";
-                            }
-                        };
-                        body.add("file", contentsAsResource);
-                    } else {
-                        throw new RuntimeException("Invalid base64 image data");
-                    }
+                HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+                String chatUrl = aiServerUrl.endsWith("/") ? aiServerUrl + "chat" : aiServerUrl + "/chat";
+                ResponseEntity<String> responseEntity = restTemplate.postForEntity(chatUrl, entity, String.class);
+                
+                JsonNode rootNode = mapper.readTree(responseEntity.getBody());
+                aiResponseContent = responseEntity.getBody();
+                
+                int totalTokens = 0, promptTokens = 0, completionTokens = 0;
+                if (rootNode.has("usage")) {
+                    JsonNode usageNode = rootNode.get("usage");
+                    if (usageNode.has("total_tokens")) totalTokens = usageNode.get("total_tokens").asInt();
+                    if (usageNode.has("input_tokens")) promptTokens = usageNode.get("input_tokens").asInt();
+                    if (usageNode.has("output_tokens")) completionTokens = usageNode.get("output_tokens").asInt();
                 } else {
-                    // Nếu là URL, dùng InputStreamResource truyền trực tiếp theo luồng (Stream) sang Python
-                    String urlStr = imageUrl;
-                    String filename = "image.jpg";
-                    if (urlStr.contains("/")) {
-                        String[] parts = urlStr.split("/");
-                        filename = parts[parts.length - 1];
-                        if (filename.contains("?")) filename = filename.split("\\?")[0];
+                    promptTokens = 1000; completionTokens = 500; totalTokens = 1500;
+                }
+                
+                if (totalTokens > 0) {
+                    Long newBalance = wallet.getTokenBalance() - totalTokens;
+                    wallet.setTokenBalance(newBalance < 0 ? 0L : newBalance);
+                    walletRepository.save(wallet);
+
+                    AITokenUsage aiTokenUsage = AITokenUsage.builder()
+                            .user(user).model(modelUsed).promptTokens(promptTokens).completionTokens(completionTokens).totalTokens(totalTokens)
+                            .serviceType("CHAT").build();
+                    aiTokenUsageRepository.save(aiTokenUsage);
+                }
+                totalTokensCombined = totalTokens;
+                
+            } else {
+                // --- KỊCH BẢN CÓ FILE (1 hoặc NHIỀU ẢNH) ---
+                com.fasterxml.jackson.databind.node.ArrayNode arrayNode = mapper.createArrayNode();
+                
+                for (int i = 0; i < files.size(); i++) {
+                    // 1. Kiểm tra Token trước khi chạy từng ảnh
+                    if (wallet.getTokenBalance() <= 0) {
+                        break; // Hết token -> Dừng vòng lặp ngay lập tức
                     }
-                    final String finalFilename = (!filename.isEmpty()) ? filename : "image.jpg";
                     
-                    try {
-                        URL urlToStream = new URI(urlStr).toURL();
-                        InputStreamResource streamResource = new InputStreamResource(urlToStream.openStream()) {
-                            @Override
-                            public String getFilename() {
-                                return finalFilename;
-                            }
-                            @Override
-                            public long contentLength() {
-                                return -1; // Để RestTemplate tự chia chunk
-                            }
-                        };
-                        body.add("file", streamResource);
-                    } catch (Exception ex) {
-                        throw new RuntimeException("Failed to stream image from URL: " + ex.getMessage());
+                    MultipartFile file = files.get(i);
+                    if (file == null || file.isEmpty()) continue;
+                    
+                    HttpHeaders headers = new HttpHeaders();
+                    headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+                    MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+                    
+                    if (content != null && !content.trim().isEmpty()) body.add("message", content);
+                    body.add("session_id", sessionId.toString());
+                    body.add("user_id", user.getId().toString());
+                    if (actionType != null && !actionType.trim().isEmpty()) body.add("action_type", actionType);
+                    if (errorIndex != null) body.add("error_index", errorIndex.toString());
+                    
+                    body.add("file", file.getResource());
+
+                    HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+                    String chatUrl = aiServerUrl.endsWith("/") ? aiServerUrl + "chat" : aiServerUrl + "/chat";
+                    
+                    // Gọi AI cho riêng TỪNG ẢNH
+                    ResponseEntity<String> responseEntity = restTemplate.postForEntity(chatUrl, entity, String.class);
+                    JsonNode rootNode = mapper.readTree(responseEntity.getBody());
+                    
+                    // Thêm kết quả của ảnh này vào mảng JSON
+                    arrayNode.add(rootNode);
+                    
+                    int totalTokens = 0, promptTokens = 0, completionTokens = 0;
+                    if (rootNode.has("usage")) {
+                        JsonNode usageNode = rootNode.get("usage");
+                        if (usageNode.has("total_tokens")) totalTokens = usageNode.get("total_tokens").asInt();
+                        if (usageNode.has("input_tokens")) promptTokens = usageNode.get("input_tokens").asInt();
+                        if (usageNode.has("output_tokens")) completionTokens = usageNode.get("output_tokens").asInt();
+                    } else {
+                        promptTokens = 1000; completionTokens = 500; totalTokens = 1500;
+                    }
+                    
+                    // 2. Trừ Token ngay lập tức sau mỗi lần xử lý 1 ảnh
+                    if (totalTokens > 0) {
+                        Long newBalance = wallet.getTokenBalance() - totalTokens;
+                        wallet.setTokenBalance(newBalance < 0 ? 0L : newBalance);
+                        walletRepository.save(wallet); 
+
+                        AITokenUsage aiTokenUsage = AITokenUsage.builder()
+                                .user(user).model(modelUsed).promptTokens(promptTokens).completionTokens(completionTokens).totalTokens(totalTokens)
+                                .serviceType("ANALYZE").build();
+                        aiTokenUsageRepository.save(aiTokenUsage);
+                        
+                        totalTokensCombined += totalTokens;
                     }
                 }
+                
+                // Gom dữ liệu trả về 
+                if (files.size() == 1) {
+                    if (arrayNode.size() > 0) {
+                        aiResponseContent = arrayNode.get(0).toString(); // Trả về Json bth nếu 1 ảnh
+                    }
+                } else {
+                    aiResponseContent = arrayNode.toString(); // Trả về mảng [Json, Json...] nếu nhiều ảnh
+                }
             }
-
-            HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
-            String chatUrl = aiServerUrl.endsWith("/") ? aiServerUrl + "chat" : aiServerUrl + "/chat";
-            
-            ResponseEntity<String> responseEntity = restTemplate.postForEntity(chatUrl, entity, String.class);
-            rootNode = mapper.readTree(responseEntity.getBody());
-            
-            // Xử lý kết quả trả về
-            aiResponseContent = responseEntity.getBody(); // Giữ nguyên toàn bộ JSON trả về để Frontend dùng
-            
-            // Lấy token chuẩn từ Usage của Server AI trả về
-            if (rootNode.has("usage")) {
-                JsonNode usageNode = rootNode.get("usage");
-                if (usageNode.has("total_tokens")) totalTokens = usageNode.get("total_tokens").asInt();
-                if (usageNode.has("input_tokens")) promptTokens = usageNode.get("input_tokens").asInt();
-                if (usageNode.has("output_tokens")) completionTokens = usageNode.get("output_tokens").asInt();
-            } else {
-                // Sẽ không nhảy vào đây nếu AI trả về chuẩn, dự phòng:
-                promptTokens = 1000;
-                completionTokens = 500;
-                totalTokens = 1500;
-            }
-            
         } catch (Exception e) {
             throw new RuntimeException("Failed to call AI or parse response: " + e.getMessage());
         }
-
-        // 4. Trừ Token (Cho phép về 0 nếu totalTokens > tokenBalance)
-        if (totalTokens > 0) {
-            Long currentBalance = wallet.getTokenBalance();
-            Long newBalance = currentBalance - totalTokens;
-            if (newBalance < 0) {
-                newBalance = 0L;
-            }
-            wallet.setTokenBalance(newBalance);
-            walletRepository.save(wallet);
-
-            AITokenUsage aiTokenUsage = AITokenUsage.builder()
-                    .user(user)
-                    .model(modelUsed)
-                    .promptTokens(promptTokens)
-                    .completionTokens(completionTokens)
-                    .totalTokens(totalTokens)
-                    .serviceType((imageUrl != null && !imageUrl.trim().isEmpty()) ? "ANALYZE" : "CHAT")
-                    .build();
-            aiTokenUsageRepository.save(aiTokenUsage);
-        }
+        
         // 5. Lưu kết quả của AI
         ChatMessage aiMessage = ChatMessage.builder()
                 .session(session)
                 .role(MessageRole.AI)
                 .content(aiResponseContent)
-                .imageUrl(imageUrl)
-                .tokensUsed(totalTokens)
+                .imageUrl(imageUrlStr)
+                .tokensUsed(totalTokensCombined)
                 .build();
                 
         ChatMessage savedAiMessage = chatMessageRepository.save(aiMessage);
         
-//        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE);
-//        if (!activeSubs.isEmpty()) {
-//            Plan currentPlan = activeSubs.get(0).getPlan();
-//            if (currentPlan.getName().equalsIgnoreCase("Free")) {
-//                user.setRequiresReview(true);
-//                userRepository.save(user);
-//            }
-//        }
         return mapToMessageResponse(savedAiMessage);
     }
-
     private User getUserByEmail(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));

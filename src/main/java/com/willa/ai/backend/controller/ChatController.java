@@ -141,7 +141,7 @@ public class ChatController {
             @Parameter(description = "Nội dung tin nhắn") @RequestParam(value = "content", required = false) String content,
             @Parameter(description = "Loại hành động (VD: zoom)") @RequestParam(value = "actionType", required = false) String actionType,
             @Parameter(description = "Index của lỗi nếu dùng zoom") @RequestParam(value = "errorIndex", required = false) Integer errorIndex,
-            @Parameter(description = "File ảnh upload lên") @RequestPart(value = "file", required = false) MultipartFile file,
+            @Parameter(description = "File ảnh upload lên") @RequestPart(value = "files", required = false) List<MultipartFile> files,
             Authentication authentication) {
 
         try {
@@ -152,7 +152,7 @@ public class ChatController {
                         .build());
             }
 
-            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, content, actionType, errorIndex, file);
+            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, content, actionType, errorIndex, files);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Message processed by AI")

@@ -5,6 +5,7 @@ import com.willa.ai.backend.dto.request.ChatSessionRequest;
 import com.willa.ai.backend.dto.response.ChatMessageResponse;
 import com.willa.ai.backend.dto.response.ChatSessionResponse;
 import org.springframework.data.domain.Page;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -22,5 +23,5 @@ public interface ChatService {
     List<ChatMessageResponse> getAllSessionMessages(String email, Long sessionId);
     
     // AI Chat Integration
-    ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, org.springframework.web.multipart.MultipartFile file);
+    ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, List<MultipartFile> files);
 }
