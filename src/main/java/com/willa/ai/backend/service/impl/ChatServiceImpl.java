@@ -267,7 +267,15 @@ public class ChatServiceImpl implements ChatService {
                     if (actionType != null && !actionType.trim().isEmpty()) body.add("action_type", actionType);
                     if (errorIndex != null) body.add("error_index", errorIndex.toString());
                     
-                    body.add("file", file.getResource());
+                    // IMPORTANT: FastAPI UploadFile requires a filename. Using MultipartFile.getResource()
+                    // may yield a Resource without filename, causing AI server to skip image flow.
+                    ByteArrayResource fileResource = new ByteArrayResource(file.getBytes()) {
+                        @Override
+                        public String getFilename() {
+                            return file.getOriginalFilename() != null ? file.getOriginalFilename() : "image";
+                        }
+                    };
+                    body.add("file", fileResource);
 
                     HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
                     String chatUrl = aiServerUrl.endsWith("/") ? aiServerUrl + "chat" : aiServerUrl + "/chat";
