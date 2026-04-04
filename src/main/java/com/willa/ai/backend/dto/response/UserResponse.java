@@ -20,6 +20,10 @@ public class UserResponse {
     private String role;
     private Boolean isEnabled;
     private Boolean isActive;
+    private Boolean isStudent;
+    private Boolean requiresReview;
+    private LocalDateTime studentVerifiedAt;
+    private String firebaseUid;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
