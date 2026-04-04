@@ -185,6 +185,10 @@ public class UserServiceImpl implements UserService {
                 .role(user.getRole().name())
                 .isEnabled(user.getIsEnabled())
                 .isActive(user.getIsActive())
+                .isStudent(user.getIsStudent())
+                .requiresReview(user.getRequiresReview())
+                .studentVerifiedAt(user.getStudentVerifiedAt())
+                .firebaseUid(user.getFirebaseUid())
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
                 .build();
