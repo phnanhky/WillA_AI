@@ -65,16 +65,16 @@ public class User implements UserDetails {
     @Column(name = "student_verified_at")
     private LocalDateTime studentVerifiedAt;
 
-    @Column(name = "firebase_uid")
+    @Column(name = "firebase_uid", length = 1000)
     private String firebaseUid;
 
-    @Column(name = "refresh_token")
+    @Column(name = "refresh_token", columnDefinition = "TEXT")
     private String refreshToken;
 
-    @Column(name = "verification_token")
+    @Column(name = "verification_token", columnDefinition = "TEXT")
     private String verificationToken;
 
-    @Column(name = "reset_token")
+    @Column(name = "reset_token", columnDefinition = "TEXT")
     private String resetToken;
 
     @Column(name = "created_at", nullable = false, updatable = false)
