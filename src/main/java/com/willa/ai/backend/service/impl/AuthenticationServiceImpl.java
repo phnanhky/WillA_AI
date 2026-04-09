@@ -23,10 +23,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.ResponseEntity;
 
 import java.util.Optional;
 import java.util.UUID;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Service
 @Transactional
@@ -309,6 +312,84 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             throw new RuntimeException("Firebase authentication failed");
         } catch (Exception e) {
             throw new RuntimeException("Google login failed");
+        }
+    }
+
+    @Override
+    public AuthResponse facebookLogin(FacebookLoginRequest request) {
+        try {
+            String fbGraphUrl = "https://graph.facebook.com/me?fields=id,name,email&access_token=" + request.getAccessToken();
+            RestTemplate restTemplate = new RestTemplate();
+            ResponseEntity<Map> response = restTemplate.getForEntity(fbGraphUrl, Map.class);
+            Map<String, Object> fbUser = response.getBody();
+
+            if (fbUser == null || !fbUser.containsKey("id")) {
+                throw new RuntimeException("Xác thực Facebook thất bại.");
+            }
+
+            String fbId = (String) fbUser.get("id");
+            String email = fbUser.containsKey("email") ? (String) fbUser.get("email") : fbId + "@facebook.com";
+            String fullName = fbUser.containsKey("name") ? (String) fbUser.get("name") : "Facebook User";
+
+            Optional<User> userOpt = userRepository.findByEmail(email);
+            User user;
+
+            if (userOpt.isEmpty()) {
+                user = User.builder()
+                        .email(email)
+                        .fullName(fullName)
+                        .firebaseUid(fbId)
+                        .isActive(true)
+                        .role(Role.USER)
+                        .requiresReview(false)
+                        .isStudent(false)
+                        .build();
+                user = userRepository.save(user);
+
+                // Initialize standard user features
+                Plan freePlan = planRepository.findByName("Free")
+                        .orElseThrow(() -> new RuntimeException("Free plan not found"));
+
+                Wallet wallet = Wallet.builder()
+                        .user(user)
+                        .tokenBalance((long) freePlan.getTokenLimit())
+                        .build();
+                walletRepository.save(wallet);
+
+                Subscription subscription = Subscription.builder()
+                        .user(user)
+                        .plan(freePlan)
+                        .status(SubscriptionStatus.ACTIVE)
+                        .startDate(LocalDateTime.now())
+                        .endDate(LocalDateTime.now().plusMonths(1))
+                        .build();
+                subscriptionRepository.save(subscription);
+            } else {
+                user = userOpt.get();
+                if (!user.getIsActive()) {
+                    throw new RuntimeException("Tài khoản đã bị khoá.");
+                }
+                // Update properties if needed
+                if (user.getFirebaseUid() == null || user.getFirebaseUid().isEmpty()) {
+                    user.setFirebaseUid(fbId);
+                    user = userRepository.save(user);
+                }
+            }
+
+            String jwtToken = jwtTokenProvider.generateAccessToken(user.getEmail(), user.getId());
+            String jwtRefreshToken = jwtTokenProvider.generateRefreshToken(user.getEmail(), user.getId());
+
+            return AuthResponse.builder()
+                    .userId(user.getId())
+                    .email(user.getEmail())
+                    .fullName(user.getFullName())
+                    .role(user.getRole() != null ? user.getRole().name() : null)
+                    .accessToken(jwtToken)
+                    .refreshToken(jwtRefreshToken)
+                    .build();
+
+        } catch (Exception e) {
+            throw new RuntimeException("Lỗi đăng nhập Facebook: " + e.getMessage());
         }
     }
 

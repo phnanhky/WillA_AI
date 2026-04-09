@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.willa.ai.backend.dto.request.ForgotPasswordRequest;
+import com.willa.ai.backend.dto.request.FacebookLoginRequest;
 import com.willa.ai.backend.dto.request.GoogleLoginRequest;
 import com.willa.ai.backend.dto.request.LoginRequest;
 import com.willa.ai.backend.dto.request.RefreshTokenRequest;
@@ -94,6 +95,24 @@ public class AuthenticationController {
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Google login successful")
+                    .data(response)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.builder()
+                            .status(false)
+                            .message(e.getMessage())
+                            .build());
+        }
+    }
+
+    @PostMapping("/facebook-login")
+    public ResponseEntity<?> facebookLogin(@RequestBody FacebookLoginRequest request) {
+        try {
+            AuthResponse response = authenticationService.facebookLogin(request);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Facebook login successful")
                     .data(response)
                     .build());
         } catch (Exception e) {

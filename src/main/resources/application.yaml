@@ -95,6 +95,10 @@ payos:
   return-url: ${PAYOS_RETURN_URL}
   cancel-url: ${PAYOS_CANCEL_URL}
 
+facebook:
+  app-id: ${FACEBOOK_APP_ID:}
+  app-secret: ${FACEBOOK_APP_SECRET:}
+
 cloudflare:
   r2:
     access-key: ${R2_ACCESS_KEY}
