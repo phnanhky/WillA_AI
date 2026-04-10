@@ -106,7 +106,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .user(user)
                         .plan(freePlan)
                         .startDate(LocalDateTime.now())
-                        .endDate(LocalDateTime.now().plusMonths(1))
+                        .endDate(LocalDateTime.now().plusYears(100))
                         .status(SubscriptionStatus.ACTIVE)
                         .build();
                 subscriptionRepository.save(freeSub);
@@ -262,7 +262,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                             .user(user)
                             .plan(freePlan)
                             .startDate(LocalDateTime.now())
-                            .endDate(LocalDateTime.now().plusMonths(1))
+                            .endDate(LocalDateTime.now().plusYears(100))
                             .status(SubscriptionStatus.ACTIVE)
                             .build();
                     subscriptionRepository.save(freeSub);
@@ -362,7 +362,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .plan(freePlan)
                         .status(SubscriptionStatus.ACTIVE)
                         .startDate(LocalDateTime.now())
-                        .endDate(LocalDateTime.now().plusMonths(1))
+                        .endDate(LocalDateTime.now().plusYears(100))
                         .build();
                 subscriptionRepository.save(subscription);
             } else {

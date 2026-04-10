@@ -21,7 +21,7 @@ import java.util.List;
 public class SubscriptionCronTask {
 
     private final SubscriptionRepository subscriptionRepository;
-
+    private final PlanRepository planRepository;
 
     /**
      * Run every day at midnight to check expired subscriptions.
@@ -33,11 +33,25 @@ public class SubscriptionCronTask {
         log.info("Running cron job: processExpiredSubscriptions");
         LocalDateTime now = LocalDateTime.now();
         List<Subscription> activeSubscriptions = subscriptionRepository.findSubscriptionsByStatus(SubscriptionStatus.ACTIVE);
+        
         for (Subscription sub : activeSubscriptions) {
-            if (sub.getStatus() == SubscriptionStatus.ACTIVE ||sub.getEndDate().isBefore(now)) {
+            if (sub.getEndDate() != null && sub.getEndDate().isBefore(now)) {
                 log.info("Subscription id {} has expired. User: {}", sub.getId(), sub.getUser().getEmail());
                 sub.setStatus(SubscriptionStatus.EXPIRED);
                 subscriptionRepository.save(sub);
+
+                // Revert user to "Free" plan automatically
+                planRepository.findByName("Free").ifPresent(freePlan -> {
+                    Subscription newFreeSub = Subscription.builder()
+                            .user(sub.getUser())
+                            .plan(freePlan)
+                            .startDate(now)
+                            .endDate(now.plusYears(100)) // Gói Free không bao giờ hết hạn
+                            .status(SubscriptionStatus.ACTIVE)
+                            .build();
+                    subscriptionRepository.save(newFreeSub);
+                    log.info("Assigned permanent Free plan to user: {}", sub.getUser().getEmail());
+                });
             }
         }
     }
