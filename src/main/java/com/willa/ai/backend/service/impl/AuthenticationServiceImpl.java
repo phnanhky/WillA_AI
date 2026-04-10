@@ -339,6 +339,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .email(email)
                         .fullName(fullName)
                         .firebaseUid(fbId)
+                        .password(passwordEncoder.encode(UUID.randomUUID().toString()))
                         .isActive(true)
                         .role(Role.USER)
                         .requiresReview(false)
