@@ -12,7 +12,10 @@ import java.util.Collection;
 import java.util.List;
 
 @Entity
-@Table(name = "users")
+@Table(name = "users", indexes = {
+        @Index(name = "idx_user_email", columnList = "email"),
+        @Index(name = "idx_user_firebase_uid", columnList = "firebase_uid")
+})
 @Data
 @Builder
 @NoArgsConstructor
