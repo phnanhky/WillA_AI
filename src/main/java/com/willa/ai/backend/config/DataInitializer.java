@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -70,7 +71,8 @@ public class DataInitializer implements CommandLineRunner {
         restoreStudentAccount();
     }
 
-    private void restoreStudentAccount() {
+    @Transactional
+    public void restoreStudentAccount() {
         String targetEmail = "23521730@gm.uit.edu.vn";
         
         java.util.Optional<User> userOpt = userRepository.findByEmail(targetEmail);
@@ -111,8 +113,8 @@ public class DataInitializer implements CommandLineRunner {
                     // Cập nhật ví, cộng dồn token
                     final long finalTokens = addedTokens;
                     walletRepository.findByUserId(studentUser.getId()).ifPresentOrElse(wallet -> {
-                        wallet.setTokenBalance( finalTokens);
-                        wallet.setTotalRecharged(finalTokens);
+                        wallet.setTokenBalance(wallet.getTokenBalance() + finalTokens);
+                        wallet.setTotalRecharged(wallet.getTotalRecharged() + finalTokens);
                         walletRepository.save(wallet);
                         log.info("Cộng dồn {} token gói Student vào ví đã có của {}", finalTokens, targetEmail);
                     }, () -> {
