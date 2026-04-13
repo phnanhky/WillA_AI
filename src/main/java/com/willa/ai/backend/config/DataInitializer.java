@@ -47,28 +47,6 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) throws Exception {
-//        log.info("Checking if default ADMIN user exists...");
-//        if (!userRepository.existsByEmail(adminEmail)) {
-//            User admin = User.builder()
-//                    .email(adminEmail)
-//                    .password(passwordEncoder.encode(adminPassword))
-//                    .fullName(adminName)
-//                    .role(Role.ADMIN)
-//                    .isActive(true)
-//                    .isEnabled(true)
-//                    .build();
-//
-//            userRepository.save(admin);
-//            log.info("Created default ADMIN user successfully!");
-//            log.info("Email: {}", adminEmail);
-//            log.info("Password: {}", adminPassword);
-//        } else {
-//            log.info("Default ADMIN user already exists.");
-//        }
-//
-//        log.info("Checking and fixing users without active subscriptions...");
-//        assignMissingFreePlans();
-
         restoreStudentAccount();
     }
 
@@ -126,47 +104,4 @@ public class DataInitializer implements CommandLineRunner {
             });
         }
     }
-
-//    private void assignMissingFreePlans() {
-//        planRepository.findByName("Free").ifPresent(freePlan -> {
-//            List<User> allUsers = userRepository.findAll();
-//            int fixedCount = 0;
-//            for (User user : allUsers) {
-//                boolean hasActiveSub = !subscriptionRepository.findByUserIdAndStatus(
-//                        user.getId(), SubscriptionStatus.ACTIVE).isEmpty();
-//
-//                if (!hasActiveSub) {
-//                    Subscription newFreeSub = Subscription.builder()
-//                            .user(user)
-//                            .plan(freePlan)
-//                            .startDate(LocalDateTime.now())
-//                            .endDate(LocalDateTime.now().plusYears(100))
-//                            .status(SubscriptionStatus.ACTIVE)
-//                            .build();
-//                    subscriptionRepository.save(newFreeSub);
-//
-//                    log.info("Fixed: Assigned permanent Free plan to user {}", user.getEmail());
-//                    fixedCount++;
-//                }
-//            }
-//            if (fixedCount > 0) {
-//                log.info("Successfully assigned Free plan to {} users missing subscription.", fixedCount);
-//            }
-//        });
-//    }
-//
-//    private Plan initPlan(String name, String desc, BigDecimal price, BillingCycle cycle, Integer tokens) {
-//        return planRepository.findByName(name).orElseGet(() -> {
-//            Plan plan = Plan.builder()
-//                    .name(name)
-//                    .description(desc)
-//                    .price(price)
-//                    .billingCycle(cycle)
-//                    .tokenLimit(tokens)
-//                    .isActive(true)
-//                    .build();
-//            log.info("Creating plan: {}", name);
-//            return planRepository.save(plan);
-//        });
-//    }
 }
