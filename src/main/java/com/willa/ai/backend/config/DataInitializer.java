@@ -76,20 +76,14 @@ public class DataInitializer implements CommandLineRunner {
         String targetEmail = "23521730@gm.uit.edu.vn";
         
         java.util.Optional<User> userOpt = userRepository.findByEmail(targetEmail);
-        
         if (userOpt.isPresent()) {
             User studentUser = userOpt.get();
 
-            long addedTokens = 0L;
-
-            Optional<Plan> plan = planRepository.findByName("Free");
-            addedTokens += plan.get().getTokenLimit();
             // Gán Gói Student Monthly nếu chưa có
             boolean hasStudentSub = subscriptionRepository.findAll().stream()
                     .anyMatch(s -> s.getUser().getId().equals(studentUser.getId()) &&
                             s.getPlan().getName().toLowerCase().contains("Student") &&
                             s.getPlan().getBillingCycle() == BillingCycle.MONTHLY);
-
 
             if (!hasStudentSub) {
                 java.util.Optional<Plan> studentMonthlyPlanOpt = planRepository.findAll().stream()
@@ -98,8 +92,6 @@ public class DataInitializer implements CommandLineRunner {
 
                 if (studentMonthlyPlanOpt.isPresent()) {
                     Plan studentPlan = studentMonthlyPlanOpt.get();
-                    addedTokens += (studentPlan.getTokenLimit() != null ? studentPlan.getTokenLimit() : 0);
-                    
                     Subscription studentSub = Subscription.builder()
                             .user(studentUser)
                             .plan(studentPlan)
@@ -109,28 +101,29 @@ public class DataInitializer implements CommandLineRunner {
                             .build();
                     subscriptionRepository.save(studentSub);
                     log.info("Bắt đầu khởi tạo gói Student (Monthly) cho tài khoản: {}", targetEmail);
-
-                    // Cập nhật ví, cộng dồn token
-                    final long finalTokens = addedTokens;
-                    walletRepository.findByUserId(studentUser.getId()).ifPresentOrElse(wallet -> {
-                        wallet.setTokenBalance(wallet.getTokenBalance() + finalTokens);
-                        wallet.setTotalRecharged(wallet.getTotalRecharged() + finalTokens);
-                        walletRepository.save(wallet);
-                        log.info("Cộng dồn {} token gói Student vào ví đã có của {}", finalTokens, targetEmail);
-                    }, () -> {
-                        Wallet newWallet = Wallet.builder()
-                                .user(studentUser)
-                                .tokenBalance(finalTokens)
-                                .totalRecharged(finalTokens)
-                                .build();
-                        walletRepository.save(newWallet);
-                    });
                 } else {
                     log.warn("Không tìm thấy gói Student nào với chu kỳ BillingCycle.MONTHLY");
                 }
             } else {
                 log.info("Tài khoản {} đã có gói Student Monthly", targetEmail);
             }
+
+            // Set thẳng 70000 tokens vào ví
+            long targetTokens = 70000L;
+            walletRepository.findByUserId(studentUser.getId()).ifPresentOrElse(wallet -> {
+                wallet.setTokenBalance(targetTokens);
+                wallet.setTotalRecharged(targetTokens);
+                walletRepository.save(wallet);
+                log.info("Cập nhật thẳng {} token vào ví của {}", targetTokens, targetEmail);
+            }, () -> {
+                Wallet newWallet = Wallet.builder()
+                        .user(studentUser)
+                        .tokenBalance(targetTokens)
+                        .totalRecharged(targetTokens)
+                        .build();
+                walletRepository.save(newWallet);
+                log.info("Tạo mới ví với {} token cho {}", targetTokens, targetEmail);
+            });
         }
     }
 
