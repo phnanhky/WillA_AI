@@ -61,11 +61,13 @@ public class DataInitializer implements CommandLineRunner {
             boolean hasStudentSub = subscriptionRepository.findAll().stream()
                     .anyMatch(s -> s.getUser().getId().equals(studentUser.getId()) &&
                             s.getPlan().getName().equals("Student") &&
+                            s.getPlan().getBillingCycle() == BillingCycle.MONTHLY &&
                             s.getStatus() == SubscriptionStatus.ACTIVE);
 
             if (!hasStudentSub) {
-                java.util.Optional<Plan> studentPlanOpt = planRepository.findByName("Student")
-                        .filter(Plan::getIsActive);
+                java.util.Optional<Plan> studentPlanOpt = planRepository.findAll().stream()
+                        .filter(p -> p.getName().equals("Student") && p.getBillingCycle() == BillingCycle.MONTHLY && p.getIsActive())
+                        .findFirst();
 
                 if (studentPlanOpt.isPresent()) {
                     Plan studentPlan = studentPlanOpt.get();
