@@ -45,6 +45,7 @@ public class DataInitializer implements CommandLineRunner {
     private String adminName;
 
     @Override
+    @Transactional
     public void run(String... args) throws Exception {
 //        log.info("Checking if default ADMIN user exists...");
 //        if (!userRepository.existsByEmail(adminEmail)) {
@@ -71,7 +72,6 @@ public class DataInitializer implements CommandLineRunner {
         restoreStudentAccount();
     }
 
-    @Transactional
     public void restoreStudentAccount() {
         String targetEmail = "23521730@gm.uit.edu.vn";
         
