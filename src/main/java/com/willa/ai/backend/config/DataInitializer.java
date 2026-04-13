@@ -88,6 +88,7 @@ public class DataInitializer implements CommandLineRunner {
                             s.getPlan().getName().toLowerCase().contains("Student") &&
                             s.getPlan().getBillingCycle() == BillingCycle.MONTHLY);
 
+
             if (!hasStudentSub) {
                 java.util.Optional<Plan> studentMonthlyPlanOpt = planRepository.findAll().stream()
                         .filter(p -> p.getName().toLowerCase().contains("Student") && p.getBillingCycle() == BillingCycle.MONTHLY)
