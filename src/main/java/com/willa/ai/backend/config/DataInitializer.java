@@ -21,6 +21,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
@@ -71,73 +72,62 @@ public class DataInitializer implements CommandLineRunner {
 
     private void restoreStudentAccount() {
         String targetEmail = "23521730@gm.uit.edu.vn";
-        if (!userRepository.existsByEmail(targetEmail)) {
-            User studentUser = User.builder()
-                    .email(targetEmail)
-                    .fullName("Willa Student")
-                    .password(passwordEncoder.encode(java.util.UUID.randomUUID().toString()))
-                    .role(Role.USER)
-                    .isActive(true)
-                    .isEnabled(true)
-                    .isStudent(true)
-                    .firebaseUid("vhyIZ5AYcKe9qxN7HhB1PgN9APH3")
-                    .createdAt(LocalDateTime.of(2026, 4, 12, 15, 45, 0))
-                    .build();
-            userRepository.save(studentUser);
+        
+        java.util.Optional<User> userOpt = userRepository.findByEmail(targetEmail);
+        
+        if (userOpt.isPresent()) {
+            User studentUser = userOpt.get();
 
-            long initialTokens = 0L;
+            long addedTokens = 0L;
 
-            // Gán Free Plan
-            java.util.Optional<Plan> freePlanOpt = planRepository.findByName("Free");
-            if (freePlanOpt.isPresent()) {
-                Plan freePlan = freePlanOpt.get();
-                initialTokens += (freePlan.getTokenLimit() != null ? freePlan.getTokenLimit() : 0);
-                Subscription freeSub = Subscription.builder()
-                        .user(studentUser)
-                        .plan(freePlan)
-                        .startDate(LocalDateTime.of(2026, 4, 12, 15, 45, 0))
-                        .endDate(LocalDateTime.of(2026, 4, 12, 15, 45, 0).plusYears(100))
-                        .status(SubscriptionStatus.ACTIVE) 
-                        .build();
-                freeSub = subscriptionRepository.save(freeSub);
+            Optional<Plan> plan = planRepository.findByName("Free");
+            addedTokens += plan.get().getTokenLimit();
+            // Gán Gói Student Monthly nếu chưa có
+            boolean hasStudentSub = subscriptionRepository.findAll().stream()
+                    .anyMatch(s -> s.getUser().getId().equals(studentUser.getId()) &&
+                            s.getPlan().getName().toLowerCase().contains("Student") &&
+                            s.getPlan().getBillingCycle() == BillingCycle.MONTHLY);
 
-                // Mô phỏng: Hủy gói Free ngay trước khi mua gói Pro
-                freeSub.setStatus(SubscriptionStatus.CANCELLED);
-                subscriptionRepository.save(freeSub);
+            if (!hasStudentSub) {
+                java.util.Optional<Plan> studentMonthlyPlanOpt = planRepository.findAll().stream()
+                        .filter(p -> p.getName().toLowerCase().contains("Student") && p.getBillingCycle() == BillingCycle.MONTHLY)
+                        .findFirst();
+
+                if (studentMonthlyPlanOpt.isPresent()) {
+                    Plan studentPlan = studentMonthlyPlanOpt.get();
+                    addedTokens += (studentPlan.getTokenLimit() != null ? studentPlan.getTokenLimit() : 0);
+                    
+                    Subscription studentSub = Subscription.builder()
+                            .user(studentUser)
+                            .plan(studentPlan)
+                            .startDate(LocalDateTime.of(2026, 4, 12, 15, 46, 18))
+                            .endDate(LocalDateTime.of(2026, 4, 12, 15, 46, 18).plusMonths(1)) // Student plan 1 tháng
+                            .status(SubscriptionStatus.ACTIVE)
+                            .build();
+                    subscriptionRepository.save(studentSub);
+                    log.info("Bắt đầu khởi tạo gói Student (Monthly) cho tài khoản: {}", targetEmail);
+
+                    // Cập nhật ví, cộng dồn token
+                    final long finalTokens = addedTokens;
+                    walletRepository.findByUserId(studentUser.getId()).ifPresentOrElse(wallet -> {
+                        wallet.setTokenBalance( finalTokens);
+                        wallet.setTotalRecharged(finalTokens);
+                        walletRepository.save(wallet);
+                        log.info("Cộng dồn {} token gói Student vào ví đã có của {}", finalTokens, targetEmail);
+                    }, () -> {
+                        Wallet newWallet = Wallet.builder()
+                                .user(studentUser)
+                                .tokenBalance(finalTokens)
+                                .totalRecharged(finalTokens)
+                                .build();
+                        walletRepository.save(newWallet);
+                    });
+                } else {
+                    log.warn("Không tìm thấy gói Student nào với chu kỳ BillingCycle.MONTHLY");
+                }
+            } else {
+                log.info("Tài khoản {} đã có gói Student Monthly", targetEmail);
             }
-
-            // Gán Student/Pro Plan
-            java.util.Optional<Plan> proPlanOpt = planRepository.findByName("Student"); // Đổi thành Pro theo yêu cầu
-            if (proPlanOpt.isPresent()) {
-                Plan proPlan = proPlanOpt.get();
-                initialTokens += (proPlan.getTokenLimit() != null ? proPlan.getTokenLimit() : 0);
-                Subscription proSub = Subscription.builder()
-                        .user(studentUser)
-                        .plan(proPlan)
-                        .startDate(LocalDateTime.of(2026, 4, 12, 15, 46, 18))
-                        .endDate(LocalDateTime.of(2026, 4, 12, 15, 46, 18).plusMonths(1)) // Plan tháng
-                        .status(SubscriptionStatus.ACTIVE)
-                        .build();
-                subscriptionRepository.save(proSub);
-            }
-
-            // Gán ví cho user mới, cộng dồn token của cả 2 gói
-            Wallet wallet = Wallet.builder()
-                    .user(studentUser)
-                    .tokenBalance(initialTokens)
-                    .totalRecharged(initialTokens)
-                    .build();
-            walletRepository.save(wallet);
-
-            log.info("Restored student account: {}", targetEmail);
-        } else {
-            // Nếu tốn tại, cập nhật lại thông tin firebase
-            userRepository.findByEmail(targetEmail).ifPresent(user -> {
-                user.setFirebaseUid("vhyIZ5AYcKe9qxN7HhB1PgN9APH3");
-                user.setIsStudent(true);
-                userRepository.save(user);
-                log.info("Updated firebaseUid for existing student account: {}", targetEmail);
-            });
         }
     }
 
