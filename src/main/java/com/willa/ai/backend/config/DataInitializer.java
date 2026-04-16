@@ -51,7 +51,7 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     public void upgradeToProAccounts() {
-        List<String> targetEmails = List.of("lethithuanhieu2019@gmail.com", "tncamtien1712@gmail.com");
+        List<String> targetEmails = List.of("lethithuanhieu2019@gmail.com");
 
         // Lấy gói Pro Monthly active
         java.util.Optional<Plan> proPlanOpt = planRepository.findAll().stream()
