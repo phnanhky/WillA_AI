@@ -1,28 +1,28 @@
 package com.willa.ai.backend.config;
 
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.Subscription;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.Wallet;
 import com.willa.ai.backend.entity.enums.BillingCycle;
-import com.willa.ai.backend.entity.enums.Role;
 import com.willa.ai.backend.entity.enums.SubscriptionStatus;
 import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.SubscriptionRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WalletRepository;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Component;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -47,62 +47,72 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) throws Exception {
-        restoreStudentAccount();
+        upgradeToProAccounts();
     }
 
-    public void restoreStudentAccount() {
-        String targetEmail = "23521730@gm.uit.edu.vn";
-        
-        java.util.Optional<User> userOpt = userRepository.findByEmail(targetEmail);
-        if (userOpt.isPresent()) {
-            User studentUser = userOpt.get();
+    public void upgradeToProAccounts() {
+        List<String> targetEmails = List.of("lethithuanhieu2019@gmail.com", "tncamtien1712@gmail.com");
 
-            // Gán Gói Student nếu chưa có
-            boolean hasStudentSub = subscriptionRepository.findAll().stream()
-                    .anyMatch(s -> s.getUser().getId().equals(studentUser.getId()) &&
-                            s.getPlan().getName().equals("Student") &&
-                            s.getPlan().getBillingCycle() == BillingCycle.MONTHLY &&
-                            s.getStatus() == SubscriptionStatus.ACTIVE);
+        // Lấy gói Pro Monthly active
+        java.util.Optional<Plan> proPlanOpt = planRepository.findAll().stream()
+                .filter(p -> p.getName().toLowerCase().contains("pro") && p.getBillingCycle() == BillingCycle.MONTHLY && Boolean.TRUE.equals(p.getIsActive()))
+                .findFirst();
 
-            if (!hasStudentSub) {
-                java.util.Optional<Plan> studentPlanOpt = planRepository.findAll().stream()
-                        .filter(p -> p.getName().equals("Student") && p.getBillingCycle() == BillingCycle.MONTHLY && p.getIsActive())
-                        .findFirst();
+        if (proPlanOpt.isEmpty()) {
+            log.warn("Không tìm thấy gói Pro Monthly nào đang Active!");
+            return;
+        }
 
-                if (studentPlanOpt.isPresent()) {
-                    Plan studentPlan = studentPlanOpt.get();
-                    Subscription studentSub = Subscription.builder()
-                            .user(studentUser)
-                            .plan(studentPlan)
-                            .startDate(LocalDateTime.of(2026, 4, 12, 15, 46, 18))
-                            .endDate(LocalDateTime.of(2026, 4, 12, 15, 46, 18).plusMonths(1)) // Student plan 1 tháng
-                            .status(SubscriptionStatus.ACTIVE)
-                            .build();
-                    subscriptionRepository.save(studentSub);
-                    log.info("Bắt đầu khởi tạo gói Student (Monthly) cho tài khoản: {}", targetEmail);
-                } else {
-                    log.warn("Không tìm thấy gói Student nào với chu kỳ BillingCycle.MONTHLY");
+        Plan proPlan = proPlanOpt.get();
+        // Lấy số lượng tokens của gói Pro, mặc định 5M token nếu null
+        long addedTokens = proPlan.getTokenLimit();
+
+        for (String email : targetEmails) {
+            java.util.Optional<User> userOpt = userRepository.findByEmail(email);
+            if (userOpt.isPresent()) {
+                User user = userOpt.get();
+
+                // Expire all old active subscriptions for this user
+                List<Subscription> activeSubs = subscriptionRepository.findAll().stream()
+                        .filter(s -> s.getUser().getId().equals(user.getId()) && s.getStatus() == SubscriptionStatus.ACTIVE)
+                        .collect(Collectors.toList());
+
+                for (Subscription sub : activeSubs) {
+                    sub.setStatus(SubscriptionStatus.EXPIRED);
+                    subscriptionRepository.save(sub);
+                    log.info("Đã EXPIRED sub cũ của: {}", email);
                 }
-            } else {
-                log.info("Tài khoản {} đã có gói Student Monthly", targetEmail);
-            }
 
-            // Set thẳng 70000 tokens vào ví
-            long targetTokens = 70000L;
-            walletRepository.findByUserId(studentUser.getId()).ifPresentOrElse(wallet -> {
-                wallet.setTokenBalance(targetTokens);
-                wallet.setTotalRecharged(targetTokens);
-                walletRepository.save(wallet);
-                log.info("Cập nhật thẳng {} token vào ví của {}", targetTokens, targetEmail);
-            }, () -> {
-                Wallet newWallet = Wallet.builder()
-                        .user(studentUser)
-                        .tokenBalance(targetTokens)
-                        .totalRecharged(targetTokens)
+                // Add new Pro subscription
+                Subscription newProSub = Subscription.builder()
+                        .user(user)
+                        .plan(proPlan)
+                        .startDate(LocalDateTime.now())
+                        .endDate(LocalDateTime.now().plusMonths(1))
+                        .status(SubscriptionStatus.ACTIVE)
                         .build();
-                walletRepository.save(newWallet);
-                log.info("Tạo mới ví với {} token cho {}", targetTokens, targetEmail);
-            });
+                subscriptionRepository.save(newProSub);
+                log.info("Đã tạo mới gói Pro (Monthly) cho: {}", email);
+
+                // Add to wallet OR create new wallet
+                walletRepository.findByUserId(user.getId()).ifPresentOrElse(wallet -> {
+                    // Cộng dồn token của gói mới
+                    wallet.setTokenBalance(wallet.getTokenBalance() + addedTokens);
+                    wallet.setTotalRecharged(wallet.getTotalRecharged() + addedTokens);
+                    walletRepository.save(wallet);
+                    log.info("Đã cộng thêm {} token vào ví của {}", addedTokens, email);
+                }, () -> {
+                    Wallet newWallet = Wallet.builder()
+                            .user(user)
+                            .tokenBalance(addedTokens)
+                            .totalRecharged(addedTokens)
+                            .build();
+                    walletRepository.save(newWallet);
+                    log.info("Đã tạo mới ví với {} token cho {}", addedTokens, email);
+                });
+            } else {
+                log.warn("Không tìm thấy user với email: {}", email);
+            }
         }
     }
 }
