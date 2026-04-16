@@ -1,5 +1,6 @@
 package com.willa.ai.backend.entity;
 
+import com.willa.ai.backend.entity.enums.Gender;
 import com.willa.ai.backend.entity.enums.Role;
 import jakarta.persistence.*;
 import lombok.*;
@@ -37,6 +38,10 @@ public class User implements UserDetails {
 
     @Column(name = "phone_number")
     private String phoneNumber;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gender")
+    private Gender gender;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

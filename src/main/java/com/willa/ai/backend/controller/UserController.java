@@ -2,6 +2,7 @@ package com.willa.ai.backend.controller;
 
 import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.dto.response.UserResponse;
+import com.willa.ai.backend.entity.enums.Gender;
 import com.willa.ai.backend.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -112,9 +113,11 @@ public class UserController {
             @Parameter(description = "Full name (optional)")
             @RequestParam(required = false) String fullName,
             @Parameter(description = "Phone number (optional)")
-            @RequestParam(required = false) String phoneNumber) {
+            @RequestParam(required = false) String phoneNumber,
+            @Parameter(description = "Gender (optional)")
+            @RequestParam(required = false) Gender gender) {
         try {
-            UserResponse user = userService.updateUser(userId, fullName, phoneNumber);
+            UserResponse user = userService.updateUser(userId, fullName, phoneNumber, gender);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("User updated successfully")

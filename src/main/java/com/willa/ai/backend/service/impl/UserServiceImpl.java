@@ -73,7 +73,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public UserResponse updateUser(Long userId, String fullName, String phoneNumber) {
+    public UserResponse updateUser(Long userId, String fullName, String phoneNumber, com.willa.ai.backend.entity.enums.Gender gender) {
         try {
             log.info("Updating user: {}", userId);
             Optional<User> userOpt = userRepository.findById(userId);
@@ -84,6 +84,9 @@ public class UserServiceImpl implements UserService {
                 }
                 if (phoneNumber != null && !phoneNumber.isEmpty()) {
                     user.setPhoneNumber(phoneNumber);
+                }
+                if (gender != null) {
+                    user.setGender(gender);
                 }
                 User updatedUser = userRepository.save(user);
                 return convertToResponse(updatedUser);
@@ -182,6 +185,7 @@ public class UserServiceImpl implements UserService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .phoneNumber(user.getPhoneNumber())
+                .gender(user.getGender())
                 .role(user.getRole().name())
                 .isEnabled(user.getIsEnabled())
                 .isActive(user.getIsActive())

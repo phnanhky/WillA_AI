@@ -6,6 +6,7 @@ import com.willa.ai.backend.dto.request.*;
 import com.willa.ai.backend.dto.response.AuthResponse;
 import com.willa.ai.backend.dto.response.TokenResponse;
 import com.willa.ai.backend.entity.User;
+import com.willa.ai.backend.entity.enums.Gender;
 import com.willa.ai.backend.entity.enums.Role;
 import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.Subscription;
@@ -82,6 +83,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                     .email(request.getEmail())
                     .fullName(request.getFullName())
                     .phoneNumber(request.getPhoneNumber())
+                    .gender(request.getGender())
                     .password(passwordEncoder.encode(request.getPassword()))
                     .role(Role.USER)
                     .isEnabled(false)
@@ -247,6 +249,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .email(email)
                         .fullName(fullName != null ? fullName : email)
                         .firebaseUid(firebaseUid)
+                        .gender(com.willa.ai.backend.entity.enums.Gender.KHAC)
                         .password(passwordEncoder.encode(UUID.randomUUID().toString()))
                         .role(Role.USER)
                         .isEnabled(true)
@@ -339,6 +342,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .email(email)
                         .fullName(fullName)
                         .firebaseUid(fbId)
+                        .gender(Gender.KHAC)
                         .password(passwordEncoder.encode(UUID.randomUUID().toString()))
                         .isActive(true)
                         .role(Role.USER)

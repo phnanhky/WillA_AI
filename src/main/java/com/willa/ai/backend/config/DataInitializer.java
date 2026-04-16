@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.willa.ai.backend.entity.enums.Gender;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -47,72 +48,34 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) throws Exception {
-        upgradeToProAccounts();
+        updateGenderForUsers();
     }
 
-    public void upgradeToProAccounts() {
-        List<String> targetEmails = List.of("lethithuanhieu2019@gmail.com");
-
-        // Lấy gói Pro Monthly active
-        java.util.Optional<Plan> proPlanOpt = planRepository.findAll().stream()
-                .filter(p -> p.getName().toLowerCase().contains("pro") && p.getBillingCycle() == BillingCycle.MONTHLY && Boolean.TRUE.equals(p.getIsActive()))
-                .findFirst();
-
-        if (proPlanOpt.isEmpty()) {
-            log.warn("Không tìm thấy gói Pro Monthly nào đang Active!");
-            return;
-        }
-
-        Plan proPlan = proPlanOpt.get();
-        // Lấy số lượng tokens của gói Pro, mặc định 5M token nếu null
-        long addedTokens = proPlan.getTokenLimit();
-
-        for (String email : targetEmails) {
-            java.util.Optional<User> userOpt = userRepository.findByEmail(email);
-            if (userOpt.isPresent()) {
-                User user = userOpt.get();
-
-                // Expire all old active subscriptions for this user
-                List<Subscription> activeSubs = subscriptionRepository.findAll().stream()
-                        .filter(s -> s.getUser().getId().equals(user.getId()) && s.getStatus() == SubscriptionStatus.ACTIVE)
-                        .collect(Collectors.toList());
-
-                for (Subscription sub : activeSubs) {
-                    sub.setStatus(SubscriptionStatus.EXPIRED);
-                    subscriptionRepository.save(sub);
-                    log.info("Đã EXPIRED sub cũ của: {}", email);
-                }
-
-                // Add new Pro subscription
-                Subscription newProSub = Subscription.builder()
-                        .user(user)
-                        .plan(proPlan)
-                        .startDate(LocalDateTime.now())
-                        .endDate(LocalDateTime.now().plusMonths(1))
-                        .status(SubscriptionStatus.ACTIVE)
-                        .build();
-                subscriptionRepository.save(newProSub);
-                log.info("Đã tạo mới gói Pro (Monthly) cho: {}", email);
-
-                // Add to wallet OR create new wallet
-                walletRepository.findByUserId(user.getId()).ifPresentOrElse(wallet -> {
-                    // Cộng dồn token của gói mới
-                    wallet.setTokenBalance(wallet.getTokenBalance() + addedTokens);
-                    wallet.setTotalRecharged(wallet.getTotalRecharged() + addedTokens);
-                    walletRepository.save(wallet);
-                    log.info("Đã cộng thêm {} token vào ví của {}", addedTokens, email);
-                }, () -> {
-                    Wallet newWallet = Wallet.builder()
-                            .user(user)
-                            .tokenBalance(addedTokens)
-                            .totalRecharged(addedTokens)
-                            .build();
-                    walletRepository.save(newWallet);
-                    log.info("Đã tạo mới ví với {} token cho {}", addedTokens, email);
-                });
+    private void updateGenderForUsers() {
+        log.info("Starting gender data migration...");
+        List<User> allUsers = userRepository.findAll();
+        
+        // Parse list of male IDs
+        List<Long> maleIds = List.of(
+            5L, 4L, 10L, 11L, 13L, 2L, 16L, 19L, 18L, 6L, 20L, 1L, 26L, 33L, 23L, 35L, 45L, 39L, 41L, 42L, 44L, 50L,
+            51L, 55L, 57L, 58L, 230L, 60L, 61L, 63L, 66L, 67L, 68L, 69L, 71L, 76L, 78L, 80L, 82L, 84L, 86L, 89L, 90L,
+            100L, 91L, 92L, 93L, 101L, 98L, 96L, 102L, 103L, 104L, 106L, 110L, 111L, 118L, 113L, 115L, 246L, 119L,
+            122L, 124L, 125L, 135L, 127L, 128L, 129L, 130L, 131L, 3L, 117L, 247L, 132L, 133L, 138L, 139L, 140L, 141L,
+            142L, 143L, 149L, 144L, 152L, 153L, 150L, 136L, 155L, 156L, 157L, 158L, 160L, 161L, 162L, 24L, 163L, 164L,
+            165L, 168L, 169L, 171L, 174L, 176L, 178L, 181L, 182L, 183L, 37L, 185L, 179L, 187L, 188L, 193L, 195L, 196L,
+            199L, 200L, 202L, 203L, 206L, 208L, 17L, 210L, 211L, 212L, 213L, 216L, 217L, 220L, 218L, 219L, 223L, 224L,
+            215L, 14L, 236L, 241L, 242L, 126L, 237L, 233L, 109L, 226L, 239L, 244L, 43L, 229L, 235L
+        );
+        
+        for (User user : allUsers) {
+            if (maleIds.contains(user.getId())) {
+                user.setGender(Gender.NAM);
             } else {
-                log.warn("Không tìm thấy user với email: {}", email);
+                user.setGender(Gender.NU);
             }
         }
+        
+        userRepository.saveAll(allUsers);
+        log.info("Finished gender data migration. Updated {} users.", allUsers.size());
     }
 }
