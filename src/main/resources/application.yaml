@@ -36,6 +36,13 @@ spring:
           connectiontimeout: 5000
           timeout: 5000
           writetimeout: 5000
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+  cache:
+    type: redis
 server:
   port: ${SERVER_PORT:8080}
   servlet:
@@ -61,7 +68,7 @@ admin:
   default:
     email: ${ADMIN_EMAIL}
     password: ${ADMIN_PASSWORD}
-    name: ${ADMIN_NAME:System Admin}
+    name: ${ADMIN_NAME}
 
 springdoc:
   api-docs:
@@ -112,6 +119,11 @@ management:
     web:
       exposure:
         include: health,info
+  health:
+    redis:
+      enabled: false
+    mail:
+      enabled: false
 
 resilience4j:
   circuitbreaker:
@@ -152,3 +164,5 @@ spring:
     console:
       enabled: true
       path: /h2-console
+  cache:
+    type: none
