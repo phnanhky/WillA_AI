@@ -44,6 +44,7 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
+<<<<<<< Updated upstream
         log.info("Checking if default ADMIN user exists...");
         
         if (!userRepository.existsByEmail(adminEmail)) {
@@ -64,6 +65,8 @@ public class DataInitializer implements CommandLineRunner {
             log.info("Default ADMIN user already exists.");
         }
 
+=======
+>>>>>>> Stashed changes
     }
 
     private Plan initPlan(String name, String desc, BigDecimal price, BillingCycle cycle, Integer tokens) {

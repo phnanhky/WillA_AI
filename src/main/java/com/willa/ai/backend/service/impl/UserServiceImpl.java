@@ -73,7 +73,11 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+<<<<<<< Updated upstream
     public UserResponse updateUser(Long userId, String fullName, String phoneNumber) {
+=======
+    public UserResponse updateUser(Long userId, String fullName, String phoneNumber, com.willa.ai.backend.entity.enums.Gender gender, String occupation, java.time.LocalDate dob) {
+>>>>>>> Stashed changes
         try {
             log.info("Updating user: {}", userId);
             Optional<User> userOpt = userRepository.findById(userId);
@@ -85,6 +89,18 @@ public class UserServiceImpl implements UserService {
                 if (phoneNumber != null && !phoneNumber.isEmpty()) {
                     user.setPhoneNumber(phoneNumber);
                 }
+<<<<<<< Updated upstream
+=======
+                if (gender != null) {
+                    user.setGender(gender);
+                }
+                if (occupation != null) {
+                    user.setOccupation(occupation);
+                }
+                if (dob != null) {
+                    user.setDob(dob);
+                }
+>>>>>>> Stashed changes
                 User updatedUser = userRepository.save(user);
                 return convertToResponse(updatedUser);
             } else {
@@ -182,6 +198,12 @@ public class UserServiceImpl implements UserService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .phoneNumber(user.getPhoneNumber())
+<<<<<<< Updated upstream
+=======
+                .gender(user.getGender())
+                .occupation(user.getOccupation())
+                .dob(user.getDob())
+>>>>>>> Stashed changes
                 .role(user.getRole().name())
                 .isEnabled(user.getIsEnabled())
                 .isActive(user.getIsActive())

@@ -36,6 +36,19 @@ public class User implements UserDetails {
     private String phoneNumber;
 
     @Enumerated(EnumType.STRING)
+<<<<<<< Updated upstream
+=======
+    @Column(name = "gender")
+    private Gender gender;
+
+    @Column(name = "occupation")
+    private String occupation;
+
+    @Column(name = "dob")
+    private java.time.LocalDate dob;
+
+    @Enumerated(EnumType.STRING)
+>>>>>>> Stashed changes
     @Column(nullable = false)
     @Builder.Default
     private Role role = Role.USER;

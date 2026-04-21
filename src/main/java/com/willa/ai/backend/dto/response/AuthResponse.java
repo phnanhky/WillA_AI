@@ -15,6 +15,7 @@ public class AuthResponse {
     private String email;
     private String fullName;
     private String role;
+    private Boolean isNewUser;
     private String accessToken;
     private String refreshToken;
     private Long accessTokenExpiry;

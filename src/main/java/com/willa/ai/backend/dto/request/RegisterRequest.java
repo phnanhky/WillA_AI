@@ -27,4 +27,14 @@ public class RegisterRequest {
     private String confirmPassword;
 
     private String phoneNumber;
+<<<<<<< Updated upstream
+=======
+    
+    private String occupation;
+    
+    private java.time.LocalDate dob;
+
+    @NotNull(message = "Gender is required")
+    private Gender gender;
+>>>>>>> Stashed changes
 }

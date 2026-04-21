@@ -36,7 +36,8 @@ public class UserController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         try {
-            Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size);
+            org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
+                    page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
             Page<UserResponse> users = userService.getAllUsers(pageable);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
@@ -112,9 +113,21 @@ public class UserController {
             @Parameter(description = "Full name (optional)")
             @RequestParam(required = false) String fullName,
             @Parameter(description = "Phone number (optional)")
+<<<<<<< Updated upstream
             @RequestParam(required = false) String phoneNumber) {
         try {
             UserResponse user = userService.updateUser(userId, fullName, phoneNumber);
+=======
+            @RequestParam(required = false) String phoneNumber,
+            @Parameter(description = "Gender (optional)")
+            @RequestParam(required = false) Gender gender,
+            @Parameter(description = "Occupation (optional)")
+            @RequestParam(required = false) String occupation,
+            @Parameter(description = "Date of Birth (optional)")
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate dob) {
+        try {
+            UserResponse user = userService.updateUser(userId, fullName, phoneNumber, gender, occupation, dob);
+>>>>>>> Stashed changes
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("User updated successfully")

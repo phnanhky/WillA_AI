@@ -185,10 +185,11 @@ public class AuthenticationController {
     @GetMapping("/verify")
     public ResponseEntity<?> verify(@RequestParam String email, @RequestParam String token) {
         try {
-            authenticationService.verifyEmail(email, token);
+            AuthResponse response = authenticationService.verifyEmail(email, token);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Email verified successfully")
+                    .data(response)
                     .build());
         } catch (Exception e) {
             return ResponseEntity.badRequest()
