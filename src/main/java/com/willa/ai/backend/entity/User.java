@@ -43,6 +43,12 @@ public class User implements UserDetails {
     @Column(name = "gender")
     private Gender gender;
 
+    @Column(name = "occupation")
+    private String occupation;
+
+    @Column(name = "dob")
+    private java.time.LocalDate dob;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default

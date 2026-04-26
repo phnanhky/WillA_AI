@@ -100,14 +100,14 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
         return subscriptionRepository.findByUserId(user.getId(), pageable).map(this::mapToResponse);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<SubscriptionResponse> getAllSubscriptions(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
         return subscriptionRepository.findAll(pageable).map(this::mapToResponse);
     }
 

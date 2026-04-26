@@ -19,6 +19,8 @@ public class UserResponse {
     private String fullName;
     private String phoneNumber;
     private Gender gender;
+    private String occupation;
+    private java.time.LocalDate dob;
     private String role;
     private Boolean isEnabled;
     private Boolean isActive;

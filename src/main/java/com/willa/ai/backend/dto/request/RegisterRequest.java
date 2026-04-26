@@ -30,6 +30,10 @@ public class RegisterRequest {
 
     private String phoneNumber;
 
+    private String occupation;
+
+    private java.time.LocalDate dob;
+
     @NotNull(message = "Gender is required")
     private Gender gender;
 }

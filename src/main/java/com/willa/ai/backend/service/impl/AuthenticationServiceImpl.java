@@ -84,6 +84,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                     .fullName(request.getFullName())
                     .phoneNumber(request.getPhoneNumber())
                     .gender(request.getGender())
+                    .occupation(request.getOccupation())
+                    .dob(request.getDob())
                     .password(passwordEncoder.encode(request.getPassword()))
                     .role(Role.USER)
                     .isEnabled(false)
@@ -94,11 +96,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             user = userRepository.save(user);
             System.out.println("User saved: " + user.getId());
 
-            String accessToken = jwtTokenProvider.generateAccessToken(user.getEmail(), user.getId());
-            String refreshToken = jwtTokenProvider.generateRefreshToken(user.getEmail(), user.getId());
-
-            user.setRefreshToken(refreshToken);
-            userRepository.save(user);
+            // Vẫn chưa gen token ở bước này vì account isEnabled = false
 
             // Assign Free Plan and initialize Wallet
             Optional<Plan> defaultPlanOpt = planRepository.findByName("Free");
@@ -146,11 +144,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 System.out.println("Welcome email sending failed: " + emailEx.getMessage());
             }
 
+            // Không tạo access token / refresh token ở đây nữa để bắt người dùng phải Verify Email
+            // Return AuthResponse với userId và email nhưng accessToken/refreshToken là null
             return AuthResponse.builder()
                     .userId(user.getId())
                     .email(user.getEmail())
-                    .accessToken(accessToken)
-                    .refreshToken(refreshToken)
                     .build();
 
         } catch (Exception e) {
@@ -293,25 +291,24 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             userRepository.save(user);
 
             // Send welcome email for new users
-            if (isNewUser) {
-                try {
-                    emailService.sendWelcomeEmail(user.getEmail(), user.getFullName());
-                    System.out.println("Welcome email sent to: " + user.getEmail());
-                } catch (Exception emailEx) {
-                    System.out.println("Welcome email sending failed: " + emailEx.getMessage());
-                }
+        if (isNewUser) {
+            try {
+                emailService.sendWelcomeEmail(user.getEmail(), user.getFullName());
+                System.out.println("Welcome email sent to: " + user.getEmail());
+            } catch (Exception emailEx) {
+                System.out.println("Welcome email sending failed: " + emailEx.getMessage());
             }
+        }
 
-            return AuthResponse.builder()
-                    .userId(user.getId())
-                    .email(user.getEmail())
-                    .fullName(user.getFullName())
-                    .role(user.getRole() != null ? user.getRole().name() : null)
-                    .accessToken(accessToken)
-                    .refreshToken(refreshToken)
-                    .build();
-
-        } catch (FirebaseAuthException e) {
+        return AuthResponse.builder()
+                .userId(user.getId())
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .role(user.getRole() != null ? user.getRole().name() : null)
+                .isNewUser(isNewUser)
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .build();        } catch (FirebaseAuthException e) {
             throw new RuntimeException("Firebase authentication failed");
         } catch (Exception e) {
             throw new RuntimeException("Google login failed");
@@ -468,18 +465,37 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     }
 
     @Override
-    public void verifyEmail(String email, String token) {
+    public AuthResponse verifyEmail(String email, String token) {
         try {
             Optional<User> userOpt = userRepository.findByEmail(email);
             if (userOpt.isPresent()) {
                 User user = userOpt.get();
                 if (user.getVerificationToken() != null && user.getVerificationToken().equals(token)) {
                     user.setVerificationToken(null);
+                    user.setIsEnabled(true);
                     userRepository.save(user);
+
+                    String accessToken = jwtTokenProvider.generateAccessToken(user.getEmail(), user.getId());
+                    String refreshToken = jwtTokenProvider.generateRefreshToken(user.getEmail(), user.getId());
+                    user.setRefreshToken(refreshToken);
+                    userRepository.save(user);
+
+                    return AuthResponse.builder()
+                            .userId(user.getId())
+                            .email(user.getEmail())
+                            .fullName(user.getFullName())
+                            .role(user.getRole() != null ? user.getRole().name() : null)
+                            .accessToken(accessToken)
+                            .refreshToken(refreshToken)
+                            .build();
+                } else {
+                    throw new RuntimeException("Invalid token");
                 }
+            } else {
+                throw new RuntimeException("User not found");
             }
         } catch (Exception e) {
-            throw new RuntimeException("Email verification failed");
+            throw new RuntimeException("Email verification failed: " + e.getMessage());
         }
     }
 }

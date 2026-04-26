@@ -9,7 +9,7 @@ public interface UserService {
     Page<UserResponse> getAllUsers(Pageable pageable);
     UserResponse getUserById(Long userId);
     UserResponse getMyInfo(String email);
-    UserResponse updateUser(Long userId, String fullName, String phoneNumber, Gender gender);
+    UserResponse updateUser(Long userId, String fullName, String phoneNumber, Gender gender, String occupation, java.time.LocalDate dob);
     void activeUser(Long userId);
     void deactivateUser(Long userId);
     void requestStudentVerification(String eduEmail);

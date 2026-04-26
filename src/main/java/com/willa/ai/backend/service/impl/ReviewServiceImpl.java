@@ -58,14 +58,14 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     @Transactional(readOnly = true)
     public Page<ReviewResponse> getAllReviews(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
         return reviewRepository.findAll(pageable).map(this::mapToResponse);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<ReviewResponse> getReviewsByUser(Long userId, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
         return reviewRepository.findByUserId(userId, pageable).map(this::mapToResponse);
     }
 
