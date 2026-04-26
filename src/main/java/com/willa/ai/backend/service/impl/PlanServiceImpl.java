@@ -7,6 +7,9 @@ import com.willa.ai.backend.exception.ResourceNotFoundException;
 import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.service.PlanService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -23,6 +26,7 @@ public class PlanServiceImpl implements PlanService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "plans", allEntries = true)
     public PlanResponse createPlan(PlanRequest request) {
         BigDecimal base = request.getPrice();
         BigDecimal promo = calculatePromo(base, request.getDiscountPercentage());
@@ -43,6 +47,7 @@ public class PlanServiceImpl implements PlanService {
     }
 
     @Override
+    @Cacheable(value = "plan", key = "#id")
     public PlanResponse getPlanById(Long id) {
         Plan plan = planRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Plan not found with id: " + id));
@@ -65,6 +70,7 @@ public class PlanServiceImpl implements PlanService {
 
     @Override
     @Transactional
+    @CachePut(value = "plan", key = "#id")
     public PlanResponse updatePlan(Long id, PlanRequest request) {
         Plan plan = planRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Plan not found with id: " + id));
@@ -87,6 +93,7 @@ public class PlanServiceImpl implements PlanService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "plan", key = "#id")
     public void changePlanStatus(Long id, boolean isActive) {
         Plan plan = planRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Plan not found with id: " + id));

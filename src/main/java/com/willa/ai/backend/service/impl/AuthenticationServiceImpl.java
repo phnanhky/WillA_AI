@@ -6,6 +6,7 @@ import com.willa.ai.backend.dto.request.*;
 import com.willa.ai.backend.dto.response.AuthResponse;
 import com.willa.ai.backend.dto.response.TokenResponse;
 import com.willa.ai.backend.entity.User;
+import com.willa.ai.backend.entity.enums.Gender;
 import com.willa.ai.backend.entity.enums.Role;
 import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.Subscription;
@@ -23,10 +24,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.ResponseEntity;
 
 import java.util.Optional;
 import java.util.UUID;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Service
 @Transactional
@@ -79,12 +83,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                     .email(request.getEmail())
                     .fullName(request.getFullName())
                     .phoneNumber(request.getPhoneNumber())
-<<<<<<< Updated upstream
-=======
                     .gender(request.getGender())
                     .occupation(request.getOccupation())
                     .dob(request.getDob())
->>>>>>> Stashed changes
                     .password(passwordEncoder.encode(request.getPassword()))
                     .role(Role.USER)
                     .isEnabled(false)
@@ -105,7 +106,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .user(user)
                         .plan(freePlan)
                         .startDate(LocalDateTime.now())
-                        .endDate(LocalDateTime.now().plusMonths(1))
+                        .endDate(LocalDateTime.now().plusYears(100))
                         .status(SubscriptionStatus.ACTIVE)
                         .build();
                 subscriptionRepository.save(freeSub);
@@ -246,6 +247,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .email(email)
                         .fullName(fullName != null ? fullName : email)
                         .firebaseUid(firebaseUid)
+                        .gender(com.willa.ai.backend.entity.enums.Gender.KHAC)
                         .password(passwordEncoder.encode(UUID.randomUUID().toString()))
                         .role(Role.USER)
                         .isEnabled(true)
@@ -261,7 +263,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                             .user(user)
                             .plan(freePlan)
                             .startDate(LocalDateTime.now())
-                            .endDate(LocalDateTime.now().plusMonths(1))
+                            .endDate(LocalDateTime.now().plusYears(100))
                             .status(SubscriptionStatus.ACTIVE)
                             .build();
                     subscriptionRepository.save(freeSub);
@@ -310,6 +312,86 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             throw new RuntimeException("Firebase authentication failed");
         } catch (Exception e) {
             throw new RuntimeException("Google login failed");
+        }
+    }
+
+    @Override
+    public AuthResponse facebookLogin(FacebookLoginRequest request) {
+        try {
+            String fbGraphUrl = "https://graph.facebook.com/me?fields=id,name,email&access_token=" + request.getAccessToken();
+            RestTemplate restTemplate = new RestTemplate();
+            ResponseEntity<Map> response = restTemplate.getForEntity(fbGraphUrl, Map.class);
+            Map<String, Object> fbUser = response.getBody();
+
+            if (fbUser == null || !fbUser.containsKey("id")) {
+                throw new RuntimeException("Xác thực Facebook thất bại.");
+            }
+
+            String fbId = (String) fbUser.get("id");
+            String email = fbUser.containsKey("email") ? (String) fbUser.get("email") : fbId + "@facebook.com";
+            String fullName = fbUser.containsKey("name") ? (String) fbUser.get("name") : "Facebook User";
+
+            Optional<User> userOpt = userRepository.findByEmail(email);
+            User user;
+
+            if (userOpt.isEmpty()) {
+                user = User.builder()
+                        .email(email)
+                        .fullName(fullName)
+                        .firebaseUid(fbId)
+                        .gender(Gender.KHAC)
+                        .password(passwordEncoder.encode(UUID.randomUUID().toString()))
+                        .isActive(true)
+                        .role(Role.USER)
+                        .requiresReview(false)
+                        .isStudent(false)
+                        .build();
+                user = userRepository.save(user);
+
+                // Initialize standard user features
+                Plan freePlan = planRepository.findByName("Free")
+                        .orElseThrow(() -> new RuntimeException("Free plan not found"));
+
+                Wallet wallet = Wallet.builder()
+                        .user(user)
+                        .tokenBalance((long) freePlan.getTokenLimit())
+                        .build();
+                walletRepository.save(wallet);
+
+                Subscription subscription = Subscription.builder()
+                        .user(user)
+                        .plan(freePlan)
+                        .status(SubscriptionStatus.ACTIVE)
+                        .startDate(LocalDateTime.now())
+                        .endDate(LocalDateTime.now().plusYears(100))
+                        .build();
+                subscriptionRepository.save(subscription);
+            } else {
+                user = userOpt.get();
+                if (!user.getIsActive()) {
+                    throw new RuntimeException("Tài khoản đã bị khoá.");
+                }
+                // Update properties if needed
+                if (user.getFirebaseUid() == null || user.getFirebaseUid().isEmpty()) {
+                    user.setFirebaseUid(fbId);
+                    user = userRepository.save(user);
+                }
+            }
+
+            String jwtToken = jwtTokenProvider.generateAccessToken(user.getEmail(), user.getId());
+            String jwtRefreshToken = jwtTokenProvider.generateRefreshToken(user.getEmail(), user.getId());
+
+            return AuthResponse.builder()
+                    .userId(user.getId())
+                    .email(user.getEmail())
+                    .fullName(user.getFullName())
+                    .role(user.getRole() != null ? user.getRole().name() : null)
+                    .accessToken(jwtToken)
+                    .refreshToken(jwtRefreshToken)
+                    .build();
+
+        } catch (Exception e) {
+            throw new RuntimeException("Lỗi đăng nhập Facebook: " + e.getMessage());
         }
     }
 

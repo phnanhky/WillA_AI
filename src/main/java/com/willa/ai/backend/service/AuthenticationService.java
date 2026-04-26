@@ -9,6 +9,7 @@ public interface AuthenticationService {
     AuthResponse login(LoginRequest request);
     TokenResponse refreshToken(RefreshTokenRequest request);
     AuthResponse googleLogin(GoogleLoginRequest request);
+    AuthResponse facebookLogin(FacebookLoginRequest request);
     void logout(String token);
     void forgotPassword(ForgotPasswordRequest request);
     void resetPassword(ResetPasswordRequest request);

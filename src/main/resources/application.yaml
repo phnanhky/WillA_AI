@@ -36,6 +36,13 @@ spring:
           connectiontimeout: 5000
           timeout: 5000
           writetimeout: 5000
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+  cache:
+    type: redis
 server:
   port: ${SERVER_PORT:8080}
   servlet:
@@ -61,7 +68,7 @@ admin:
   default:
     email: ${ADMIN_EMAIL}
     password: ${ADMIN_PASSWORD}
-    name: ${ADMIN_NAME:System Admin}
+    name: ${ADMIN_NAME}
 
 springdoc:
   api-docs:
@@ -95,6 +102,10 @@ payos:
   return-url: ${PAYOS_RETURN_URL}
   cancel-url: ${PAYOS_CANCEL_URL}
 
+facebook:
+  app-id: ${FACEBOOK_APP_ID:}
+  app-secret: ${FACEBOOK_APP_SECRET:}
+
 cloudflare:
   r2:
     access-key: ${R2_ACCESS_KEY}
@@ -108,7 +119,28 @@ management:
     web:
       exposure:
         include: health,info
+  health:
+    redis:
+      enabled: false
+    mail:
+      enabled: false
 
+resilience4j:
+  circuitbreaker:
+    instances:
+      payosCircuitBreaker:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        permittedNumberOfCallsInHalfOpenState: 3
+        slidingWindowType: COUNT_BASED
+        minimumNumberOfCalls: 5
+        waitDurationInOpenState: 15s
+        failureRateThreshold: 50
+  retry:
+    instances:
+      payosRetry:
+        maxAttempts: 3
+        waitDuration: 2s
 ---
 spring:
   config:
@@ -132,3 +164,5 @@ spring:
     console:
       enabled: true
       path: /h2-console
+  cache:
+    type: none

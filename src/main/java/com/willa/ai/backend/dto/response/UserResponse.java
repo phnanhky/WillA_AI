@@ -1,5 +1,6 @@
 package com.willa.ai.backend.dto.response;
 
+import com.willa.ai.backend.entity.enums.Gender;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,12 +18,9 @@ public class UserResponse {
     private String email;
     private String fullName;
     private String phoneNumber;
-<<<<<<< Updated upstream
-=======
     private Gender gender;
     private String occupation;
     private java.time.LocalDate dob;
->>>>>>> Stashed changes
     private String role;
     private Boolean isEnabled;
     private Boolean isActive;

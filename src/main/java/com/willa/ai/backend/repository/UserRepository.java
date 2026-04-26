@@ -1,13 +1,13 @@
 package com.willa.ai.backend.repository;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import com.willa.ai.backend.entity.User;
-import java.time.LocalDateTime;
-import java.util.List;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {

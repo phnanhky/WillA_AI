@@ -1,7 +1,9 @@
 package com.willa.ai.backend.dto.request;
 
+import com.willa.ai.backend.entity.enums.Gender;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -27,8 +29,6 @@ public class RegisterRequest {
     private String confirmPassword;
 
     private String phoneNumber;
-<<<<<<< Updated upstream
-=======
     
     private String occupation;
     
@@ -36,5 +36,4 @@ public class RegisterRequest {
 
     @NotNull(message = "Gender is required")
     private Gender gender;
->>>>>>> Stashed changes
 }

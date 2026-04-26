@@ -10,6 +10,8 @@ import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.service.PaymentService;
 import com.willa.ai.backend.service.SubscriptionService;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,6 +70,8 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
+    @CircuitBreaker(name = "payosCircuitBreaker", fallbackMethod = "createPaymentLinkFallback")
+    @Retry(name = "payosRetry", fallbackMethod = "createPaymentLinkFallback")
     public CheckoutResponseData createPaymentLink(String userEmail, Long planId) {
         try {
             User user = userRepository.findByEmail(userEmail)
@@ -156,6 +160,11 @@ public class PaymentServiceImpl implements PaymentService {
         } catch (Exception e) {
             throw new RuntimeException(e.getMessage());
         }
+    }
+
+    public CheckoutResponseData createPaymentLinkFallback(String userEmail, Long planId, Throwable t) {
+        System.err.println("PayOS API encountered an error. Resilience4j fallback triggered: " + t.getMessage());
+        throw new RuntimeException("Cổng thanh toán PayOS đang gặp sự cố hoặc quá tải. Vui lòng thử lại sau.", t);
     }
 
     @Override

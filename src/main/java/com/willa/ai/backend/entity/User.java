@@ -1,5 +1,6 @@
 package com.willa.ai.backend.entity;
 
+import com.willa.ai.backend.entity.enums.Gender;
 import com.willa.ai.backend.entity.enums.Role;
 import jakarta.persistence.*;
 import lombok.*;
@@ -12,7 +13,10 @@ import java.util.Collection;
 import java.util.List;
 
 @Entity
-@Table(name = "users")
+@Table(name = "users", indexes = {
+        @Index(name = "idx_user_email", columnList = "email"),
+        @Index(name = "idx_user_firebase_uid", columnList = "firebase_uid")
+})
 @Data
 @Builder
 @NoArgsConstructor
@@ -36,8 +40,6 @@ public class User implements UserDetails {
     private String phoneNumber;
 
     @Enumerated(EnumType.STRING)
-<<<<<<< Updated upstream
-=======
     @Column(name = "gender")
     private Gender gender;
 
@@ -48,7 +50,6 @@ public class User implements UserDetails {
     private java.time.LocalDate dob;
 
     @Enumerated(EnumType.STRING)
->>>>>>> Stashed changes
     @Column(nullable = false)
     @Builder.Default
     private Role role = Role.USER;
