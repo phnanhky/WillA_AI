@@ -50,18 +50,12 @@ public class DataInitializer implements CommandLineRunner {
 
     private void cleanupSubscriptions() {
         log.info("Cleaning up subscriptions...");
-        List<Long> idsToDelete = List.of(418L, 281L, 279L, 277L, 275L, 272L, 273L, 276L, 278L, 280L, 282L);
+        List<Long> idsToDelete = List.of(419L);
         for (Long id : idsToDelete) {
             subscriptionRepository.findById(id).ifPresent(sub -> {
                 subscriptionRepository.delete(sub);
                 log.info("Deleted subscription ID: {}", id);
             });
         }
-
-        subscriptionRepository.findById(421L).ifPresent(sub -> {
-            sub.setStatus(SubscriptionStatus.ACTIVE);
-            subscriptionRepository.save(sub);
-            log.info("Set subscription ID 421 to ACTIVE.");
-        });
     }
 }
