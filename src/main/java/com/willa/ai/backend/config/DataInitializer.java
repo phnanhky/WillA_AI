@@ -48,66 +48,24 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) throws Exception {
-        upgradeSpecificUsers();
+        enableAllUsers();
     }
 
-    private void upgradeSpecificUsers() {
-        log.info("Starting subscription data migration for specific users...");
-        
-        upgradeUser("nguyennguyen17032004@gmail.com", "Pro", 0);
-        upgradeUser("nguyennxhhe189017@fpt.edu.vn", "Student", 0); // Bonus tokens on top
-        
-        log.info("Finished subscription data migration.");
-    }
-    
-    private void upgradeUser(String email, String planKeyword, int bonusTokens) {
-        userRepository.findByEmail(email).ifPresentOrElse(user -> {
-            log.info("Found user {}. Upgrading to {}...", email, planKeyword);
-            
-            // 1. Expire existing active subscriptions
-            List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE);
-            for (Subscription sub : activeSubs) {
-                sub.setStatus(SubscriptionStatus.EXPIRED);
+    private void enableAllUsers() {
+        log.info("Setting isEnabled = true for all users...");
+        List<User> allUsers = userRepository.findAll();
+        boolean updated = false;
+        for (User user : allUsers) {
+            if (user.getIsEnabled() == null || !user.getIsEnabled()) {
+                user.setIsEnabled(true);
+                updated = true;
             }
-            subscriptionRepository.saveAll(activeSubs);
-
-            // 2. Find target plan
-            Plan targetPlan = planRepository.findAll().stream()
-                    .filter(p -> p.getName().toLowerCase().contains(planKeyword.toLowerCase()))
-                    .findFirst()
-                    .orElse(null);
-
-            if (targetPlan != null) {
-                // 3. Create new subscription
-                Subscription newSub = Subscription.builder()
-                        .user(user)
-                        .plan(targetPlan)
-                        .status(SubscriptionStatus.ACTIVE)
-                        .startDate(LocalDateTime.now())
-                        .endDate(LocalDateTime.now().plusMonths(1))
-                        .build();
-                subscriptionRepository.save(newSub);
-                
-                // 4. Recharge Wallet
-                walletRepository.findByUserId(user.getId()).ifPresentOrElse(wallet -> {
-                    long addedTokens = targetPlan.getTokenLimit() + bonusTokens;
-                    wallet.setTokenBalance(wallet.getTokenBalance() + addedTokens);
-                    wallet.setTotalRecharged(wallet.getTotalRecharged() + addedTokens);
-                    walletRepository.save(wallet);
-                }, () -> {
-                    long initialTokens = targetPlan.getTokenLimit() + bonusTokens;
-                    Wallet newWallet = Wallet.builder()
-                            .user(user)
-                            .tokenBalance(initialTokens)
-                            .totalRecharged(initialTokens)
-                            .build();
-                    walletRepository.save(newWallet);
-                });
-                
-                log.info("Successfully upgraded {} to {} plan and updated wallet.", email, planKeyword);
-            } else {
-                log.warn("Plan containing keyword '{}' not found in database.", planKeyword);
-            }
-        }, () -> log.warn("User with email {} not found.", email));
+        }
+        if (updated) {
+            userRepository.saveAll(allUsers);
+            log.info("Finished updating all users to isEnabled = true.");
+        } else {
+            log.info("All users are already enabled.");
+        }
     }
 }
