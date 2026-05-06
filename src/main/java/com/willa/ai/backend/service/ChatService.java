@@ -24,4 +24,8 @@ public interface ChatService {
     
     // AI Chat Integration
     ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, List<MultipartFile> files);
+
+    // AI Inpaint Integration
+    Object prepareRegen(String email, Long sessionId, String errorIndices);
+    Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt);
 }

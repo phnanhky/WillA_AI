@@ -11,5 +11,6 @@ import java.util.Optional;
 @Repository
 public interface ChatSessionRepository extends JpaRepository<ChatSession, Long> {
     Page<ChatSession> findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(Long userId, Pageable pageable);
+    Page<ChatSession> findByUserIdAndIsActiveTrueAndCreatedAtAfterOrderByCreatedAtDesc(Long userId, java.time.LocalDateTime createdAt, Pageable pageable);
     Optional<ChatSession> findByIdAndUserIdAndIsActiveTrue(Long id, Long userId);
 }

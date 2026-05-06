@@ -83,6 +83,11 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         wallet.setTotalRecharged(wallet.getTotalRecharged() + plan.getTokenLimit());
         walletRepository.save(wallet);
 
+        if (!plan.getName().equalsIgnoreCase("Free")) {
+            user.setRequiresReview(false);
+            userRepository.save(user);
+        }
+
         return mapToResponse(savedSubscription);
     }
 

@@ -165,4 +165,61 @@ public class ChatController {
                     .build());
         }
     }
+
+    @PostMapping(value = "/sessions/{sessionId}/prepare-regen", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
+    @Operation(summary = "Chuẩn bị preview mask và prompt gợi ý (Inpaint)")
+    public ResponseEntity<ApiResponse> prepareRegen(
+            @PathVariable Long sessionId,
+            @Parameter(description = "Index lỗi VD: [0,2]") @RequestParam(value = "errorIndices", required = false) String errorIndices,
+            Authentication authentication) {
+        try {
+            if (authentication == null || authentication.getName() == null) {
+                return ResponseEntity.status(401).body(ApiResponse.builder()
+                        .status(false)
+                        .message("Unauthorized")
+                        .build());
+            }
+
+            Object response = chatService.prepareRegen(authentication.getName(), sessionId, errorIndices);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Prepared regen successfully")
+                    .data(response)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder()
+                    .status(false)
+                    .message(e.getMessage() != null ? e.getMessage() : "Error occurred while calling prepare-regen")
+                    .build());
+        }
+    }
+
+    @PostMapping(value = "/sessions/{sessionId}/regen-image", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
+    @Operation(summary = "Thực thi gen lại ảnh qua Grok (Inpaint)")
+    public ResponseEntity<ApiResponse> regenImage(
+            @PathVariable Long sessionId,
+            @Parameter(description = "Index lỗi VD: [0,2]") @RequestParam(value = "errorIndices", required = false) String errorIndices,
+            @Parameter(description = "Prompt đã chọn") @RequestParam(value = "finalPrompt", required = false) String finalPrompt,
+            Authentication authentication) {
+        try {
+            if (authentication == null || authentication.getName() == null) {
+                return ResponseEntity.status(401).body(ApiResponse.builder()
+                        .status(false)
+                        .message("Unauthorized")
+                        .build());
+            }
+
+            Object response = chatService.regenImage(authentication.getName(), sessionId, errorIndices, finalPrompt);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Regen image successfully")
+                    .data(response)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder()
+                    .status(false)
+                    .message(e.getMessage() != null ? e.getMessage() : "Error occurred while calling regen-image")
+                    .build());
+        }
+    }
 }

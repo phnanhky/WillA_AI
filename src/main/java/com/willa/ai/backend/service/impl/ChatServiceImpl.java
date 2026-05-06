@@ -79,11 +79,10 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public Page<ChatSessionResponse> getUserSessions(String email, int page, int size) {
         User user = getUserByEmail(email);
-//        if (Boolean.TRUE.equals(user.getRequiresReview())) {
-//            throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
-//        }
         Pageable pageable = PageRequest.of(page, size);
-        return chatSessionRepository.findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(user.getId(), pageable)
+        
+        java.time.LocalDateTime cutoff = getHistoryCutoffDate(user.getId());
+        return chatSessionRepository.findByUserIdAndIsActiveTrueAndCreatedAtAfterOrderByCreatedAtDesc(user.getId(), cutoff, pageable)
                 .map(this::mapToSessionResponse);
     }
 
@@ -151,10 +150,12 @@ public class ChatServiceImpl implements ChatService {
     @Transactional
     public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, List<MultipartFile> files) {
         User user = getUserByEmail(email);
+        
+        String planName = getPlanNameForUser(user.getId());
+        if (Boolean.TRUE.equals(user.getRequiresReview()) && planName.equalsIgnoreCase("Free")) {
+            throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
+        }
 
-//        if (Boolean.TRUE.equals(user.getRequiresReview())) {
-//            throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
-//        }
         Wallet wallet = walletRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new RuntimeException("Wallet not found"));
 
@@ -162,12 +163,6 @@ public class ChatServiceImpl implements ChatService {
             throw new RuntimeException("Số dư token của bạn đã hết. Vui lòng nạp thêm hoặc nâng cấp gói để tiếp tục.");
         }
         
-        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE);
-        String planName = "Free";
-        if (!activeSubs.isEmpty()) {
-            planName = activeSubs.get(0).getPlan().getName();
-        }
-
         if (files != null && files.size() > 1) {
             if (planName.equalsIgnoreCase("Student") || planName.equalsIgnoreCase("Free")) {
                 throw new RuntimeException("Gói " + planName + " chỉ cho phép gửi 1 ảnh mỗi lần phân tích. Vui lòng nâng cấp gói Pro để gửi nhiều ảnh cùng lúc.");
@@ -343,13 +338,38 @@ public class ChatServiceImpl implements ChatService {
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
     }
 
+    private String getPlanNameForUser(Long userId) {
+        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE);
+        if (!activeSubs.isEmpty()) {
+            return activeSubs.get(0).getPlan().getName();
+        }
+        return "Free";
+    }
+
+    private java.time.LocalDateTime getHistoryCutoffDate(Long userId) {
+        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE);
+        if (!activeSubs.isEmpty()) {
+            Subscription activeSub = activeSubs.get(0);
+            String planName = activeSub.getPlan().getName();
+            if (planName.equalsIgnoreCase("Student") || planName.equalsIgnoreCase("Free")) {
+                return java.time.LocalDateTime.now().minusDays(7);
+            } else {
+                return activeSub.getStartDate().minusDays(7);
+            }
+        }
+        return java.time.LocalDateTime.now().minusDays(7);
+    }
+
     private ChatSession getSessionEntity(String email, Long sessionId) {
         User user = getUserByEmail(email);
-//        if (Boolean.TRUE.equals(user.getRequiresReview())) {
-//            throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
-//        }
-        return chatSessionRepository.findByIdAndUserIdAndIsActiveTrue(sessionId, user.getId())
+        ChatSession session = chatSessionRepository.findByIdAndUserIdAndIsActiveTrue(sessionId, user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Chat Session not found or deleted"));
+
+        java.time.LocalDateTime cutoff = getHistoryCutoffDate(user.getId());
+        if (session.getCreatedAt().isBefore(cutoff)) {
+            throw new RuntimeException("Gói hiện tại của bạn không cho phép xem lịch sử chat trước thời điểm " + cutoff.toLocalDate().toString() + ".");
+        }
+        return session;
     }
 
     private ChatSessionResponse mapToSessionResponse(ChatSession session) {
@@ -384,5 +404,64 @@ public class ChatServiceImpl implements ChatService {
                 .tokensUsed(message.getTokensUsed())
                 .createdAt(message.getCreatedAt())
                 .build();
+    }
+
+    @Override
+    public Object prepareRegen(String email, Long sessionId, String errorIndices) {
+        User user = getUserByEmail(email);
+        ChatSession session = getSessionEntity(email, sessionId);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("session_id", sessionId.toString());
+        if (errorIndices != null) body.add("error_indices", errorIndices);
+
+        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+        String targetUrl = aiServerUrl.endsWith("/") ? aiServerUrl + "prepare-regen" : aiServerUrl + "/prepare-regen";
+        ResponseEntity<String> responseEntity = restTemplate.postForEntity(targetUrl, entity, String.class);
+
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readTree(responseEntity.getBody());
+        } catch (Exception e) {
+            return responseEntity.getBody();
+        }
+    }
+
+    @Override
+    public Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt) {
+        User user = getUserByEmail(email);
+        ChatSession session = getSessionEntity(email, sessionId);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("session_id", sessionId.toString());
+        if (errorIndices != null) body.add("error_indices", errorIndices);
+        if (finalPrompt != null) body.add("final_prompt", finalPrompt);
+
+        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+        String targetUrl = aiServerUrl.endsWith("/") ? aiServerUrl + "regen-image" : aiServerUrl + "/regen-image";
+        ResponseEntity<String> responseEntity = restTemplate.postForEntity(targetUrl, entity, String.class);
+
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode resultNode = mapper.readTree(responseEntity.getBody());
+            
+            // Log as AI response in DB if user generated it
+            // if we actually want to save regen results as messages
+            ChatMessage aiMessage = ChatMessage.builder()
+                .session(session)
+                .role(MessageRole.AI)
+                .content(resultNode.toString())
+                .tokensUsed(0) // grok tokens are not calculated yet on BE
+                .build();
+            chatMessageRepository.save(aiMessage);
+            
+            return resultNode;
+        } catch (Exception e) {
+            return responseEntity.getBody();
+        }
     }
 }
