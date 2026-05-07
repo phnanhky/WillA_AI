@@ -77,6 +77,7 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<ChatSessionResponse> getUserSessions(String email, int page, int size) {
         User user = getUserByEmail(email);
         Pageable pageable = PageRequest.of(page, size);
@@ -87,6 +88,7 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public ChatSessionResponse getSessionById(String email, Long sessionId) {
         ChatSession session = getSessionEntity(email, sessionId);
         return mapToSessionResponse(session);
@@ -131,6 +133,7 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<ChatMessageResponse> getSessionMessages(String email, Long sessionId, int page, int size) {
         ChatSession session = getSessionEntity(email, sessionId); 
         Pageable pageable = PageRequest.of(page, size);
@@ -139,6 +142,7 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<ChatMessageResponse> getAllSessionMessages(String email, Long sessionId) {
         ChatSession session = getSessionEntity(email, sessionId); 
         return chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(session.getId())
@@ -354,6 +358,9 @@ public class ChatServiceImpl implements ChatService {
             if (planName.equalsIgnoreCase("Student") || planName.equalsIgnoreCase("Free")) {
                 return java.time.LocalDateTime.now().minusDays(7);
             } else {
+                if (activeSub.getStartDate() == null) {
+                    return java.time.LocalDateTime.now().minusDays(7);
+                }
                 return activeSub.getStartDate().minusDays(7);
             }
         }
