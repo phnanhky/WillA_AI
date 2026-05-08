@@ -414,12 +414,13 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Object prepareRegen(String email, Long sessionId, String errorIndices) {
         User user = getUserByEmail(email);
         ChatSession session = getSessionEntity(email, sessionId);
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("session_id", sessionId.toString());
         if (errorIndices != null) body.add("error_indices", errorIndices);
@@ -437,12 +438,13 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
+    @Transactional
     public Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt) {
         User user = getUserByEmail(email);
         ChatSession session = getSessionEntity(email, sessionId);
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("session_id", sessionId.toString());
         if (errorIndices != null) body.add("error_indices", errorIndices);

@@ -166,7 +166,7 @@ public class ChatController {
         }
     }
 
-    @PostMapping(value = "/sessions/{sessionId}/prepare-regen", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
+    @PostMapping(value = "/sessions/{sessionId}/prepare-regen")
     @Operation(summary = "Chuẩn bị preview mask và prompt gợi ý (Inpaint)")
     public ResponseEntity<ApiResponse> prepareRegen(
             @PathVariable Long sessionId,
@@ -194,7 +194,7 @@ public class ChatController {
         }
     }
 
-    @PostMapping(value = "/sessions/{sessionId}/regen-image", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
+    @PostMapping(value = "/sessions/{sessionId}/regen-image")
     @Operation(summary = "Thực thi gen lại ảnh qua Grok (Inpaint)")
     public ResponseEntity<ApiResponse> regenImage(
             @PathVariable Long sessionId,
