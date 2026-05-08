@@ -168,7 +168,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
             User user = userOpt.get();
 
-            if (!user.getIsEnabled() || !user.getIsActive()) {
+            if (!user.getIsEnabled() && !user.getIsActive()) {
                 throw new RuntimeException("User account is disabled");
             }
 
