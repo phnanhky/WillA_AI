@@ -128,7 +128,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             }
 
             // Send verification email
-            String verificationLink = frontendUrl + "/verify-email?token=" + user.getVerificationToken();
+            String verificationLink = frontendUrl + "/verify-email?token=" + user.getVerificationToken() + "&email=" + java.net.URLEncoder.encode(user.getEmail(), java.nio.charset.StandardCharsets.UTF_8);
             try {
                 emailService.sendVerificationEmail(user.getEmail(), verificationLink);
                 System.out.println("Verification email sent to: " + user.getEmail());
@@ -168,8 +168,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
             User user = userOpt.get();
 
-            if (!user.getIsEnabled() && !user.getIsActive()) {
-                throw new RuntimeException("User account is disabled");
+            if (!user.getIsEnabled() || !user.getIsActive()) {
+                throw new RuntimeException("User account is not verified or has been disabled");
             }
 
             if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {

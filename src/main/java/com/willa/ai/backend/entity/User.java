@@ -130,7 +130,7 @@ public class User implements UserDetails {
 
     @Override
     public boolean isAccountNonLocked() {
-        return isEnabled || isActive;
+        return isEnabled != null && isEnabled && isActive != null && isActive;
     }
 
     @Override
@@ -140,6 +140,6 @@ public class User implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return isEnabled || isActive;
+        return isEnabled != null && isEnabled && isActive != null && isActive;
     }
 }

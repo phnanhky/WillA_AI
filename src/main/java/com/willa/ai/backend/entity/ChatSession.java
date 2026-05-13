@@ -31,6 +31,10 @@ public class ChatSession {
 
     private String title;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workspace_id")
+    private Workspace workspace;
+
     @Column(nullable = false)
     @Builder.Default
     private Boolean isActive = true;

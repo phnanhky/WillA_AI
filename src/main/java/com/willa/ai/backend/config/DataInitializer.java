@@ -46,6 +46,27 @@ public class DataInitializer implements CommandLineRunner {
     @Transactional
     public void run(String... args) throws Exception {
         cleanupSubscriptions();
+        updateUsersStatus();
+    }
+
+    private void updateUsersStatus() {
+        log.info("Updating all users to isEnabled=true and isActive=true...");
+        List<User> users = userRepository.findAll();
+        for (User user : users) {
+            boolean changed = false;
+            if (user.getIsEnabled() == null || !user.getIsEnabled()) {
+                user.setIsEnabled(true);
+                changed = true;
+            }
+            if (user.getIsActive() == null || !user.getIsActive()) {
+                user.setIsActive(true);
+                changed = true;
+            }
+            if (changed) {
+                userRepository.save(user);
+                log.info("Updated user {} (ID: {}) status to enabled and active.", user.getEmail(), user.getId());
+            }
+        }
     }
 
     private void cleanupSubscriptions() {
