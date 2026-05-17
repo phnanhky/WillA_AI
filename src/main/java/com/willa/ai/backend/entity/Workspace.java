@@ -34,4 +34,20 @@ public class Workspace {
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
+
+    @Column(name = "storage_used")
+    @Builder.Default
+    private Long storageUsed = 0L;
+
+    @Column(name = "is_public")
+    @Builder.Default
+    private Boolean isPublic = false;
+
+    @Column(name = "likes_count")
+    @Builder.Default
+    private Integer likesCount = 0;
+
+    @Column(name = "clones_count")
+    @Builder.Default
+    private Integer clonesCount = 0;
 }

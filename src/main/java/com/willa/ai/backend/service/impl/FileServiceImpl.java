@@ -8,6 +8,9 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
 import java.io.IOException;
 import java.util.UUID;
@@ -45,12 +48,27 @@ public class FileServiceImpl implements FileService {
 
             s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
 
-            // Return the public URL to access the file
-            return publicUrl.endsWith("/") ? publicUrl + uniqueFileName : publicUrl + "/" + uniqueFileName;
+            // Return our own proxy URL since R2 public URL is not set up
+            return "/api/files/download/" + uniqueFileName;
         } catch (IOException e) {
             throw new RuntimeException("Failed to read file input stream", e);
         } catch (Exception e) {
             throw new RuntimeException("Failed to upload file to Cloudflare R2", e);
+        }
+    }
+
+    @Override
+    public byte[] downloadFile(String fileName) {
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(fileName)
+                    .build();
+
+            ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
+            return objectBytes.asByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to download file from Cloudflare R2", e);
         }
     }
 }

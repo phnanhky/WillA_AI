@@ -1,16 +1,35 @@
 package com.willa.ai.backend.service.impl;
 
+import java.time.LocalDateTime;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
-import com.willa.ai.backend.dto.request.*;
+import com.willa.ai.backend.dto.request.FacebookLoginRequest;
+import com.willa.ai.backend.dto.request.ForgotPasswordRequest;
+import com.willa.ai.backend.dto.request.GoogleLoginRequest;
+import com.willa.ai.backend.dto.request.LoginRequest;
+import com.willa.ai.backend.dto.request.RefreshTokenRequest;
+import com.willa.ai.backend.dto.request.RegisterRequest;
+import com.willa.ai.backend.dto.request.ResetPasswordRequest;
 import com.willa.ai.backend.dto.response.AuthResponse;
 import com.willa.ai.backend.dto.response.TokenResponse;
-import com.willa.ai.backend.entity.User;
-import com.willa.ai.backend.entity.enums.Gender;
-import com.willa.ai.backend.entity.enums.Role;
 import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.Subscription;
+import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.Wallet;
+import com.willa.ai.backend.entity.enums.Gender;
+import com.willa.ai.backend.entity.enums.Role;
 import com.willa.ai.backend.entity.enums.SubscriptionStatus;
 import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.SubscriptionRepository;
@@ -19,18 +38,6 @@ import com.willa.ai.backend.repository.WalletRepository;
 import com.willa.ai.backend.security.JwtTokenProvider;
 import com.willa.ai.backend.service.AuthenticationService;
 import com.willa.ai.backend.service.EmailService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.http.ResponseEntity;
-
-import java.util.Optional;
-import java.util.UUID;
-import java.time.LocalDateTime;
-import java.util.Map;
 
 @Service
 @Transactional

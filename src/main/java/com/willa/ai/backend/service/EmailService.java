@@ -11,4 +11,6 @@ public interface EmailService {
     void sendPasswordResetEmail(String to, String resetLink);
 
     void sendWelcomeEmail(String to, String fullName);
+
+    void sendWorkspaceInviteEmail(String to, String workspaceName, String inviterName, String inviteLink, String role);
 }

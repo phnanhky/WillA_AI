@@ -70,6 +70,21 @@ public class EmailServiceImpl implements EmailService {
         sendHtmlEmail(to, subject, htmlContent);
     }
 
+    @Override
+    public void sendWorkspaceInviteEmail(String to, String workspaceName, String inviterName, String inviteLink, String role) {
+        String subject = "WillaAI - Lời mời tham gia workspace \"" + workspaceName + "\"";
+        String htmlContent = "<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;color:#333;'>"
+                + "<div style='max-width:560px;margin:0 auto;padding:24px;'>"
+                + "<h2>Bạn được mời vào workspace</h2>"
+                + "<p><strong>" + inviterName + "</strong> đã mời bạn tham gia workspace <strong>"
+                + workspaceName + "</strong> với quyền <strong>" + role + "</strong>.</p>"
+                + "<p><a href='" + inviteLink + "' style='display:inline-block;background:#8b3dff;color:#fff;"
+                + "padding:12px 20px;text-decoration:none;border-radius:6px;'>Chấp nhận lời mời</a></p>"
+                + "<p style='color:#666;font-size:13px;'>Hoặc copy link: " + inviteLink + "</p>"
+                + "</div></body></html>";
+        sendHtmlEmail(to, subject, htmlContent);
+    }
+
     private String buildVerificationEmailTemplate(String verificationLink) {
         return "<!DOCTYPE html>" +
                 "<html>" +

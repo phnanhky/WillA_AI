@@ -1,39 +1,53 @@
 package com.willa.ai.backend.controller;
 
-import io.swagger.v3.oas.annotations.Operation;
-
-import io.swagger.v3.oas.annotations.tags.Tag;
-
-import com.willa.ai.backend.dto.ApiResponse;
-import com.willa.ai.backend.service.FileService;
+import com.willa.ai.backend.service.impl.AdvancedFileParserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/files")
-@CrossOrigin("*")
-@Tag(name = "File Management", description = "APIs for File Management")
+@CrossOrigin(origins = "*")
 public class FileController {
 
     @Autowired
-    private FileService fileService;
+    private AdvancedFileParserService fileParserService;
+
+    @Autowired
+    private com.willa.ai.backend.service.FileService fileService;
 
     @PostMapping("/upload")
-    public ResponseEntity<ApiResponse<String>> uploadFile(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<?> uploadFile(@RequestParam("file") MultipartFile file) {
         try {
-            String fileUrl = fileService.uploadFile(file);
-            return ResponseEntity.ok(ApiResponse.<String>builder()
-                    .success(true)
-                    .message("File uploaded successfully")
-                    .data(fileUrl)
-                    .build());
+            String url = fileService.uploadFile(file);
+            return ResponseEntity.ok(Map.of("success", true, "data", url));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(ApiResponse.<String>builder()
-                    .success(false)
-                    .message(e.getMessage())
-                    .build());
+            return ResponseEntity.internalServerError().body(Map.of("success", false, "message", "Upload failed: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/download/{fileName}")
+    public ResponseEntity<byte[]> downloadFile(@PathVariable String fileName) {
+        try {
+            byte[] data = fileService.downloadFile(fileName);
+            return ResponseEntity.ok().body(data);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @PostMapping("/parse")
+    public ResponseEntity<?> parseFile(@RequestParam("file") MultipartFile file) {
+        try {
+            Map<String, Object> result = fileParserService.parseFile(file);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to parse file: " + e.getMessage()));
         }
     }
 }

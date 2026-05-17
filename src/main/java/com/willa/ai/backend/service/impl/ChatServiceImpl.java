@@ -1,22 +1,13 @@
 package com.willa.ai.backend.service.impl;
 
-import com.willa.ai.backend.dto.request.ChatMessageRequest;
-import com.willa.ai.backend.dto.request.ChatSessionRequest;
-import com.willa.ai.backend.dto.response.ChatMessageResponse;
-import com.willa.ai.backend.dto.response.ChatSessionResponse;
-import com.willa.ai.backend.entity.*;
-import com.willa.ai.backend.entity.enums.MessageRole;
-import com.willa.ai.backend.entity.enums.SubscriptionStatus;
-import com.willa.ai.backend.exception.ResourceNotFoundException;
-import com.willa.ai.backend.repository.*;
-import com.willa.ai.backend.service.ChatService;
-import com.willa.ai.backend.service.FileService;
-import com.willa.ai.backend.service.WalletService;
-import lombok.RequiredArgsConstructor;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.core.io.InputStreamResource;
-import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -29,17 +20,37 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.net.URI;
-import java.net.URL;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.web.multipart.MultipartFile;
+import com.willa.ai.backend.dto.request.ChatMessageRequest;
+import com.willa.ai.backend.dto.request.ChatSessionRequest;
+import com.willa.ai.backend.dto.response.ChatMessageResponse;
+import com.willa.ai.backend.dto.response.ChatSessionResponse;
+import com.willa.ai.backend.entity.AITokenUsage;
+import com.willa.ai.backend.entity.ChatMessage;
+import com.willa.ai.backend.entity.ChatSession;
+import com.willa.ai.backend.entity.Subscription;
+import com.willa.ai.backend.entity.User;
+import com.willa.ai.backend.entity.Wallet;
+import com.willa.ai.backend.entity.enums.MessageRole;
+import com.willa.ai.backend.entity.enums.SubscriptionStatus;
+import com.willa.ai.backend.exception.ResourceNotFoundException;
+import com.willa.ai.backend.repository.AITokenUsageRepository;
+import com.willa.ai.backend.repository.ChatMessageRepository;
+import com.willa.ai.backend.repository.ChatSessionRepository;
+import com.willa.ai.backend.repository.SubscriptionRepository;
+import com.willa.ai.backend.repository.UserRepository;
+import com.willa.ai.backend.repository.WalletRepository;
+import com.willa.ai.backend.service.ChatService;
+import com.willa.ai.backend.service.FileService;
+import com.willa.ai.backend.service.WalletService;
+
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
@@ -57,6 +68,21 @@ public class ChatServiceImpl implements ChatService {
 
     @Value("${ai.server.url}")
     private String aiServerUrl;
+
+    @Value("${ai.dashscope.api-key:}")
+    private String dashscopeApiKey;
+
+    @Value("${ai.xai.api-key:}")
+    private String xaiApiKey;
+
+    @Value("${ai.qwen.model:qwen3-vl-flash}")
+    private String qwenModel;
+
+    @Value("${ai.imgbb.api-key:}")
+    private String imgbbApiKey;
+
+    @Value("${ai.fal.key:}")
+    private String falKey;
 
     @Override
     @Transactional
@@ -150,6 +176,9 @@ public class ChatServiceImpl implements ChatService {
                 .collect(Collectors.toList());
     }
 
+    @Autowired
+    private AdvancedFileParserService advancedFileParserService;
+
     @Override
     @Transactional
     public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, List<MultipartFile> files) {
@@ -179,7 +208,24 @@ public class ChatServiceImpl implements ChatService {
         if (files != null && !files.isEmpty()) {
             for (MultipartFile file : files) {
                 if (file != null && !file.isEmpty()) {
-                    uploadedUrls.add(fileService.uploadFile(file));
+                    String fn = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
+                    if (fn.endsWith(".pdf") || fn.endsWith(".csv") || fn.endsWith(".psd")) {
+                        try {
+                            java.util.Map<String, Object> parseRest = advancedFileParserService.parseFile(file);
+                            // Caching the result string as 'content' inside the vision model payload, 
+                            // or uploading base64 data to get URL representations directly in the conversation.
+                            if ("pdf".equals(parseRest.get("type"))) {
+                                List<String> base64Images = (List<String>) parseRest.get("pages");
+                                uploadedUrls.addAll(base64Images); // Adding directly to the ImageUrls of chat message for vision processing
+                            } else if ("psd".equals(parseRest.get("type"))) {
+                                uploadedUrls.add((String) parseRest.get("image"));
+                            }
+                        } catch (Exception e) {
+                            throw new RuntimeException("Lỗi phân tích file đặc biệt: " + e.getMessage());
+                        }
+                    } else {
+                        uploadedUrls.add(fileService.uploadFile(file));
+                    }
                 }
             }
         }
@@ -453,7 +499,7 @@ public class ChatServiceImpl implements ChatService {
         HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
         String targetUrl = aiServerUrl.endsWith("/") ? aiServerUrl + "regen-image" : aiServerUrl + "/regen-image";
         ResponseEntity<String> responseEntity = restTemplate.postForEntity(targetUrl, entity, String.class);
-
+        
         try {
             ObjectMapper mapper = new ObjectMapper();
             JsonNode resultNode = mapper.readTree(responseEntity.getBody());
@@ -471,6 +517,91 @@ public class ChatServiceImpl implements ChatService {
             return resultNode;
         } catch (Exception e) {
             return responseEntity.getBody();
+        }
+    }
+
+    @Override
+    @Transactional
+    public Object suggestStyle(String email, MultipartFile file, String box2d, String suggestType) {
+        User user = getUserByEmail(email);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+
+        try {
+            ByteArrayResource fileResource = new ByteArrayResource(file.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return file.getOriginalFilename() != null ? file.getOriginalFilename() : "image.png";
+                }
+            };
+            body.add("file", fileResource);
+        } catch (Exception e) {
+            throw new RuntimeException("Lỗi đọc file: " + e.getMessage());
+        }
+
+        if (box2d != null) body.add("box_2d", box2d);
+        if (suggestType != null) body.add("suggest_type", suggestType);
+
+        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+        String targetUrl = aiServerUrl.endsWith("/") ? aiServerUrl + "api/suggest-style" : aiServerUrl + "/api/suggest-style";
+        
+        ResponseEntity<String> responseEntity = restTemplate.postForEntity(targetUrl, entity, String.class);
+        
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readTree(responseEntity.getBody());
+        } catch (Exception e) {
+            return responseEntity.getBody();
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Object extractLayers(String email, String imageBase64, String mimeType, int numLayers) {
+        getUserByEmail(email);
+
+        if (imageBase64 == null || imageBase64.isBlank()) {
+            throw new IllegalArgumentException("image_base64 is required");
+        }
+        if (falKey == null || falKey.isBlank()) {
+            throw new IllegalArgumentException("FAL_KEY chưa được cấu hình trên server. Thêm FAL_KEY vào file .env của backend.");
+        }
+
+        String normalizedBase64 = imageBase64.trim();
+        if (normalizedBase64.contains(",")) {
+            normalizedBase64 = normalizedBase64.substring(normalizedBase64.indexOf(',') + 1);
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> reqBody = new HashMap<>();
+        reqBody.put("image_base64", normalizedBase64);
+        reqBody.put("mime_type", mimeType != null && !mimeType.isBlank() ? mimeType : "image/png");
+        reqBody.put("api_key", falKey);
+        reqBody.put("num_layers", numLayers > 0 ? numLayers : 5);
+        reqBody.put("guidance_scale", 5.0);
+        reqBody.put("num_inference_steps", 30);
+
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(reqBody, headers);
+        String targetUrl = aiServerUrl.endsWith("/")
+                ? aiServerUrl + "extract-layers"
+                : aiServerUrl + "/extract-layers";
+
+        try {
+            ResponseEntity<String> responseEntity = restTemplate.postForEntity(targetUrl, entity, String.class);
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readTree(responseEntity.getBody());
+        } catch (HttpStatusCodeException e) {
+            String body = e.getResponseBodyAsString();
+            throw new RuntimeException(
+                    body != null && !body.isBlank() ? body : "AI server error: " + e.getStatusCode());
+        } catch (ResourceAccessException e) {
+            throw new RuntimeException("Không kết nối được AI server tại " + targetUrl + ": " + e.getMessage());
+        } catch (Exception e) {
+            throw new RuntimeException("Tách layer thất bại: " + e.getMessage());
         }
     }
 }

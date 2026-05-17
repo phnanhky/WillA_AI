@@ -63,6 +63,16 @@ app:
 ai:
   server:
     url: ${AI_SERVER_URL}
+  dashscope:
+    api-key: ${DASHSCOPE_API_KEY:}
+  qwen:
+    model: ${QWEN_MODEL:qwen3-vl-flash}
+  xai:
+    api-key: ${XAI_API_KEY:}
+  imgbb:
+    api-key: ${IMGBB_API_KEY:}
+  fal:
+    key: ${FAL_KEY:}
 
 admin:
   default:

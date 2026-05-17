@@ -1,25 +1,39 @@
 package com.willa.ai.backend.controller;
 
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.data.domain.Page;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
 import com.willa.ai.backend.dto.request.ChatMessageRequest;
 import com.willa.ai.backend.dto.request.ChatSessionRequest;
+import com.willa.ai.backend.dto.request.ExtractLayersRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.dto.response.ChatMessageResponse;
 import com.willa.ai.backend.dto.response.ChatSessionResponse;
 import com.willa.ai.backend.service.ChatService;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.http.MediaType;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/chats")
@@ -166,60 +180,45 @@ public class ChatController {
         }
     }
 
-    @PostMapping(value = "/sessions/{sessionId}/prepare-regen")
-    @Operation(summary = "Chuẩn bị preview mask và prompt gợi ý (Inpaint)")
-    public ResponseEntity<ApiResponse> prepareRegen(
-            @PathVariable Long sessionId,
-            @Parameter(description = "Index lỗi VD: [0,2]") @RequestParam(value = "errorIndices", required = false) String errorIndices,
-            Authentication authentication) {
-        try {
-            if (authentication == null || authentication.getName() == null) {
-                return ResponseEntity.status(401).body(ApiResponse.builder()
-                        .status(false)
-                        .message("Unauthorized")
-                        .build());
-            }
-
-            Object response = chatService.prepareRegen(authentication.getName(), sessionId, errorIndices);
-            return ResponseEntity.ok(ApiResponse.builder()
-                    .status(true)
-                    .message("Prepared regen successfully")
-                    .data(response)
-                    .build());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(ApiResponse.builder()
-                    .status(false)
-                    .message(e.getMessage() != null ? e.getMessage() : "Error occurred while calling prepare-regen")
-                    .build());
-        }
+    @PostMapping("/prepare-regen")
+    public ResponseEntity<?> prepareRegen(
+            Authentication authentication,
+            @RequestParam("sessionId") Long sessionId,
+            @RequestParam(value = "errorIndices", required = false) String errorIndices) {
+        return ResponseEntity.ok(chatService.prepareRegen(authentication.getName(), sessionId, errorIndices));
     }
 
-    @PostMapping(value = "/sessions/{sessionId}/regen-image")
-    @Operation(summary = "Thực thi gen lại ảnh qua Grok (Inpaint)")
-    public ResponseEntity<ApiResponse> regenImage(
-            @PathVariable Long sessionId,
-            @Parameter(description = "Index lỗi VD: [0,2]") @RequestParam(value = "errorIndices", required = false) String errorIndices,
-            @Parameter(description = "Prompt đã chọn") @RequestParam(value = "finalPrompt", required = false) String finalPrompt,
-            Authentication authentication) {
-        try {
-            if (authentication == null || authentication.getName() == null) {
-                return ResponseEntity.status(401).body(ApiResponse.builder()
-                        .status(false)
-                        .message("Unauthorized")
-                        .build());
-            }
+    @PostMapping("/regen-image")
+    public ResponseEntity<?> regenImage(
+            Authentication authentication,
+            @RequestParam("sessionId") Long sessionId,
+            @RequestParam(value = "errorIndices", required = false) String errorIndices,
+            @RequestParam(value = "finalPrompt", required = false) String finalPrompt) {
+        return ResponseEntity.ok(chatService.regenImage(authentication.getName(), sessionId, errorIndices, finalPrompt));
+    }
 
-            Object response = chatService.regenImage(authentication.getName(), sessionId, errorIndices, finalPrompt);
-            return ResponseEntity.ok(ApiResponse.builder()
-                    .status(true)
-                    .message("Regen image successfully")
-                    .data(response)
-                    .build());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(ApiResponse.builder()
-                    .status(false)
-                    .message(e.getMessage() != null ? e.getMessage() : "Error occurred while calling regen-image")
-                    .build());
-        }
+    @PostMapping(value = "/suggest-style", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> suggestStyle(
+            Authentication authentication,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "box_2d", defaultValue = "[]") String box2d,
+            @RequestParam(value = "suggest_type", defaultValue = "typo") String suggestType) {
+        return ResponseEntity.ok(chatService.suggestStyle(authentication.getName(), file, box2d, suggestType));
+    }
+
+    @PostMapping("/extract-layers")
+    public ResponseEntity<ApiResponse> extractLayers(
+            Authentication authentication,
+            @Valid @RequestBody ExtractLayersRequest request) {
+        Object result = chatService.extractLayers(
+                authentication.getName(),
+                request.getImageBase64(),
+                request.getMimeType(),
+                request.getNumLayers() != null ? request.getNumLayers() : 5);
+        return ResponseEntity.ok(ApiResponse.builder()
+                .status(true)
+                .message("Layers extracted successfully")
+                .data(result)
+                .build());
     }
 }
