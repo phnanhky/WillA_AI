@@ -24,8 +24,11 @@ public class FileServiceImpl implements FileService {
     @Value("${cloudflare.r2.bucket}")
     private String bucketName;
 
-    @Value("${cloudflare.r2.public-url}")
+    @Value("${cloudflare.r2.public-url:}")
     private String publicUrl;
+
+    @Value("${app.baseUrl:http://localhost:8080}")
+    private String appBaseUrl;
 
     @Override
     public String uploadFile(MultipartFile file) {
@@ -48,8 +51,13 @@ public class FileServiceImpl implements FileService {
 
             s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
 
-            // Return our own proxy URL since R2 public URL is not set up
-            return "/api/files/download/" + uniqueFileName;
+            if (publicUrl != null && !publicUrl.isBlank() && !publicUrl.contains("yoursite.com")) {
+                String base = publicUrl.endsWith("/") ? publicUrl.substring(0, publicUrl.length() - 1) : publicUrl;
+                return base + "/" + uniqueFileName;
+            }
+
+            String apiBase = appBaseUrl.endsWith("/") ? appBaseUrl.substring(0, appBaseUrl.length() - 1) : appBaseUrl;
+            return apiBase + "/api/files/download/" + uniqueFileName;
         } catch (IOException e) {
             throw new RuntimeException("Failed to read file input stream", e);
         } catch (Exception e) {

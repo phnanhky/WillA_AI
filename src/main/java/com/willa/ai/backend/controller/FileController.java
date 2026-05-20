@@ -33,7 +33,21 @@ public class FileController {
     public ResponseEntity<byte[]> downloadFile(@PathVariable String fileName) {
         try {
             byte[] data = fileService.downloadFile(fileName);
-            return ResponseEntity.ok().body(data);
+            String contentType = "application/octet-stream";
+            String lower = fileName.toLowerCase();
+            if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+                contentType = "image/jpeg";
+            } else if (lower.endsWith(".png")) {
+                contentType = "image/png";
+            } else if (lower.endsWith(".webp")) {
+                contentType = "image/webp";
+            } else if (lower.endsWith(".gif")) {
+                contentType = "image/gif";
+            }
+            return ResponseEntity.ok()
+                    .header("Content-Type", contentType)
+                    .header("Cache-Control", "public, max-age=31536000, immutable")
+                    .body(data);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }

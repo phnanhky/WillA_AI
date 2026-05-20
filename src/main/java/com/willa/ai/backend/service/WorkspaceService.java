@@ -14,12 +14,16 @@ import com.willa.ai.backend.dto.request.AddWorkspacePageRequest;
 import com.willa.ai.backend.dto.response.WorkspacePageResponse;
 import com.willa.ai.backend.dto.request.PageCommentRequest;
 import com.willa.ai.backend.dto.response.PageCommentResponse;
+import com.willa.ai.backend.dto.response.WorkspaceNoteMessageResponse;
 import java.util.List;
 import org.springframework.data.domain.Page;
 
 public interface WorkspaceService {
     WorkspaceResponse createWorkspace(String email, WorkspaceRequest request);
     WorkspaceResponse updateWorkspace(String email, Long workspaceId, WorkspaceRequest request);
+    WorkspaceResponse updateWorkspaceNotes(String email, Long workspaceId, String notes);
+    List<WorkspaceNoteMessageResponse> getWorkspaceNoteMessages(String email, Long workspaceId);
+    WorkspaceNoteMessageResponse addWorkspaceNoteMessage(String email, Long workspaceId, String content);
     void deleteWorkspace(String email, Long workspaceId);
     List<WorkspaceResponse> getUserWorkspaces(String email);
     InviteMemberResultResponse inviteMember(String email, Long workspaceId, InviteMemberRequest request);

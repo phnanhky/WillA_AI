@@ -1,6 +1,8 @@
 package com.willa.ai.backend.controller;
 
 import com.willa.ai.backend.dto.request.WorkspaceRequest;
+import com.willa.ai.backend.dto.request.WorkspaceNotesRequest;
+import com.willa.ai.backend.dto.request.WorkspaceNoteMessageRequest;
 import com.willa.ai.backend.dto.request.AddWorkspacePageRequest;
 import com.willa.ai.backend.dto.request.UpdatePageDesignRequest;
 import com.willa.ai.backend.dto.request.PageCommentRequest;
@@ -70,6 +72,57 @@ public class WorkspaceController {
                     .status(true)
                     .message("Workspace updated successfully")
                     .data(workspaceService.updateWorkspace(auth.getName(), workspaceId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/{workspaceId}/notes/messages")
+    @Operation(summary = "Danh sách ghi chú chat của workspace")
+    public ResponseEntity<ApiResponse> getWorkspaceNoteMessages(
+            Authentication auth,
+            @PathVariable Long workspaceId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Note messages retrieved")
+                    .data(workspaceService.getWorkspaceNoteMessages(auth.getName(), workspaceId))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/{workspaceId}/notes/messages")
+    @Operation(summary = "Gửi ghi chú chat vào workspace")
+    public ResponseEntity<ApiResponse> addWorkspaceNoteMessage(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @Valid @RequestBody WorkspaceNoteMessageRequest request) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Note message sent")
+                    .data(workspaceService.addWorkspaceNoteMessage(auth.getName(), workspaceId, request.getContent()))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PatchMapping("/{workspaceId}/notes")
+    @Operation(summary = "Cập nhật ghi chú workspace (legacy)")
+    public ResponseEntity<ApiResponse> updateWorkspaceNotes(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @RequestBody WorkspaceNotesRequest request) {
+        try {
+            String notes = request != null && request.getNotes() != null ? request.getNotes() : "";
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Notes updated successfully")
+                    .data(workspaceService.updateWorkspaceNotes(auth.getName(), workspaceId, notes))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

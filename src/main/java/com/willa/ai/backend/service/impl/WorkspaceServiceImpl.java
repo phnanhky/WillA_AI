@@ -30,7 +30,10 @@ import com.willa.ai.backend.dto.request.PageCommentRequest;
 import com.willa.ai.backend.dto.response.PageCommentResponse;
 import com.willa.ai.backend.dto.response.WorkspacePageResponse;
 import com.willa.ai.backend.entity.PageComment;
+import com.willa.ai.backend.entity.WorkspaceNoteMessage;
+import com.willa.ai.backend.dto.response.WorkspaceNoteMessageResponse;
 import com.willa.ai.backend.repository.PageCommentRepository;
+import com.willa.ai.backend.repository.WorkspaceNoteMessageRepository;
 import com.willa.ai.backend.repository.ChatSessionRepository;
 import com.willa.ai.backend.entity.ChatSession;
 import com.willa.ai.backend.entity.WorkspacePage;
@@ -60,6 +63,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     private final SubscriptionRepository subscriptionRepository;
     private final WorkspacePageRepository workspacePageRepository;
     private final PageCommentRepository pageCommentRepository;
+    private final WorkspaceNoteMessageRepository workspaceNoteMessageRepository;
     private final ChatSessionRepository chatSessionRepository;
     private final WorkspaceInviteRepository workspaceInviteRepository;
     private final EmailService emailService;
@@ -114,6 +118,75 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
     @Override
     @Transactional
+    public WorkspaceResponse updateWorkspaceNotes(String email, Long workspaceId, String notes) {
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
+        Workspace workspace = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new RuntimeException("Workspace not found"));
+
+        if (!workspace.getOwner().getId().equals(user.getId())) {
+            WorkspaceMember member = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, user.getId())
+                    .orElseThrow(() -> new RuntimeException("You are not a member of this workspace"));
+            if (member.getRole() == WorkspaceRole.VIEWER) {
+                throw new RuntimeException("Viewers cannot edit workspace notes");
+            }
+        }
+
+        workspace.setNotes(notes != null ? notes : "");
+        return mapToResponse(workspaceRepository.save(workspace));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkspaceNoteMessageResponse> getWorkspaceNoteMessages(String email, Long workspaceId) {
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
+        assertIsMember(user, workspaceId);
+        return workspaceNoteMessageRepository.findByWorkspaceIdOrderByCreatedAtAsc(workspaceId).stream()
+                .map(this::mapToNoteMessageResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public WorkspaceNoteMessageResponse addWorkspaceNoteMessage(String email, Long workspaceId, String content) {
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
+        Workspace workspace = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new RuntimeException("Workspace not found"));
+
+        if (!workspace.getOwner().getId().equals(user.getId())) {
+            WorkspaceMember member = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, user.getId())
+                    .orElseThrow(() -> new RuntimeException("You are not a member of this workspace"));
+            if (member.getRole() == WorkspaceRole.VIEWER) {
+                throw new RuntimeException("Viewers cannot post workspace notes");
+            }
+        }
+
+        String trimmed = content != null ? content.trim() : "";
+        if (trimmed.isEmpty()) {
+            throw new RuntimeException("Nội dung ghi chú không được để trống");
+        }
+
+        WorkspaceNoteMessage saved = workspaceNoteMessageRepository.save(WorkspaceNoteMessage.builder()
+                .workspace(workspace)
+                .user(user)
+                .content(trimmed)
+                .build());
+        return mapToNoteMessageResponse(saved);
+    }
+
+    private WorkspaceNoteMessageResponse mapToNoteMessageResponse(WorkspaceNoteMessage message) {
+        return WorkspaceNoteMessageResponse.builder()
+                .id(message.getId())
+                .workspaceId(message.getWorkspace().getId())
+                .userId(message.getUser().getId())
+                .userName(message.getUser().getFullName())
+                .userEmail(message.getUser().getEmail())
+                .content(message.getContent())
+                .createdAt(message.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    @Transactional
     public void deleteWorkspace(String email, Long workspaceId) {
         User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
         Workspace workspace = workspaceRepository.findById(workspaceId)
@@ -133,6 +206,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             pageCommentRepository.deleteByWorkspacePageId(page.getId());
         }
         workspacePageRepository.deleteByWorkspaceId(workspaceId);
+        workspaceNoteMessageRepository.deleteByWorkspaceId(workspaceId);
         workspaceMemberRepository.deleteByWorkspaceId(workspaceId);
         workspaceInviteRepository.deleteByWorkspaceId(workspaceId);
         workspaceRepository.delete(workspace);
@@ -410,6 +484,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             .id(workspace.getId())
             .name(workspace.getName())
             .description(workspace.getDescription())
+            .notes(workspace.getNotes())
             .ownerId(workspace.getOwner().getId())
             .ownerName(workspace.getOwner().getFullName())
             .createdAt(workspace.getCreatedAt())
@@ -507,11 +582,12 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         Workspace workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new RuntimeException("Workspace not found"));
 
-        WorkspaceMember member = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, user.getId())
-                .orElseThrow(() -> new RuntimeException("You are not a member of this workspace"));
-
-        if (member.getRole() == WorkspaceRole.VIEWER) {
-            throw new RuntimeException("Viewers cannot modify workspace pages");
+        if (!workspace.getOwner().getId().equals(user.getId())) {
+            WorkspaceMember member = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, user.getId())
+                    .orElseThrow(() -> new RuntimeException("You are not a member of this workspace"));
+            if (member.getRole() == WorkspaceRole.VIEWER) {
+                throw new RuntimeException("Viewers cannot modify workspace pages");
+            }
         }
 
         WorkspacePage page = workspacePageRepository.findById(pageId)

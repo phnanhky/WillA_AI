@@ -11,6 +11,7 @@ public class WorkspaceResponse {
     private Long id;
     private String name;
     private String description;
+    private String notes;
     private Long ownerId;
     private String ownerName;
     private LocalDateTime createdAt;

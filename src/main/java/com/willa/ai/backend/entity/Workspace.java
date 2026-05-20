@@ -25,6 +25,10 @@ public class Workspace {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    /** Ghi chú chung của dự án (collaboration) */
+    @Column(columnDefinition = "TEXT")
+    private String notes;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id", nullable = false)
     private User owner;
@@ -50,4 +54,11 @@ public class Workspace {
     @Column(name = "clones_count")
     @Builder.Default
     private Integer clonesCount = 0;
+
+    /** Ảnh tải lên trong sidebar "Hình ảnh của bạn" — riêng từng workspace */
+    @Column(name = "library_image_url", columnDefinition = "TEXT")
+    private String libraryImageUrl;
+
+    @Column(name = "library_file_size_bytes")
+    private Long libraryFileSizeBytes;
 }

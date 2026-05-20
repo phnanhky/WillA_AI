@@ -2,6 +2,7 @@ package com.willa.ai.backend.config;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -27,6 +28,10 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class DataInitializer implements CommandLineRunner {
 
+    private static final String PRO_PLAN_NAME = "Pro";
+    private static final String DEV_PRO_EMAIL = "phnanhky@gmail.com";
+    private static final long DEV_PRO_TOKEN_BALANCE = 1_000_000_000L;
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final PlanRepository planRepository;
@@ -47,6 +52,57 @@ public class DataInitializer implements CommandLineRunner {
     public void run(String... args) throws Exception {
         cleanupSubscriptions();
         updateUsersStatus();
+        upgradeUserToPro(DEV_PRO_EMAIL, DEV_PRO_TOKEN_BALANCE);
+    }
+
+    private void upgradeUserToPro(String email, long tokenBalance) {
+        String normalizedEmail = email.trim().toLowerCase();
+        Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);
+        if (userOpt.isEmpty()) {
+            log.warn("DataInit: user {} not found — register first, then restart backend.", normalizedEmail);
+            return;
+        }
+
+        User user = userOpt.get();
+        Plan proPlan = planRepository.findAll().stream()
+                .filter(p -> PRO_PLAN_NAME.equalsIgnoreCase(p.getName()))
+                .filter(p -> Boolean.TRUE.equals(p.getIsActive()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "DataInit: active plan '" + PRO_PLAN_NAME + "' not found in DB. Create the Pro plan first."));
+
+        subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE)
+                .forEach(sub -> {
+                    sub.setStatus(SubscriptionStatus.CANCELLED);
+                    subscriptionRepository.save(sub);
+                });
+
+        LocalDateTime now = LocalDateTime.now();
+        Subscription subscription = Subscription.builder()
+                .user(user)
+                .plan(proPlan)
+                .startDate(now)
+                .endDate(now.plusYears(100))
+                .status(SubscriptionStatus.ACTIVE)
+                .build();
+        subscriptionRepository.save(subscription);
+
+        Wallet wallet = walletRepository.findByUserId(user.getId())
+                .orElse(Wallet.builder()
+                        .user(user)
+                        .tokenBalance(0L)
+                        .totalRecharged(0L)
+                        .build());
+        wallet.setTokenBalance(tokenBalance);
+        wallet.setTotalRecharged(tokenBalance);
+        walletRepository.save(wallet);
+
+        user.setRequiresReview(false);
+        user.setIsEnabled(true);
+        user.setIsActive(true);
+        userRepository.save(user);
+
+        log.info("DataInit: {} upgraded to PRO with tokenBalance={}", normalizedEmail, tokenBalance);
     }
 
     private void updateUsersStatus() {
