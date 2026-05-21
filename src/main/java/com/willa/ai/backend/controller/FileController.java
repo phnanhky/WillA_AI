@@ -47,6 +47,7 @@ public class FileController {
             return ResponseEntity.ok()
                     .header("Content-Type", contentType)
                     .header("Cache-Control", "public, max-age=31536000, immutable")
+                    .header("Access-Control-Allow-Origin", "*")
                     .body(data);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();

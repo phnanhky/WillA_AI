@@ -24,9 +24,6 @@ public class FileServiceImpl implements FileService {
     @Value("${cloudflare.r2.bucket}")
     private String bucketName;
 
-    @Value("${cloudflare.r2.public-url:}")
-    private String publicUrl;
-
     @Value("${app.baseUrl:http://localhost:8080}")
     private String appBaseUrl;
 
@@ -51,11 +48,7 @@ public class FileServiceImpl implements FileService {
 
             s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
 
-            if (publicUrl != null && !publicUrl.isBlank() && !publicUrl.contains("yoursite.com")) {
-                String base = publicUrl.endsWith("/") ? publicUrl.substring(0, publicUrl.length() - 1) : publicUrl;
-                return base + "/" + uniqueFileName;
-            }
-
+            // Luôn trả URL qua API — tránh lưu link R2 public (r2.dev) gây CORS khi FE fetch/ tách layer
             String apiBase = appBaseUrl.endsWith("/") ? appBaseUrl.substring(0, appBaseUrl.length() - 1) : appBaseUrl;
             return apiBase + "/api/files/download/" + uniqueFileName;
         } catch (IOException e) {
