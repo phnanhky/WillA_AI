@@ -23,7 +23,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // Gateway kết nối ban đầu
+        // WebSocket STOMP thuần (khuyến nghị FE) — tránh CORS xhr /info của SockJS
+        registry.addEndpoint("/ws-stomp")
+                .setAllowedOriginPatterns("*");
+
+        // SockJS (legacy / fallback)
         registry.addEndpoint("/ws-design")
                 .setAllowedOriginPatterns("*")
                 .withSockJS();

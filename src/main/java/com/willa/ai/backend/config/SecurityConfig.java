@@ -60,7 +60,8 @@ public class SecurityConfig {
                                 "/swagger-ui.html",
                                 "/api/payment/webhook",
                                 "/actuator/**",
-                                "/ws-design/**"
+                                "/ws-design/**",
+                                "/ws-stomp/**"
                         ).permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
