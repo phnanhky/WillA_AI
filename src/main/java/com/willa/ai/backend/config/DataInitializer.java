@@ -2,12 +2,9 @@ package com.willa.ai.backend.config;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,40 +22,30 @@ import com.willa.ai.backend.repository.WalletRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Seed tối thiểu khi startup — không xóa subscription/user, không reset toàn DB.
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class DataInitializer implements CommandLineRunner {
 
     private static final String PRO_PLAN_NAME = "Pro";
-    private static final String DEV_PRO_EMAIL = "phnanhky@gmail.com";
-    private static final long DEV_PRO_TOKEN_BALANCE = 1_000_000_000L;
+    private static final String DEV_EMAIL = "phnanhky@gmail.com";
+    private static final long DEV_WALLET_TOKENS = 200_000L;
 
     private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
     private final PlanRepository planRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final WalletRepository walletRepository;
 
-    @Value("${admin.default.email}")
-    private String adminEmail;
-
-    @Value("${admin.default.password}")
-    private String adminPassword;
-
-    @Value("${admin.default.name}")
-    private String adminName;
-
     @Override
     @Transactional
-    public void run(String... args) throws Exception {
-        cleanupSubscriptions();
-        updateUsersStatus();
+    public void run(String... args) {
         ensureProPlanExists();
-        upgradeUserToPro(DEV_PRO_EMAIL, DEV_PRO_TOKEN_BALANCE);
+        topUpDevAccount(DEV_EMAIL, DEV_WALLET_TOKENS);
     }
 
-    /** Tạo gói Pro nếu DB mới (Docker volume trống) — tránh crash startup. */
     private Plan ensureProPlanExists() {
         Optional<Plan> existing = planRepository.findAll().stream()
                 .filter(p -> PRO_PLAN_NAME.equalsIgnoreCase(p.getName()))
@@ -80,32 +67,38 @@ public class DataInitializer implements CommandLineRunner {
         return saved;
     }
 
-    private void upgradeUserToPro(String email, long tokenBalance) {
-        String normalizedEmail = email.trim().toLowerCase();
-        Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);
+    /**
+     * Nạp token + đảm bảo có gói Pro active (chỉ tạo mới nếu chưa có sub ACTIVE).
+     * Không hủy subscription hiện có, không sửa user khác.
+     */
+    private void topUpDevAccount(String email, long tokenBalance) {
+        String normalized = email.trim().toLowerCase();
+        Optional<User> userOpt = userRepository.findByEmail(normalized);
         if (userOpt.isEmpty()) {
-            log.warn("DataInit: user {} not found — register first, then restart backend.", normalizedEmail);
+            log.warn("DataInit: user {} not found — register first, then restart backend.", normalized);
             return;
         }
 
         User user = userOpt.get();
         Plan proPlan = ensureProPlanExists();
 
-        subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE)
-                .forEach(sub -> {
-                    sub.setStatus(SubscriptionStatus.CANCELLED);
-                    subscriptionRepository.save(sub);
-                });
+        boolean hasActiveSub = subscriptionRepository
+                .findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE)
+                .stream()
+                .anyMatch(s -> s.getPlan() != null
+                        && PRO_PLAN_NAME.equalsIgnoreCase(s.getPlan().getName()));
 
-        LocalDateTime now = LocalDateTime.now();
-        Subscription subscription = Subscription.builder()
-                .user(user)
-                .plan(proPlan)
-                .startDate(now)
-                .endDate(now.plusYears(100))
-                .status(SubscriptionStatus.ACTIVE)
-                .build();
-        subscriptionRepository.save(subscription);
+        if (!hasActiveSub) {
+            LocalDateTime now = LocalDateTime.now();
+            subscriptionRepository.save(Subscription.builder()
+                    .user(user)
+                    .plan(proPlan)
+                    .startDate(now)
+                    .endDate(now.plusYears(100))
+                    .status(SubscriptionStatus.ACTIVE)
+                    .build());
+            log.info("DataInit: created ACTIVE Pro subscription for {}", normalized);
+        }
 
         Wallet wallet = walletRepository.findByUserId(user.getId())
                 .orElse(Wallet.builder()
@@ -113,46 +106,18 @@ public class DataInitializer implements CommandLineRunner {
                         .tokenBalance(0L)
                         .totalRecharged(0L)
                         .build());
+
         wallet.setTokenBalance(tokenBalance);
-        wallet.setTotalRecharged(tokenBalance);
+        if (wallet.getTotalRecharged() == null || wallet.getTotalRecharged() < tokenBalance) {
+            wallet.setTotalRecharged(tokenBalance);
+        }
         walletRepository.save(wallet);
 
-        user.setRequiresReview(false);
-        user.setIsEnabled(true);
-        user.setIsActive(true);
-        userRepository.save(user);
-
-        log.info("DataInit: {} upgraded to PRO with tokenBalance={}", normalizedEmail, tokenBalance);
-    }
-
-    private void updateUsersStatus() {
-        log.info("Updating all users to isEnabled=true and isActive=true...");
-        List<User> users = userRepository.findAll();
-        for (User user : users) {
-            boolean changed = false;
-            if (user.getIsEnabled() == null || !user.getIsEnabled()) {
-                user.setIsEnabled(true);
-                changed = true;
-            }
-            if (user.getIsActive() == null || !user.getIsActive()) {
-                user.setIsActive(true);
-                changed = true;
-            }
-            if (changed) {
-                userRepository.save(user);
-                log.info("Updated user {} (ID: {}) status to enabled and active.", user.getEmail(), user.getId());
-            }
+        if (Boolean.TRUE.equals(user.getRequiresReview())) {
+            user.setRequiresReview(false);
+            userRepository.save(user);
         }
-    }
 
-    private void cleanupSubscriptions() {
-        log.info("Cleaning up subscriptions...");
-        List<Long> idsToDelete = List.of(419L);
-        for (Long id : idsToDelete) {
-            subscriptionRepository.findById(id).ifPresent(sub -> {
-                subscriptionRepository.delete(sub);
-                log.info("Deleted subscription ID: {}", id);
-            });
-        }
+        log.info("DataInit: {} wallet tokenBalance={}", normalized, tokenBalance);
     }
 }
