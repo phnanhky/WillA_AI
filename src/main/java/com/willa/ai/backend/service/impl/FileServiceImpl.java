@@ -32,27 +32,40 @@ public class FileServiceImpl implements FileService {
         if (file.isEmpty()) {
             throw new IllegalArgumentException("Cannot upload empty file");
         }
+        try {
+            return uploadBytes(
+                    file.getBytes(),
+                    file.getOriginalFilename(),
+                    file.getContentType());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read file input stream", e);
+        }
+    }
 
-        String originalFilename = file.getOriginalFilename();
-        String extension = originalFilename != null && originalFilename.contains(".") 
-                ? originalFilename.substring(originalFilename.lastIndexOf(".")) 
+    @Override
+    public String uploadBytes(byte[] data, String originalFilename, String contentType) {
+        if (data == null || data.length == 0) {
+            throw new IllegalArgumentException("Cannot upload empty file");
+        }
+        String extension = originalFilename != null && originalFilename.contains(".")
+                ? originalFilename.substring(originalFilename.lastIndexOf("."))
                 : "";
         String uniqueFileName = UUID.randomUUID().toString() + extension;
+        String resolvedContentType = contentType != null && !contentType.isBlank()
+                ? contentType
+                : "application/octet-stream";
 
         try {
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(uniqueFileName)
-                    .contentType(file.getContentType())
+                    .contentType(resolvedContentType)
                     .build();
 
-            s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
+            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(data));
 
-            // Luôn trả URL qua API — tránh lưu link R2 public (r2.dev) gây CORS khi FE fetch/ tách layer
             String apiBase = appBaseUrl.endsWith("/") ? appBaseUrl.substring(0, appBaseUrl.length() - 1) : appBaseUrl;
             return apiBase + "/api/files/download/" + uniqueFileName;
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read file input stream", e);
         } catch (Exception e) {
             throw new RuntimeException("Failed to upload file to Cloudflare R2", e);
         }

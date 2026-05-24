@@ -38,6 +38,7 @@ public class DotenvEnvironmentPostProcessor implements EnvironmentPostProcessor 
                             .directory(envFile.getParent())
                             .filename(envFile.getName())
                             .ignoreIfMissing()
+                            .ignoreIfMalformed()
                             .load();
 
                     // Convert .env entries to Map for Spring PropertySource

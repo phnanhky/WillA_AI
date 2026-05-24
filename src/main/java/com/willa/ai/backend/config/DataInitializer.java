@@ -1,5 +1,6 @@
 package com.willa.ai.backend.config;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -14,6 +15,7 @@ import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.Subscription;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.Wallet;
+import com.willa.ai.backend.entity.enums.BillingCycle;
 import com.willa.ai.backend.entity.enums.SubscriptionStatus;
 import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.SubscriptionRepository;
@@ -52,7 +54,30 @@ public class DataInitializer implements CommandLineRunner {
     public void run(String... args) throws Exception {
         cleanupSubscriptions();
         updateUsersStatus();
+        ensureProPlanExists();
         upgradeUserToPro(DEV_PRO_EMAIL, DEV_PRO_TOKEN_BALANCE);
+    }
+
+    /** Tạo gói Pro nếu DB mới (Docker volume trống) — tránh crash startup. */
+    private Plan ensureProPlanExists() {
+        Optional<Plan> existing = planRepository.findAll().stream()
+                .filter(p -> PRO_PLAN_NAME.equalsIgnoreCase(p.getName()))
+                .filter(p -> Boolean.TRUE.equals(p.getIsActive()))
+                .findFirst();
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        Plan proPlan = Plan.builder()
+                .name(PRO_PLAN_NAME)
+                .description("Pro plan (auto-seeded)")
+                .price(BigDecimal.ZERO)
+                .billingCycle(BillingCycle.MONTHLY)
+                .tokenLimit(1_000_000)
+                .isActive(true)
+                .build();
+        Plan saved = planRepository.save(proPlan);
+        log.info("DataInit: created missing active plan '{}'", PRO_PLAN_NAME);
+        return saved;
     }
 
     private void upgradeUserToPro(String email, long tokenBalance) {
@@ -64,12 +89,7 @@ public class DataInitializer implements CommandLineRunner {
         }
 
         User user = userOpt.get();
-        Plan proPlan = planRepository.findAll().stream()
-                .filter(p -> PRO_PLAN_NAME.equalsIgnoreCase(p.getName()))
-                .filter(p -> Boolean.TRUE.equals(p.getIsActive()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                        "DataInit: active plan '" + PRO_PLAN_NAME + "' not found in DB. Create the Pro plan first."));
+        Plan proPlan = ensureProPlanExists();
 
         subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE)
                 .forEach(sub -> {

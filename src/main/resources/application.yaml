@@ -62,7 +62,15 @@ app:
 
 ai:
   server:
-    url: ${AI_SERVER_URL}
+    # qwenv3vagenAI FastAPI root (NOT /v1/chat/completions). Docker: http://ai-server:8000
+    url: ${AI_SERVER_URL:http://localhost:8000}
+    chat: /chat
+    prepare-regen: /prepare-regen
+    regen-image: /regen-image
+    suggest-style: /api/suggest-style
+    extract-layers: /extract-layers
+    chat-generate: /chat-generate
+    health: /health
   dashscope:
     api-key: ${DASHSCOPE_API_KEY:}
   qwen:

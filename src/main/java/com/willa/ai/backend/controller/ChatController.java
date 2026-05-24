@@ -155,6 +155,7 @@ public class ChatController {
             @Parameter(description = "Nội dung tin nhắn") @RequestParam(value = "content", required = false) String content,
             @Parameter(description = "Loại hành động (VD: zoom)") @RequestParam(value = "actionType", required = false) String actionType,
             @Parameter(description = "Index của lỗi nếu dùng zoom") @RequestParam(value = "errorIndex", required = false) Integer errorIndex,
+            @Parameter(description = "Tọa độ pixel [x1,y1,x2,y2] JSON — ưu tiên hơn errorIndex khi zoom") @RequestParam(value = "box2d", required = false) String box2d,
             @Parameter(description = "File ảnh upload lên") @RequestPart(value = "files", required = false) List<MultipartFile> files,
             Authentication authentication) {
 
@@ -166,7 +167,7 @@ public class ChatController {
                         .build());
             }
 
-            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, content, actionType, errorIndex, files);
+            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, content, actionType, errorIndex, box2d, files);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Message processed by AI")
@@ -181,29 +182,65 @@ public class ChatController {
     }
 
     @PostMapping("/prepare-regen")
-    public ResponseEntity<?> prepareRegen(
+    public ResponseEntity<ApiResponse> prepareRegen(
             Authentication authentication,
             @RequestParam("sessionId") Long sessionId,
             @RequestParam(value = "errorIndices", required = false) String errorIndices) {
-        return ResponseEntity.ok(chatService.prepareRegen(authentication.getName(), sessionId, errorIndices));
+        try {
+            Object result = chatService.prepareRegen(authentication.getName(), sessionId, errorIndices);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Prepare regen successful")
+                    .data(result)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder()
+                    .status(false)
+                    .message(e.getMessage() != null ? e.getMessage() : "Prepare regen failed")
+                    .build());
+        }
     }
 
     @PostMapping("/regen-image")
-    public ResponseEntity<?> regenImage(
+    public ResponseEntity<ApiResponse> regenImage(
             Authentication authentication,
             @RequestParam("sessionId") Long sessionId,
             @RequestParam(value = "errorIndices", required = false) String errorIndices,
             @RequestParam(value = "finalPrompt", required = false) String finalPrompt) {
-        return ResponseEntity.ok(chatService.regenImage(authentication.getName(), sessionId, errorIndices, finalPrompt));
+        try {
+            Object result = chatService.regenImage(authentication.getName(), sessionId, errorIndices, finalPrompt);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Regen image successful")
+                    .data(result)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder()
+                    .status(false)
+                    .message(e.getMessage() != null ? e.getMessage() : "Regen image failed")
+                    .build());
+        }
     }
 
     @PostMapping(value = "/suggest-style", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> suggestStyle(
+    public ResponseEntity<ApiResponse> suggestStyle(
             Authentication authentication,
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "box_2d", defaultValue = "[]") String box2d,
             @RequestParam(value = "suggest_type", defaultValue = "typo") String suggestType) {
-        return ResponseEntity.ok(chatService.suggestStyle(authentication.getName(), file, box2d, suggestType));
+        try {
+            Object result = chatService.suggestStyle(authentication.getName(), file, box2d, suggestType);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Suggest style successful")
+                    .data(result)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder()
+                    .status(false)
+                    .message(e.getMessage() != null ? e.getMessage() : "Suggest style failed")
+                    .build());
+        }
     }
 
     @PostMapping("/extract-layers")

@@ -24,7 +24,7 @@ public interface ChatService {
     List<ChatMessageResponse> getAllSessionMessages(String email, Long sessionId);
     
     // AI Chat Integration
-    ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, List<MultipartFile> files);
+    ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, List<MultipartFile> files);
 
     // AI Inpaint Integration
     Object prepareRegen(String email, Long sessionId, String errorIndices);
