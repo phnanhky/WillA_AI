@@ -38,6 +38,7 @@ import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.Wallet;
 import com.willa.ai.backend.entity.enums.MessageRole;
 import com.willa.ai.backend.entity.enums.SubscriptionStatus;
+import com.willa.ai.backend.entity.enums.WorkflowType;
 import com.willa.ai.backend.exception.ResourceNotFoundException;
 import com.willa.ai.backend.repository.AITokenUsageRepository;
 import com.willa.ai.backend.repository.ChatMessageRepository;
@@ -48,6 +49,7 @@ import com.willa.ai.backend.repository.WalletRepository;
 import com.willa.ai.backend.service.ChatService;
 import com.willa.ai.backend.service.FileService;
 import com.willa.ai.backend.service.WalletService;
+import com.willa.ai.backend.service.WorkflowUsageService;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -65,6 +67,7 @@ public class ChatServiceImpl implements ChatService {
     private final FileService fileService;
     private final AiServerClient aiServerClient;
     private final AITokenUsageRepository aiTokenUsageRepository;
+    private final WorkflowUsageService workflowUsageService;
     private final UploadSizeValidator uploadSizeValidator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -164,6 +167,12 @@ public class ChatServiceImpl implements ChatService {
     @Transactional
     public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, List<MultipartFile> files) {
         User user = getUserByEmail(email);
+        WorkflowType workflow = hasAnalyzableUpload(files) ? WorkflowType.ANALYZE : WorkflowType.CHAT;
+        return workflowUsageService.track(user, workflow, sessionId,
+                () -> doSendMessageToAi(user, email, sessionId, content, actionType, errorIndex, box2d, files));
+    }
+
+    private ChatMessageResponse doSendMessageToAi(User user, String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, List<MultipartFile> files) {
         String planName = getPlanNameForUser(user.getId());
         if (Boolean.TRUE.equals(user.getRequiresReview()) && planName.equalsIgnoreCase("Free")) {
             throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
@@ -350,39 +359,50 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional(readOnly = true)
     public Object prepareRegen(String email, Long sessionId, String errorIndices) {
-        getSessionEntity(email, sessionId);
-        MultiValueMap<String, Object> body = aiServerClient.sessionForm(sessionId.toString());
-        if (errorIndices != null) {
-            body.add("error_indices", errorIndices);
-        }
-        return aiServerClient.prepareRegen(body);
+        User user = getUserByEmail(email);
+        return workflowUsageService.track(user, WorkflowType.PREPARE_REGEN, sessionId, () -> {
+            getSessionEntity(email, sessionId);
+            MultiValueMap<String, Object> body = aiServerClient.sessionForm(sessionId.toString());
+            if (errorIndices != null) {
+                body.add("error_indices", errorIndices);
+            }
+            return aiServerClient.prepareRegen(body);
+        });
     }
 
     @Override
     @Transactional
     public Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt) {
-        ChatSession session = getSessionEntity(email, sessionId);
-        MultiValueMap<String, Object> body = aiServerClient.sessionForm(sessionId.toString());
-        if (errorIndices != null) {
-            body.add("error_indices", errorIndices);
-        }
-        if (finalPrompt != null) {
-            body.add("final_prompt", finalPrompt);
-        }
-        JsonNode resultNode = aiServerClient.regenImage(body);
-        chatMessageRepository.save(ChatMessage.builder()
-                .session(session)
-                .role(MessageRole.AI)
-                .content(resultNode.toString())
-                .tokensUsed(0)
-                .build());
-        return resultNode;
+        User user = getUserByEmail(email);
+        return workflowUsageService.track(user, WorkflowType.REGEN, sessionId, () -> {
+            ChatSession session = getSessionEntity(email, sessionId);
+            MultiValueMap<String, Object> body = aiServerClient.sessionForm(sessionId.toString());
+            if (errorIndices != null) {
+                body.add("error_indices", errorIndices);
+            }
+            if (finalPrompt != null) {
+                body.add("final_prompt", finalPrompt);
+            }
+            JsonNode resultNode = aiServerClient.regenImage(body);
+            chatMessageRepository.save(ChatMessage.builder()
+                    .session(session)
+                    .role(MessageRole.AI)
+                    .content(resultNode.toString())
+                    .tokensUsed(0)
+                    .build());
+            return resultNode;
+        });
     }
 
     @Override
     @Transactional
     public ChatMessageResponse generateImage(String email, Long sessionId, String prompt, List<MultipartFile> files) {
         User user = getUserByEmail(email);
+        return workflowUsageService.track(user, WorkflowType.GENERATE, sessionId,
+                () -> doGenerateImage(user, email, sessionId, prompt, files));
+    }
+
+    private ChatMessageResponse doGenerateImage(User user, String email, Long sessionId, String prompt, List<MultipartFile> files) {
         ChatSession session = getSessionEntity(email, sessionId);
         if (prompt == null || prompt.isBlank()) {
             throw new RuntimeException("Vui lòng nhập mô tả để tạo ảnh.");
@@ -570,38 +590,55 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional
     public Object suggestStyle(String email, MultipartFile file, String box2d, String suggestType) {
-        getUserByEmail(email);
-        uploadSizeValidator.validateImage(file);
-        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("file", AiServerClient.toFileResource(file));
-        body.add("box_2d", box2d != null ? box2d : "[]");
-        body.add("suggest_type", suggestType != null ? suggestType : "typo");
-        return aiServerClient.suggestStyle(body);
+        User user = getUserByEmail(email);
+        return workflowUsageService.track(user, WorkflowType.SUGGEST_STYLE, null, () -> {
+            uploadSizeValidator.validateImage(file);
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("file", AiServerClient.toFileResource(file));
+            body.add("box_2d", box2d != null ? box2d : "[]");
+            body.add("suggest_type", suggestType != null ? suggestType : "typo");
+            return aiServerClient.suggestStyle(body);
+        });
     }
 
     @Override
     @Transactional(readOnly = true)
     public Object extractLayers(String email, String imageBase64, String mimeType, int numLayers) {
-        getUserByEmail(email);
-        if (imageBase64 == null || imageBase64.isBlank()) {
-            throw new IllegalArgumentException("image_base64 is required");
+        User user = getUserByEmail(email);
+        return workflowUsageService.track(user, WorkflowType.EXTRACT_LAYERS, null, () -> {
+            if (imageBase64 == null || imageBase64.isBlank()) {
+                throw new IllegalArgumentException("image_base64 is required");
+            }
+            if (falKey == null || falKey.isBlank()) {
+                throw new IllegalArgumentException("FAL_KEY chưa được cấu hình trên server. Thêm FAL_KEY vào file .env của backend.");
+            }
+            String normalizedBase64 = imageBase64.trim();
+            if (normalizedBase64.contains(",")) {
+                normalizedBase64 = normalizedBase64.substring(normalizedBase64.indexOf(',') + 1);
+            }
+            Map<String, Object> reqBody = new HashMap<>();
+            reqBody.put("image_base64", normalizedBase64);
+            reqBody.put("mime_type", mimeType != null && !mimeType.isBlank() ? mimeType : "image/png");
+            reqBody.put("api_key", falKey);
+            reqBody.put("num_layers", numLayers > 0 ? numLayers : 5);
+            reqBody.put("guidance_scale", 5.0);
+            reqBody.put("num_inference_steps", 30);
+            reqBody.put("auto_detect", false);
+            return aiServerClient.extractLayers(reqBody);
+        });
+    }
+
+    private static boolean hasAnalyzableUpload(List<MultipartFile> files) {
+        if (files == null || files.isEmpty()) {
+            return false;
         }
-        if (falKey == null || falKey.isBlank()) {
-            throw new IllegalArgumentException("FAL_KEY chưa được cấu hình trên server. Thêm FAL_KEY vào file .env của backend.");
-        }
-        String normalizedBase64 = imageBase64.trim();
-        if (normalizedBase64.contains(",")) {
-            normalizedBase64 = normalizedBase64.substring(normalizedBase64.indexOf(',') + 1);
-        }
-        Map<String, Object> reqBody = new HashMap<>();
-        reqBody.put("image_base64", normalizedBase64);
-        reqBody.put("mime_type", mimeType != null && !mimeType.isBlank() ? mimeType : "image/png");
-        reqBody.put("api_key", falKey);
-        reqBody.put("num_layers", numLayers > 0 ? numLayers : 5);
-        reqBody.put("guidance_scale", 5.0);
-        reqBody.put("num_inference_steps", 30);
-        reqBody.put("auto_detect", false);
-        return aiServerClient.extractLayers(reqBody);
+        return files.stream().anyMatch(f -> {
+            if (f == null || f.isEmpty()) {
+                return false;
+            }
+            String fn = f.getOriginalFilename() != null ? f.getOriginalFilename().toLowerCase() : "";
+            return !fn.endsWith(".csv");
+        });
     }
 
     private User getUserByEmail(String email) {
