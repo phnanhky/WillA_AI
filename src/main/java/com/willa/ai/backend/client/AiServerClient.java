@@ -1,5 +1,7 @@
 package com.willa.ai.backend.client;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.core.io.ByteArrayResource;
@@ -48,6 +50,23 @@ public class AiServerClient {
 
     public JsonNode extractLayers(Map<String, Object> body) {
         return postJson(aiServer.extractLayersUrl(), body);
+    }
+
+    /** Text→image generation (Grok/xAI) via /chat-generate. Returns {text, image_url}. */
+    public JsonNode chatGenerate(List<Map<String, String>> messages) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("messages", messages);
+        return postJson(aiServer.chatGenerateUrl(), body);
+    }
+
+    /** Download raw bytes of an external image URL (e.g. xAI), null on failure. */
+    public byte[] downloadBytes(String url) {
+        try {
+            ResponseEntity<byte[]> response = restTemplate.getForEntity(url, byte[].class);
+            return response.getBody();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public JsonNode health() {

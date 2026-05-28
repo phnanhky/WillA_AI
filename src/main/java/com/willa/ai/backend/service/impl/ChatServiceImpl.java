@@ -2,6 +2,7 @@ package com.willa.ai.backend.service.impl;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -376,6 +377,194 @@ public class ChatServiceImpl implements ChatService {
                 .tokensUsed(0)
                 .build());
         return resultNode;
+    }
+
+    @Override
+    @Transactional
+    public ChatMessageResponse generateImage(String email, Long sessionId, String prompt, List<MultipartFile> files) {
+        User user = getUserByEmail(email);
+        ChatSession session = getSessionEntity(email, sessionId);
+        if (prompt == null || prompt.isBlank()) {
+            throw new RuntimeException("Vui lòng nhập mô tả để tạo ảnh.");
+        }
+
+        Wallet wallet = walletRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy ví của người dùng."));
+        if (wallet.getTokenBalance() <= 0) {
+            throw new RuntimeException("Insufficient token balance");
+        }
+
+        List<ImagePart> images = expandToImageParts(files);
+        if (!images.isEmpty()) {
+            return generateImageFromReference(email, user, session, sessionId, prompt, images, wallet);
+        }
+
+        Map<String, String> userMsg = new HashMap<>();
+        userMsg.put("role", "user");
+        userMsg.put("content", prompt);
+        List<Map<String, String>> messages = new ArrayList<>();
+        messages.add(userMsg);
+
+        JsonNode result = aiServerClient.chatGenerate(messages);
+        String rawReply = result.path("text").asText("");
+        String storedImageUrl = storeGeneratedImageFromUrl(
+                result.path("image_url").isNull() || result.path("image_url").isMissingNode()
+                        ? null
+                        : result.path("image_url").asText(null));
+        String replyText = normalizeGenerateReply(
+                rawReply, prompt, storedImageUrl != null && !storedImageUrl.isBlank());
+
+        chatMessageRepository.save(ChatMessage.builder()
+                .session(session)
+                .role(MessageRole.USER)
+                .content(prompt)
+                .tokensUsed(0)
+                .build());
+
+        ChatMessage saved = chatMessageRepository.save(ChatMessage.builder()
+                .session(session)
+                .role(MessageRole.AI)
+                .content(replyText)
+                .imageUrl(storedImageUrl)
+                .tokensUsed(0)
+                .build());
+        return mapToMessageResponse(saved);
+    }
+
+    /**
+     * Image→image: seed session on AI server via /chat upload, then /regen-image with empty
+     * error indices and the user's prompt (InpaintAgent — no AI server code changes).
+     */
+    private ChatMessageResponse generateImageFromReference(
+            String email,
+            User user,
+            ChatSession session,
+            Long sessionId,
+            String prompt,
+            List<ImagePart> images,
+            Wallet wallet) {
+        String planName = getPlanNameForUser(user.getId());
+        if (!planName.equalsIgnoreCase("Pro") && images.size() > 1) {
+            throw new RuntimeException("Gói " + planName
+                    + " chỉ hỗ trợ tạo lại từ 1 ảnh tham chiếu. Nâng cấp Pro để gửi nhiều ảnh.");
+        }
+
+        String sessionKey = sessionId.toString();
+        ImagePart reference = images.get(0);
+        String userImageUrl = uploadImagesToR2(List.of(reference));
+
+        try {
+            MultiValueMap<String, Object> seedBody = aiServerClient.chatForm(sessionKey, prompt, null, null, null);
+            seedBody.add("file", AiServerClient.toFileResource(reference.bytes(), reference.filename()));
+            JsonNode seedNode = aiServerClient.chat(seedBody);
+            deductTokensForAiCall(user, wallet, seedNode, "GENERATE_SEED");
+
+            MultiValueMap<String, Object> regenBody = aiServerClient.sessionForm(sessionKey);
+            regenBody.add("error_indices", "[]");
+            regenBody.add("final_prompt", prompt);
+            JsonNode regenNode = aiServerClient.regenImage(regenBody);
+
+            String dataUrl = regenNode.path("image_data_url").asText(null);
+            if (dataUrl == null || dataUrl.isBlank()) {
+                dataUrl = regenNode.path("image_b64").asText(null);
+            }
+            String storedImageUrl = storeGeneratedImageFromDataUrl(dataUrl);
+            if (storedImageUrl == null || storedImageUrl.isBlank()) {
+                throw new RuntimeException("WillaAI không trả về ảnh. Vui lòng thử lại.");
+            }
+            String replyText = buildGenerateSuccessReply(prompt);
+
+            chatMessageRepository.save(ChatMessage.builder()
+                    .session(session)
+                    .role(MessageRole.USER)
+                    .content(prompt)
+                    .imageUrl(userImageUrl)
+                    .tokensUsed(0)
+                    .build());
+
+            ChatMessage saved = chatMessageRepository.save(ChatMessage.builder()
+                    .session(session)
+                    .role(MessageRole.AI)
+                    .content(replyText)
+                    .imageUrl(storedImageUrl)
+                    .tokensUsed(0)
+                    .build());
+            return mapToMessageResponse(saved);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Không tạo lại được ảnh: " + e.getMessage(), e);
+        }
+    }
+
+    private String storeGeneratedImageFromUrl(String externalImageUrl) {
+        if (externalImageUrl == null || externalImageUrl.isBlank()) {
+            return null;
+        }
+        byte[] bytes = aiServerClient.downloadBytes(externalImageUrl);
+        if (bytes == null || bytes.length == 0) {
+            return externalImageUrl;
+        }
+        try {
+            return fileService.uploadBytes(
+                    bytes, "generated-" + System.currentTimeMillis() + ".png", "image/png");
+        } catch (Exception e) {
+            return externalImageUrl;
+        }
+    }
+
+    private String storeGeneratedImageFromDataUrl(String dataUrl) {
+        byte[] bytes = decodeDataUrl(dataUrl);
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        try {
+            return fileService.uploadBytes(
+                    bytes, "generated-" + System.currentTimeMillis() + ".png", "image/png");
+        } catch (Exception e) {
+            return dataUrl;
+        }
+    }
+
+    /** Reply for Generate tool — never use regen-image "fixed N errors" wording. */
+    private static String buildGenerateSuccessReply(String prompt) {
+        return "✅ Successfully generated using WillaAI.";
+    }
+
+    private static boolean isRegenFixReply(String reply) {
+        if (reply == null || reply.isBlank()) {
+            return false;
+        }
+        String lower = reply.toLowerCase();
+        return lower.contains("successfully fixed")
+                || lower.contains("error regions")
+                || lower.contains("improved design");
+    }
+
+    private static String normalizeGenerateReply(String rawReply, String prompt, boolean hasImage) {
+        if (hasImage || isRegenFixReply(rawReply)) {
+            return buildGenerateSuccessReply(prompt);
+        }
+        if (rawReply == null || rawReply.isBlank()) {
+            return buildGenerateSuccessReply(prompt);
+        }
+        return rawReply;
+    }
+
+    private static byte[] decodeDataUrl(String dataUrl) {
+        if (dataUrl == null || dataUrl.isBlank()) {
+            return null;
+        }
+        String base64 = dataUrl.trim();
+        int comma = base64.indexOf(',');
+        if (comma >= 0) {
+            base64 = base64.substring(comma + 1);
+        }
+        try {
+            return Base64.getDecoder().decode(base64);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     @Override
