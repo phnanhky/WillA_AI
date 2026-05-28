@@ -3,6 +3,8 @@ package com.willa.ai.backend.service.impl;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
+import com.willa.ai.backend.util.UploadSizeValidator;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -15,9 +17,13 @@ import java.util.*;
 import java.util.Base64;
 
 @Service
+@RequiredArgsConstructor
 public class AdvancedFileParserService {
 
+    private final UploadSizeValidator uploadSizeValidator;
+
     public Map<String, Object> parseFile(MultipartFile file) throws Exception {
+        uploadSizeValidator.validateByType(file.getSize(), file.getOriginalFilename());
         String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
         Map<String, Object> result = new HashMap<>();
 
@@ -39,18 +45,36 @@ public class AdvancedFileParserService {
 
     private List<String> parsePdf(MultipartFile file) throws Exception {
         List<String> base64Images = new ArrayList<>();
+        for (byte[] bytes : renderPdfToPngBytes(file)) {
+            base64Images.add("data:image/png;base64," + Base64.getEncoder().encodeToString(bytes));
+        }
+        return base64Images;
+    }
+
+    /** Render mỗi trang PDF thành ảnh PNG (bytes) để gửi cho AI đọc. */
+    public List<byte[]> renderPdfToPngBytes(MultipartFile file) throws Exception {
+        List<byte[]> pages = new ArrayList<>();
         try (PDDocument document = Loader.loadPDF(file.getBytes())) {
             PDFRenderer pdfRenderer = new PDFRenderer(document);
             for (int page = 0; page < document.getNumberOfPages(); ++page) {
                 BufferedImage bim = pdfRenderer.renderImageWithDPI(page, 150);
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 ImageIO.write(bim, "png", baos);
-                byte[] bytes = baos.toByteArray();
-                String base64Image = "data:image/png;base64," + Base64.getEncoder().encodeToString(bytes);
-                base64Images.add(base64Image);
+                pages.add(baos.toByteArray());
             }
         }
-        return base64Images;
+        return pages;
+    }
+
+    /** Render PSD thành ảnh PNG (bytes). */
+    public byte[] renderPsdToPngBytes(MultipartFile file) throws Exception {
+        BufferedImage image = ImageIO.read(file.getInputStream());
+        if (image == null) {
+            throw new IllegalArgumentException("Could not parse PSD file.");
+        }
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", baos);
+        return baos.toByteArray();
     }
 
     private List<List<String>> parseCsv(MultipartFile file) throws Exception {

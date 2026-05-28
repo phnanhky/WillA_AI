@@ -114,12 +114,33 @@ public final class AiAnalysisEnricher {
             issue = stripBoxTags(issue);
             suggestion = stripBoxTags(suggestion);
             String display = !reason.isEmpty() ? reason : (!issue.isEmpty() ? issue : suggestion);
-            if (display.isEmpty() || boxes.isEmpty()) {
+            if (display.isEmpty()) {
                 continue;
             }
 
             String severity = normalizeSeverity(err.path("s").asText("minor"));
             String category = normalizeCategory(err.path("g").asText("general"));
+
+            // Qwen đôi khi không trả tọa độ box -> vẫn giữ lỗi ở dạng danh sách (không có 'c').
+            if (boxes.isEmpty()) {
+                String key = "nobox:" + display;
+                if (seen.contains(key)) {
+                    continue;
+                }
+                seen.add(key);
+                ObjectNode item = MAPPER.createObjectNode();
+                item.put("r", cleanRuleMentions(display));
+                if (!issue.isEmpty()) {
+                    item.put("issue", issue);
+                }
+                if (!suggestion.isEmpty()) {
+                    item.put("suggestion", suggestion);
+                }
+                item.put("s", severity);
+                item.put("g", category);
+                candidates.add(item);
+                continue;
+            }
 
             for (int[] box : boxes) {
                 int[] pixel = toPixelBox(box, imgW, imgH);

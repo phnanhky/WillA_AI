@@ -2,8 +2,10 @@ spring:
   servlet:
     multipart:
       enabled: true
-      max-file-size: 50MB
-      max-request-size: 50MB
+      # PDF tối đa 512MB; CSV 50MB; ảnh 20MB (siết theo từng loại ở app.upload.*)
+      max-file-size: 512MB
+      # Tổng request: PDF / nhiều ảnh gói PRO tối đa 512MB
+      max-request-size: 512MB
   application:
     name: backend
   datasource:
@@ -59,6 +61,15 @@ app:
     from: ${MAIL_FROM}
   baseUrl: ${APP_BASE_URL}
   frontendUrl: ${APP_FRONTEND_URL:${APP_BASE_URL}}
+  upload:
+    # Mỗi ảnh tối đa 20MB (gửi AI giữ nguyên chất lượng trong giới hạn này)
+    max-image-bytes: ${UPLOAD_MAX_IMAGE_BYTES:20971520}
+    # PDF/PSD tối đa 512MB
+    max-pdf-bytes: ${UPLOAD_MAX_PDF_BYTES:536870912}
+    # CSV tối đa 50MB
+    max-csv-bytes: ${UPLOAD_MAX_CSV_BYTES:52428800}
+    # Tổng dung lượng một request (PDF / nhiều ảnh gói PRO): 512MB
+    max-request-bytes: ${UPLOAD_MAX_REQUEST_BYTES:536870912}
 
 ai:
   server:
@@ -131,6 +142,8 @@ cloudflare:
     endpoint: ${R2_ENDPOINT}
     bucket: ${R2_BUCKET}
     public-url: ${R2_PUBLIC_URL}
+    # Giới hạn kích thước object trên R2 (mặc định 3MB). Ảnh lớn hơn sẽ được nén JPEG trước khi upload.
+    max-upload-bytes: ${R2_MAX_UPLOAD_BYTES:3145728}
 
 management:
   endpoints:

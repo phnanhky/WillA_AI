@@ -84,18 +84,23 @@ public class AiServerClient {
         return body;
     }
 
+    /** Gửi file gốc lên AI (không nén — nén chỉ áp dụng khi lưu R2). */
     public static ByteArrayResource toFileResource(MultipartFile file) {
         try {
-            return new ByteArrayResource(file.getBytes()) {
-                @Override
-                public String getFilename() {
-                    String name = file.getOriginalFilename();
-                    return name != null && !name.isBlank() ? name : "image";
-                }
-            };
+            return toFileResource(file.getBytes(), file.getOriginalFilename());
         } catch (Exception e) {
             throw new RuntimeException("Lỗi đọc file: " + e.getMessage(), e);
         }
+    }
+
+    public static ByteArrayResource toFileResource(byte[] data, String originalFilename) {
+        String name = originalFilename != null && !originalFilename.isBlank() ? originalFilename : "image";
+        return new ByteArrayResource(data) {
+            @Override
+            public String getFilename() {
+                return name;
+            }
+        };
     }
 
     public TokenUsage parseUsage(JsonNode root) {
@@ -184,6 +189,16 @@ public class AiServerClient {
 
         public boolean hasTokens() {
             return totalTokens > 0;
+        }
+
+        public TokenUsage plus(TokenUsage other) {
+            if (other == null) {
+                return this;
+            }
+            return new TokenUsage(
+                    promptTokens + other.promptTokens,
+                    completionTokens + other.completionTokens,
+                    totalTokens + other.totalTokens);
         }
     }
 }

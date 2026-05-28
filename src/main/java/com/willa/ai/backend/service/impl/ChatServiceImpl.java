@@ -1,5 +1,6 @@
 package com.willa.ai.backend.service.impl;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -23,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.willa.ai.backend.client.AiServerClient;
 import com.willa.ai.backend.client.AiServerClient.TokenUsage;
 import com.willa.ai.backend.util.AiAnalysisEnricher;
+import com.willa.ai.backend.util.UploadSizeValidator;
 import com.willa.ai.backend.dto.request.ChatMessageRequest;
 import com.willa.ai.backend.dto.request.ChatSessionRequest;
 import com.willa.ai.backend.dto.response.ChatMessageResponse;
@@ -62,6 +64,7 @@ public class ChatServiceImpl implements ChatService {
     private final FileService fileService;
     private final AiServerClient aiServerClient;
     private final AITokenUsageRepository aiTokenUsageRepository;
+    private final UploadSizeValidator uploadSizeValidator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${ai.qwen.model:qwen3-vl-flash}")
@@ -171,12 +174,6 @@ public class ChatServiceImpl implements ChatService {
             throw new RuntimeException("Số dư token của bạn đã hết. Vui lòng nạp thêm hoặc nâng cấp gói để tiếp tục.");
         }
 
-        if (files != null && files.size() > 1) {
-            if (planName.equalsIgnoreCase("Student") || planName.equalsIgnoreCase("Free")) {
-                throw new RuntimeException("Gói " + planName + " chỉ cho phép gửi 1 ảnh mỗi lần phân tích. Vui lòng nâng cấp gói Pro để gửi nhiều ảnh cùng lúc.");
-            }
-        }
-
         ChatSession session = getSessionEntity(email, sessionId);
         String sessionKey = sessionId.toString();
         String aiResponseContent;
@@ -184,28 +181,47 @@ public class ChatServiceImpl implements ChatService {
         CompletableFuture<String> imageUrlsFuture = CompletableFuture.completedFuture(null);
 
         try {
-            if (files == null || files.isEmpty()) {
+            List<ImagePart> images = expandToImageParts(files);
+
+            // Phân quyền theo gói: chỉ gói PRO mới được gửi file PDF/PSD hoặc nhiều ảnh.
+            // Gói Student/Free chỉ phân tích đúng 1 ảnh thường mỗi lần.
+            if (!planName.equalsIgnoreCase("Pro")) {
+                long uploadCount = files == null ? 0
+                        : files.stream().filter(f -> f != null && !f.isEmpty()).count();
+                boolean hasDocumentFile = files != null && files.stream()
+                        .filter(f -> f != null && !f.isEmpty())
+                        .anyMatch(f -> {
+                            String n = f.getOriginalFilename() != null
+                                    ? f.getOriginalFilename().toLowerCase() : "";
+                            return n.endsWith(".pdf") || n.endsWith(".psd");
+                        });
+                if (uploadCount > 1 || hasDocumentFile || images.size() > 1) {
+                    throw new RuntimeException("Gói " + planName
+                            + " chỉ hỗ trợ phân tích 1 ảnh mỗi lần. "
+                            + "Vui lòng nâng cấp lên gói Pro để gửi file PDF hoặc nhiều ảnh.");
+                }
+            }
+
+            if (images.isEmpty()) {
                 MultiValueMap<String, Object> body = aiServerClient.chatForm(sessionKey, content, actionType, errorIndex, box2d);
                 JsonNode rootNode = AiAnalysisEnricher.enrich(aiServerClient.chat(body));
                 aiResponseContent = rootNode.toString();
                 totalTokensCombined = deductTokensForAiCall(user, wallet, rootNode, "CHAT");
             } else {
-                imageUrlsFuture = CompletableFuture.supplyAsync(() -> resolveImageUrlsForChat(files));
+                final List<ImagePart> imagesForUpload = images;
+                imageUrlsFuture = CompletableFuture.supplyAsync(() -> uploadImagesToR2(imagesForUpload));
                 com.fasterxml.jackson.databind.node.ArrayNode arrayNode = objectMapper.createArrayNode();
-                for (MultipartFile file : files) {
+                for (ImagePart image : images) {
                     if (wallet.getTokenBalance() <= 0) {
                         break;
                     }
-                    if (file == null || file.isEmpty()) {
-                        continue;
-                    }
                     MultiValueMap<String, Object> body = aiServerClient.chatForm(sessionKey, content, actionType, errorIndex, box2d);
-                    body.add("file", AiServerClient.toFileResource(file));
+                    body.add("file", AiServerClient.toFileResource(image.bytes(), image.filename()));
                     JsonNode rootNode = AiAnalysisEnricher.enrich(aiServerClient.chat(body));
                     arrayNode.add(rootNode);
                     totalTokensCombined += deductTokensForAiCall(user, wallet, rootNode, "ANALYZE");
                 }
-                if (files.size() == 1 && arrayNode.size() > 0) {
+                if (images.size() == 1 && arrayNode.size() > 0) {
                     aiResponseContent = arrayNode.get(0).toString();
                 } else {
                     aiResponseContent = arrayNode.toString();
@@ -240,39 +256,75 @@ public class ChatServiceImpl implements ChatService {
     }
 
     /**
-     * Upload ảnh lên R2 (chạy song song với {@link #sendMessageToAi} gọi AI).
-     * PDF/PSD vẫn parse đồng bộ vì không gửi thẳng file ảnh thông thường.
+     * Lưu ảnh preview lên R2 (song song với gọi AI). Ảnh &gt; 3MB được nén;
+     * bytes gửi AI giữ nguyên trong {@link #sendMessageToAi}.
      */
-    private String resolveImageUrlsForChat(List<MultipartFile> files) {
+    private String uploadImagesToR2(List<ImagePart> images) {
         List<String> uploadedUrls = new ArrayList<>();
+        for (ImagePart image : images) {
+            try {
+                uploadedUrls.add(fileService.uploadBytes(
+                        image.bytes(), image.filename(), image.contentType()));
+            } catch (Exception e) {
+                throw new RuntimeException("Lỗi upload ảnh: " + e.getMessage(), e);
+            }
+        }
+        return uploadedUrls.isEmpty() ? null : String.join(",", uploadedUrls);
+    }
+
+    /**
+     * Mở rộng danh sách file upload thành các ảnh để AI đọc:
+     * <ul>
+     *   <li>Ảnh thường: giữ nguyên</li>
+     *   <li>PDF: render mỗi trang thành 1 ảnh PNG</li>
+     *   <li>PSD: render thành 1 ảnh PNG</li>
+     *   <li>CSV: bỏ qua (AI không đọc được như ảnh)</li>
+     * </ul>
+     * Đồng thời validate kích thước theo loại và tổng dung lượng request.
+     */
+    private List<ImagePart> expandToImageParts(List<MultipartFile> files) {
+        if (files == null || files.isEmpty()) {
+            return List.of();
+        }
+        List<ImagePart> images = new ArrayList<>();
+        long totalBytes = 0;
         for (MultipartFile file : files) {
             if (file == null || file.isEmpty()) {
                 continue;
             }
             String fn = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
-            if (fn.endsWith(".pdf") || fn.endsWith(".csv") || fn.endsWith(".psd")) {
-                try {
-                    Map<String, Object> parseRest = advancedFileParserService.parseFile(file);
-                    if ("pdf".equals(parseRest.get("type"))) {
-                        @SuppressWarnings("unchecked")
-                        List<String> base64Images = (List<String>) parseRest.get("pages");
-                        uploadedUrls.addAll(base64Images);
-                    } else if ("psd".equals(parseRest.get("type"))) {
-                        uploadedUrls.add((String) parseRest.get("image"));
+            String baseName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "image";
+            try {
+                byte[] data = file.getBytes();
+                uploadSizeValidator.validateByType(data.length, file.getOriginalFilename());
+                totalBytes += data.length;
+                uploadSizeValidator.validateRequestTotal(totalBytes);
+
+                if (fn.endsWith(".pdf")) {
+                    List<byte[]> pages = advancedFileParserService.renderPdfToPngBytes(file);
+                    for (int i = 0; i < pages.size(); i++) {
+                        images.add(new ImagePart(pages.get(i), baseName + "-p" + (i + 1) + ".png", "image/png"));
                     }
-                } catch (Exception e) {
-                    throw new RuntimeException("Lỗi phân tích file đặc biệt: " + e.getMessage(), e);
+                } else if (fn.endsWith(".psd")) {
+                    images.add(new ImagePart(advancedFileParserService.renderPsdToPngBytes(file), baseName + ".png", "image/png"));
+                } else if (fn.endsWith(".csv")) {
+                    // CSV không phải ảnh — bỏ qua, không gửi AI.
+                    continue;
+                } else {
+                    images.add(new ImagePart(data, baseName, file.getContentType()));
                 }
-            } else {
-                try {
-                    uploadedUrls.add(fileService.uploadFile(file));
-                } catch (Exception e) {
-                    throw new RuntimeException("Lỗi upload ảnh: " + e.getMessage(), e);
-                }
+            } catch (IOException e) {
+                throw new RuntimeException("Lỗi đọc file: " + e.getMessage(), e);
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new RuntimeException("Lỗi phân tích file: " + e.getMessage(), e);
             }
         }
-        return uploadedUrls.isEmpty() ? null : String.join(",", uploadedUrls);
+        return images;
     }
+
+    private record ImagePart(byte[] bytes, String filename, String contentType) {}
 
     private int deductTokensForAiCall(User user, Wallet wallet, JsonNode rootNode, String serviceType) {
         TokenUsage usage = aiServerClient.parseUsage(rootNode);
@@ -330,6 +382,7 @@ public class ChatServiceImpl implements ChatService {
     @Transactional
     public Object suggestStyle(String email, MultipartFile file, String box2d, String suggestType) {
         getUserByEmail(email);
+        uploadSizeValidator.validateImage(file);
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("file", AiServerClient.toFileResource(file));
         body.add("box_2d", box2d != null ? box2d : "[]");

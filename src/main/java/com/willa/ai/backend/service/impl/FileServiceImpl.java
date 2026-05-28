@@ -1,6 +1,8 @@
 package com.willa.ai.backend.service.impl;
 
 import com.willa.ai.backend.service.FileService;
+import com.willa.ai.backend.util.ImageUploadCompressor;
+import com.willa.ai.backend.util.UploadSizeValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,8 @@ import java.util.UUID;
 public class FileServiceImpl implements FileService {
 
     private final S3Client s3Client;
+    private final ImageUploadCompressor imageUploadCompressor;
+    private final UploadSizeValidator uploadSizeValidator;
 
     @Value("${cloudflare.r2.bucket}")
     private String bucketName;
@@ -47,13 +51,12 @@ public class FileServiceImpl implements FileService {
         if (data == null || data.length == 0) {
             throw new IllegalArgumentException("Cannot upload empty file");
         }
-        String extension = originalFilename != null && originalFilename.contains(".")
-                ? originalFilename.substring(originalFilename.lastIndexOf("."))
-                : "";
-        String uniqueFileName = UUID.randomUUID().toString() + extension;
-        String resolvedContentType = contentType != null && !contentType.isBlank()
-                ? contentType
-                : "application/octet-stream";
+        uploadSizeValidator.validateImageBytes(data.length, originalFilename);
+        ImageUploadCompressor.PreparedUpload prepared =
+                imageUploadCompressor.prepare(data, contentType, originalFilename);
+        String uniqueFileName = UUID.randomUUID().toString() + prepared.extension();
+        byte[] uploadData = prepared.data();
+        String resolvedContentType = prepared.contentType();
 
         try {
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -62,7 +65,7 @@ public class FileServiceImpl implements FileService {
                     .contentType(resolvedContentType)
                     .build();
 
-            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(data));
+            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(uploadData));
 
             String apiBase = appBaseUrl.endsWith("/") ? appBaseUrl.substring(0, appBaseUrl.length() - 1) : appBaseUrl;
             return apiBase + "/api/files/download/" + uniqueFileName;
