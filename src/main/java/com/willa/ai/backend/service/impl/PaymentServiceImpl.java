@@ -187,7 +187,7 @@ public class PaymentServiceImpl implements PaymentService {
                         payment.setTransactionId(data.getReference());
                         paymentRepository.save(payment);
 
-                        // Kích hoạt/Tạo mới subscription và nạp tokens
+                        // Kích hoạt subscription tháng/năm hoặc nạp token (ONE_TIME)
                         subscriptionService.createOrUpdateSubscription(payment.getUser().getEmail(), payment.getPlan().getId());
                         System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã cộng token/subscription.");
                     }

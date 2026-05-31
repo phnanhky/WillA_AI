@@ -16,6 +16,7 @@ import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.Subscription;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.Wallet;
+import com.willa.ai.backend.entity.enums.BillingCycle;
 import com.willa.ai.backend.entity.enums.SubscriptionStatus;
 import com.willa.ai.backend.exception.ResourceNotFoundException;
 import com.willa.ai.backend.repository.PlanRepository;
@@ -51,19 +52,13 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         if (plan.getName().toLowerCase().contains("student") && !Boolean.TRUE.equals(user.getIsStudent())) {
             throw new IllegalArgumentException("Chỉ tài khoản đã xác thực sinh viên mới được đăng ký gói Student.");
         }
-        // --- UPGRADE HANDLING ---
-        // Find existing active subscriptions for this user and mark them as cancelled/expired
-        // because the new plan replaces the old one. We could also carry over the remaining days, 
-        // but typically an upgrade starts a fresh cycle.
-        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE);
-        for (Subscription sub : activeSubs) {
-            sub.setStatus(SubscriptionStatus.CANCELLED);
-            subscriptionRepository.save(sub);
+
+        if (plan.getBillingCycle() == BillingCycle.ONE_TIME) {
+            creditWalletTokens(user, plan);
+            return buildOneTimeTopUpResponse(user, plan);
         }
 
-        // Optionally, reset wallet balance instead of adding if upgrading. 
-        // Here we just add tokens, but for explicit tiering we might reset to the new limit
-        // if substituting an active plan. Let's assume the new plan replaces the limits.
+        cancelActiveRecurringSubscriptions(user.getId());
 
         LocalDateTime startDate = LocalDateTime.now();
         LocalDateTime endDate = calculateEndDate(startDate, plan.getBillingCycle());
@@ -78,25 +73,17 @@ public class SubscriptionServiceImpl implements SubscriptionService {
 
         Subscription savedSubscription = subscriptionRepository.save(subscription);
 
-        Wallet wallet = walletRepository.findByUserId(user.getId())
-                .orElse(Wallet.builder().user(user).tokenBalance(0L).totalRecharged(0L).build());
-        wallet.setTokenBalance(wallet.getTokenBalance() + Long.valueOf(plan.getTokenLimit()));
-        wallet.setTotalRecharged(wallet.getTotalRecharged() + plan.getTokenLimit());
-        walletRepository.save(wallet);
-
-        if (!plan.getName().equalsIgnoreCase("Free")) {
-            user.setRequiresReview(false);
-            userRepository.save(user);
-        }
+        creditWalletTokens(user, plan);
+        clearReviewRequirementIfPaidPlan(user, plan);
 
         return mapToResponse(savedSubscription);
     }
 
-    private LocalDateTime calculateEndDate(LocalDateTime startDate, com.willa.ai.backend.entity.enums.BillingCycle cycle) {
+    private LocalDateTime calculateEndDate(LocalDateTime startDate, BillingCycle cycle) {
         return switch (cycle) {
             case MONTHLY -> startDate.plusMonths(1);
             case YEARLY -> startDate.plusYears(1);
-            case ONE_TIME -> startDate.plusYears(100); // Mua vĩnh viễn hoặc trọn đời
+            case ONE_TIME -> startDate.plusYears(100);
         };
     }
 
@@ -134,8 +121,11 @@ public class SubscriptionServiceImpl implements SubscriptionService {
             throw new IllegalArgumentException("Only active subscriptions can be cancelled");
         }
 
+        if (subscription.getPlan().getBillingCycle() == BillingCycle.ONE_TIME) {
+            throw new IllegalArgumentException("Gói mua thêm token (ONE_TIME) không hủy qua subscription — chỉ cộng token vào ví.");
+        }
+
         subscription.setStatus(SubscriptionStatus.CANCELLED);
-        // Có thể tính toán hoàn lại token nếu cần, nhưng tạm thời giữ nguyên ví.
 
         Subscription updatedSubscription = subscriptionRepository.save(subscription);
         return mapToResponse(updatedSubscription);
@@ -150,18 +140,20 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         Plan plan = planRepository.findById(planId)
                 .orElseThrow(() -> new ResourceNotFoundException("Plan not found with id: " + planId));
 
-        // Disable existing active subscriptions
-        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE);
-        for (Subscription sub : activeSubs) {
-            sub.setStatus(SubscriptionStatus.CANCELLED);
-            subscriptionRepository.save(sub);
-        }
-
         if (plan.getName().toLowerCase().contains("student") && !Boolean.TRUE.equals(user.getIsStudent())) {
             throw new IllegalArgumentException("Chỉ tài khoản đã xác thực sinh viên mới được đăng ký gói Student.");
         }
+
+        // ONE_TIME: chỉ nạp token, không đụng subscription tháng/năm đang active.
+        if (plan.getBillingCycle() == BillingCycle.ONE_TIME) {
+            creditWalletTokens(user, plan);
+            return;
+        }
+
+        cancelActiveRecurringSubscriptions(user.getId());
+
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime endDate = plan.getBillingCycle().name().equals("MONTHLY") ? now.plusMonths(1) : now.plusYears(1);
+        LocalDateTime endDate = calculateEndDate(now, plan.getBillingCycle());
 
         Subscription subscription = new Subscription();
         subscription.setUser(user);
@@ -172,18 +164,47 @@ public class SubscriptionServiceImpl implements SubscriptionService {
 
         subscriptionRepository.save(subscription);
 
-        // Reset Wallet to the new plan tokens
+        creditWalletTokens(user, plan);
+        clearReviewRequirementIfPaidPlan(user, plan);
+    }
+
+    private void cancelActiveRecurringSubscriptions(Long userId) {
+        List<Subscription> activeSubs = subscriptionRepository.findActiveRecurringByUserId(
+                userId, SubscriptionStatus.ACTIVE);
+        for (Subscription sub : activeSubs) {
+            sub.setStatus(SubscriptionStatus.CANCELLED);
+            subscriptionRepository.save(sub);
+        }
+    }
+
+    private void creditWalletTokens(User user, Plan plan) {
         Wallet wallet = walletRepository.findByUserId(user.getId())
                 .orElse(Wallet.builder().user(user).tokenBalance(0L).totalRecharged(0L).build());
-        wallet.setTokenBalance(wallet.getTokenBalance() + Long.valueOf(plan.getTokenLimit()));
-        wallet.setTotalRecharged(wallet.getTotalRecharged() + plan.getTokenLimit());
+        long grant = Long.valueOf(plan.getTokenLimit());
+        wallet.setTokenBalance(wallet.getTokenBalance() + grant);
+        wallet.setTotalRecharged(wallet.getTotalRecharged() + grant);
         walletRepository.save(wallet);
+    }
 
-        // Nâng cấp lên gói trả phí -> Tắt yêu cầu đánh giá tự động block Chat
+    private void clearReviewRequirementIfPaidPlan(User user, Plan plan) {
         if (!plan.getName().equalsIgnoreCase("Free")) {
             user.setRequiresReview(false);
             userRepository.save(user);
         }
+    }
+
+    private SubscriptionResponse buildOneTimeTopUpResponse(User user, Plan plan) {
+        LocalDateTime now = LocalDateTime.now();
+        return SubscriptionResponse.builder()
+                .userId(user.getId())
+                .userEmail(user.getEmail())
+                .planId(plan.getId())
+                .planName(plan.getName())
+                .limitGranted(plan.getTokenLimit())
+                .startDate(now)
+                .endDate(now)
+                .status(SubscriptionStatus.ACTIVE)
+                .build();
     }
 
     private SubscriptionResponse mapToResponse(Subscription subscription) {

@@ -58,13 +58,13 @@ public class PlanServiceImpl implements PlanService {
     public Page<PlanResponse> getAllPlans(int page, int size, boolean activeOnly) {
         Pageable pageable = PageRequest.of(page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
         Page<Plan> plans;
-        
+
         if (activeOnly) {
             plans = planRepository.findByIsActiveTrue(pageable);
         } else {
             plans = planRepository.findAll(pageable);
         }
-        
+
         return plans.map(this::mapToResponse);
     }
 

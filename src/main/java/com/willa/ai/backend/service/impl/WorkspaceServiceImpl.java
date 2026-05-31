@@ -76,7 +76,11 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     public WorkspaceResponse createWorkspace(String email, WorkspaceRequest request) {
         User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
         
-        Subscription activeSub = subscriptionRepository.findByUserIdAndStatus(user.getId(), SubscriptionStatus.ACTIVE).stream().findFirst().orElse(null);
+        Subscription activeSub = subscriptionRepository
+                .findActiveRecurringByUserId(user.getId(), SubscriptionStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .orElse(null);
         String planName = (activeSub != null && activeSub.getPlan() != null) ? activeSub.getPlan().getName() : "Free";
         
         int currentWorkspaceCount = workspaceRepository.countByOwnerId(user.getId());
@@ -470,7 +474,11 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     }
 
     private WorkspaceResponse mapToResponse(Workspace workspace) {
-        Subscription activeSub = subscriptionRepository.findByUserIdAndStatus(workspace.getOwner().getId(), SubscriptionStatus.ACTIVE).stream().findFirst().orElse(null);
+        Subscription activeSub = subscriptionRepository
+                .findActiveRecurringByUserId(workspace.getOwner().getId(), SubscriptionStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .orElse(null);
         String planName = (activeSub != null && activeSub.getPlan() != null) ? activeSub.getPlan().getName() : "Free";
         long maxStorage;
         if (planName.equalsIgnoreCase("Free")) {
@@ -524,7 +532,11 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         }
 
         User owner = workspace.getOwner();
-        Subscription activeSub = subscriptionRepository.findByUserIdAndStatus(owner.getId(), SubscriptionStatus.ACTIVE).stream().findFirst().orElse(null);
+        Subscription activeSub = subscriptionRepository
+                .findActiveRecurringByUserId(owner.getId(), SubscriptionStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .orElse(null);
         String planName = (activeSub != null && activeSub.getPlan() != null) ? activeSub.getPlan().getName() : "Free";
 
         long currentStorage = workspace.getStorageUsed() != null ? workspace.getStorageUsed() : 0L;
@@ -786,8 +798,11 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
     private void assertMemberLimitNotExceeded(Workspace workspace) {
         User owner = workspace.getOwner();
-        Subscription activeSub = subscriptionRepository.findByUserIdAndStatus(owner.getId(), SubscriptionStatus.ACTIVE)
-                .stream().findFirst().orElse(null);
+        Subscription activeSub = subscriptionRepository
+                .findActiveRecurringByUserId(owner.getId(), SubscriptionStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .orElse(null);
         String planName = (activeSub != null && activeSub.getPlan() != null) ? activeSub.getPlan().getName() : "Free";
         long memberCount = workspaceMemberRepository.countByWorkspaceId(workspace.getId());
         if (planName.equalsIgnoreCase("Free") && memberCount >= 2) {

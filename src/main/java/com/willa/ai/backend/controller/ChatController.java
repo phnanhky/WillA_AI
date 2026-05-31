@@ -26,6 +26,7 @@ import com.willa.ai.backend.dto.request.ExtractLayersRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.dto.response.ChatMessageResponse;
 import com.willa.ai.backend.dto.response.ChatSessionResponse;
+import com.willa.ai.backend.exception.InsufficientTokenException;
 import com.willa.ai.backend.service.ChatService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -173,6 +174,8 @@ public class ChatController {
                     .message("Message processed by AI")
                     .data(response)
                     .build());
+        } catch (InsufficientTokenException e) {
+            throw e;
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder()
                     .status(false)

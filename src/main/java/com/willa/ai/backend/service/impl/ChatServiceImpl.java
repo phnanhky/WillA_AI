@@ -46,16 +46,21 @@ import com.willa.ai.backend.repository.ChatSessionRepository;
 import com.willa.ai.backend.repository.SubscriptionRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WalletRepository;
+import com.willa.ai.backend.dto.response.QwenTokenEstimateResponse;
 import com.willa.ai.backend.service.ChatService;
 import com.willa.ai.backend.service.FileService;
+import com.willa.ai.backend.service.QwenTokenEstimateService;
+import com.willa.ai.backend.service.QwenTokenEstimateService.ImageEstimateInput;
 import com.willa.ai.backend.service.WalletService;
 import com.willa.ai.backend.service.WorkflowUsageService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ChatServiceImpl implements ChatService {
 
     private final ChatSessionRepository chatSessionRepository;
@@ -69,6 +74,7 @@ public class ChatServiceImpl implements ChatService {
     private final AITokenUsageRepository aiTokenUsageRepository;
     private final WorkflowUsageService workflowUsageService;
     private final UploadSizeValidator uploadSizeValidator;
+    private final QwenTokenEstimateService qwenTokenEstimateService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${ai.qwen.model:qwen3-vl-flash}")
@@ -180,9 +186,6 @@ public class ChatServiceImpl implements ChatService {
 
         Wallet wallet = walletRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new RuntimeException("Wallet not found"));
-        if (wallet.getTokenBalance() <= 0) {
-            throw new RuntimeException("Số dư token của bạn đã hết. Vui lòng nạp thêm hoặc nâng cấp gói để tiếp tục.");
-        }
 
         ChatSession session = getSessionEntity(email, sessionId);
         String sessionKey = sessionId.toString();
@@ -192,6 +195,14 @@ public class ChatServiceImpl implements ChatService {
 
         try {
             List<ImagePart> images = expandToImageParts(files);
+
+            QwenTokenEstimateResponse estimate = estimateTokenUsage(images, content);
+            long walletBefore = wallet.getTokenBalance() != null ? wallet.getTokenBalance() : 0L;
+            log.info(
+                    "Token ESTIMATE [userId={}, sessionId={}, model={}, images={}]: input={}, output={}, total={}, wallet={} (local)",
+                    user.getId(), sessionId, qwenModel, estimate.getImageCount(),
+                    estimate.getInputTokens(), estimate.getOutputTokens(), estimate.getTotalTokens(), walletBefore);
+            qwenTokenEstimateService.requireSufficientBalance(wallet, estimate.getTotalTokens());
 
             // Phân quyền theo gói: chỉ gói PRO mới được gửi file PDF/PSD hoặc nhiều ảnh.
             // Gói Student/Free chỉ phân tích đúng 1 ảnh thường mỗi lần.
@@ -212,24 +223,36 @@ public class ChatServiceImpl implements ChatService {
                 }
             }
 
+            int actualInput = 0;
+            int actualOutput = 0;
+
             if (images.isEmpty()) {
                 MultiValueMap<String, Object> body = aiServerClient.chatForm(sessionKey, content, actionType, errorIndex, box2d);
                 JsonNode rootNode = AiAnalysisEnricher.enrich(aiServerClient.chat(body));
                 aiResponseContent = rootNode.toString();
-                totalTokensCombined = deductTokensForAiCall(user, wallet, rootNode, "CHAT");
+                TokenUsage usage = deductTokensForAiCall(user, wallet, rootNode, "CHAT");
+                totalTokensCombined = usage.getTotalTokens();
+                actualInput = usage.getPromptTokens();
+                actualOutput = usage.getCompletionTokens();
             } else {
                 final List<ImagePart> imagesForUpload = images;
                 imageUrlsFuture = CompletableFuture.supplyAsync(() -> uploadImagesToR2(imagesForUpload));
                 com.fasterxml.jackson.databind.node.ArrayNode arrayNode = objectMapper.createArrayNode();
+                int imageIndex = 0;
                 for (ImagePart image : images) {
-                    if (wallet.getTokenBalance() <= 0) {
-                        break;
-                    }
+                    imageIndex++;
                     MultiValueMap<String, Object> body = aiServerClient.chatForm(sessionKey, content, actionType, errorIndex, box2d);
                     body.add("file", AiServerClient.toFileResource(image.bytes(), image.filename()));
                     JsonNode rootNode = AiAnalysisEnricher.enrich(aiServerClient.chat(body));
                     arrayNode.add(rootNode);
-                    totalTokensCombined += deductTokensForAiCall(user, wallet, rootNode, "ANALYZE");
+                    TokenUsage usage = deductTokensForAiCall(user, wallet, rootNode, "ANALYZE");
+                    totalTokensCombined += usage.getTotalTokens();
+                    actualInput += usage.getPromptTokens();
+                    actualOutput += usage.getCompletionTokens();
+                    log.info(
+                            "Token ACTUAL per image [userId={}, sessionId={}, image {}/{}, file={}]: input={}, output={}, total={}",
+                            user.getId(), sessionId, imageIndex, images.size(), image.filename(),
+                            usage.getPromptTokens(), usage.getCompletionTokens(), usage.getTotalTokens());
                 }
                 if (images.size() == 1 && arrayNode.size() > 0) {
                     aiResponseContent = arrayNode.get(0).toString();
@@ -237,6 +260,12 @@ public class ChatServiceImpl implements ChatService {
                     aiResponseContent = arrayNode.toString();
                 }
             }
+
+            long walletAfter = wallet.getTokenBalance() != null ? wallet.getTokenBalance() : 0L;
+            log.info(
+                    "Token ACTUAL total [userId={}, sessionId={}]: input={}, output={}, total={}, walletAfter={} | vs estimate total={}",
+                    user.getId(), sessionId, actualInput, actualOutput, totalTokensCombined, walletAfter,
+                    estimate.getTotalTokens());
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
@@ -336,10 +365,21 @@ public class ChatServiceImpl implements ChatService {
 
     private record ImagePart(byte[] bytes, String filename, String contentType) {}
 
-    private int deductTokensForAiCall(User user, Wallet wallet, JsonNode rootNode, String serviceType) {
+    private QwenTokenEstimateResponse estimateTokenUsage(List<ImagePart> images, String content) {
+        if (images.isEmpty()) {
+            return qwenTokenEstimateService.estimateTextChat(content);
+        }
+        return qwenTokenEstimateService.estimateFeedbackDesign(
+                images.stream()
+                        .map(img -> new ImageEstimateInput(img.bytes(), img.filename()))
+                        .toList(),
+                content);
+    }
+
+    private TokenUsage deductTokensForAiCall(User user, Wallet wallet, JsonNode rootNode, String serviceType) {
         TokenUsage usage = aiServerClient.parseUsage(rootNode);
         if (!usage.hasTokens()) {
-            return 0;
+            return usage;
         }
         int total = usage.getTotalTokens();
         Long newBalance = wallet.getTokenBalance() - total;
@@ -353,7 +393,7 @@ public class ChatServiceImpl implements ChatService {
                 .totalTokens(total)
                 .serviceType(serviceType)
                 .build());
-        return total;
+        return usage;
     }
 
     @Override
@@ -647,7 +687,8 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private String getPlanNameForUser(Long userId) {
-        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE);
+        List<Subscription> activeSubs = subscriptionRepository.findActiveRecurringByUserId(
+                userId, SubscriptionStatus.ACTIVE);
         if (!activeSubs.isEmpty()) {
             return activeSubs.get(0).getPlan().getName();
         }
@@ -655,7 +696,8 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private java.time.LocalDateTime getHistoryCutoffDate(Long userId) {
-        List<Subscription> activeSubs = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE);
+        List<Subscription> activeSubs = subscriptionRepository.findActiveRecurringByUserId(
+                userId, SubscriptionStatus.ACTIVE);
         if (!activeSubs.isEmpty()) {
             Subscription activeSub = activeSubs.get(0);
             String planName = activeSub.getPlan().getName();

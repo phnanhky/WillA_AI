@@ -99,15 +99,20 @@ public final class AiAnalysisEnricher {
             }
 
             List<int[]> boxes = new ArrayList<>();
+            List<Boolean> boxesArePixels = new ArrayList<>();
             JsonNode cNode = err.get("c");
             if (cNode == null) {
                 cNode = err.get("box_2d");
             }
             if (cNode != null && cNode.isArray() && cNode.size() == 4) {
                 boxes.add(toCoords(cNode));
+                boxesArePixels.add(true);
             }
             for (String field : List.of(reason, issue, suggestion)) {
-                boxes.addAll(parseBoxTags(field));
+                for (int[] tagBox : parseBoxTags(field)) {
+                    boxes.add(tagBox);
+                    boxesArePixels.add(false);
+                }
             }
 
             reason = stripBoxTags(reason);
@@ -142,8 +147,10 @@ public final class AiAnalysisEnricher {
                 continue;
             }
 
-            for (int[] box : boxes) {
-                int[] pixel = toPixelBox(box, imgW, imgH);
+            for (int i = 0; i < boxes.size(); i++) {
+                int[] pixel = boxesArePixels.get(i)
+                        ? clampPixelBox(boxes.get(i), imgW, imgH)
+                        : toPixelBoxFromGrid1000(boxes.get(i), imgW, imgH);
                 if (pixel == null) {
                     continue;
                 }
@@ -204,12 +211,12 @@ public final class AiAnalysisEnricher {
         }
         Matcher m = BOX_TAG.matcher(text);
         while (m.find()) {
-            list.add(new int[] {
-                    Integer.parseInt(m.group(1)),
-                    Integer.parseInt(m.group(2)),
-                    Integer.parseInt(m.group(3)),
-                    Integer.parseInt(m.group(4))
-            });
+            // Prompt format: <box>(ymin,xmin),(ymax,xmax)</box>
+            int ymin = Integer.parseInt(m.group(1));
+            int xmin = Integer.parseInt(m.group(2));
+            int ymax = Integer.parseInt(m.group(3));
+            int xmax = Integer.parseInt(m.group(4));
+            list.add(new int[] { xmin, ymin, xmax, ymax });
         }
         return list;
     }
@@ -221,21 +228,12 @@ public final class AiAnalysisEnricher {
         return BOX_TAG.matcher(text).replaceAll("").replaceAll("\\s+", " ").trim();
     }
 
-    private static int[] toPixelBox(int[] box, int imgW, int imgH) {
-        int a0 = box[0], a1 = box[1], a2 = box[2], a3 = box[3];
-        int x1, y1, x2, y2;
-        boolean normalized = Math.max(Math.max(Math.abs(a0), Math.abs(a1)), Math.max(Math.abs(a2), Math.abs(a3))) <= 1000;
-        if (normalized) {
-            x1 = (int) ((long) Math.min(a0, a2) * imgW / 1000);
-            y1 = (int) ((long) Math.min(a1, a3) * imgH / 1000);
-            x2 = (int) ((long) Math.max(a0, a2) * imgW / 1000);
-            y2 = (int) ((long) Math.max(a1, a3) * imgH / 1000);
-        } else {
-            x1 = Math.min(a0, a2);
-            y1 = Math.min(a1, a3);
-            x2 = Math.max(a0, a2);
-            y2 = Math.max(a1, a3);
-        }
+    /** Pixel box from post_process — clamp only, do not re-scale 0–1000. */
+    private static int[] clampPixelBox(int[] box, int imgW, int imgH) {
+        int x1 = Math.min(box[0], box[2]);
+        int y1 = Math.min(box[1], box[3]);
+        int x2 = Math.max(box[0], box[2]);
+        int y2 = Math.max(box[1], box[3]);
         x1 = clamp(x1, 0, imgW);
         y1 = clamp(y1, 0, imgH);
         x2 = clamp(x2, 0, imgW);
@@ -244,6 +242,16 @@ public final class AiAnalysisEnricher {
             return null;
         }
         return new int[] { x1, y1, x2, y2 };
+    }
+
+    /** Convert Qwen grid 0–1000 or inline tag coords to pixel box. */
+    private static int[] toPixelBoxFromGrid1000(int[] box, int imgW, int imgH) {
+        int a0 = box[0], a1 = box[1], a2 = box[2], a3 = box[3];
+        int x1 = (int) ((long) Math.min(a0, a2) * imgW / 1000);
+        int y1 = (int) ((long) Math.min(a1, a3) * imgH / 1000);
+        int x2 = (int) ((long) Math.max(a0, a2) * imgW / 1000);
+        int y2 = (int) ((long) Math.max(a1, a3) * imgH / 1000);
+        return clampPixelBox(new int[] { x1, y1, x2, y2 }, imgW, imgH);
     }
 
     private static int clamp(int v, int min, int max) {

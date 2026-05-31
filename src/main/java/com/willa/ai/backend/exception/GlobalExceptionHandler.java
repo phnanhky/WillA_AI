@@ -70,6 +70,19 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(InsufficientTokenException.class)
+    public ResponseEntity<?> handleInsufficientTokenException(InsufficientTokenException ex, WebRequest request) {
+        Map<String, Long> details = new HashMap<>();
+        details.put("requiredTokens", ex.getRequiredTokens());
+        details.put("availableTokens", ex.getAvailableTokens());
+        return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
+                .body(ApiResponse.builder()
+                        .status(false)
+                        .message(ex.getMessage())
+                        .data(details)
+                        .build());
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<?> handleRuntimeException(RuntimeException ex, WebRequest request) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

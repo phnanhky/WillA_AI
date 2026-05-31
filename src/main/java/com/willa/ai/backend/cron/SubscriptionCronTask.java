@@ -3,6 +3,7 @@ package com.willa.ai.backend.cron;
 import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.Subscription;
 import com.willa.ai.backend.entity.Wallet;
+import com.willa.ai.backend.entity.enums.BillingCycle;
 import com.willa.ai.backend.entity.enums.SubscriptionStatus;
 import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.SubscriptionRepository;
@@ -35,10 +36,21 @@ public class SubscriptionCronTask {
         List<Subscription> activeSubscriptions = subscriptionRepository.findSubscriptionsByStatus(SubscriptionStatus.ACTIVE);
         
         for (Subscription sub : activeSubscriptions) {
+            if (sub.getPlan().getBillingCycle() == BillingCycle.ONE_TIME) {
+                continue;
+            }
             if (sub.getEndDate() != null && sub.getEndDate().isBefore(now)) {
                 log.info("Subscription id {} has expired. User: {}", sub.getId(), sub.getUser().getEmail());
                 sub.setStatus(SubscriptionStatus.EXPIRED);
                 subscriptionRepository.save(sub);
+
+                boolean hasOtherActiveRecurring = subscriptionRepository
+                        .findActiveRecurringByUserId(sub.getUser().getId(), SubscriptionStatus.ACTIVE)
+                        .stream()
+                        .anyMatch(other -> !other.getId().equals(sub.getId()));
+                if (hasOtherActiveRecurring) {
+                    continue;
+                }
 
                 // Revert user to "Free" plan automatically
                 planRepository.findByName("Free").ifPresent(freePlan -> {
