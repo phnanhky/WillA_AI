@@ -21,9 +21,11 @@ public class AiServerProperties {
     /** Raw value from env (may include legacy suffix). */
     private String url = "http://localhost:8000";
 
+    private String estimate = "/estimate";
     private String chat = "/chat";
     private String prepareRegen = "/prepare-regen";
     private String regenImage = "/regen-image";
+    private String seedAnalysis = "/seed-analysis";
     private String suggestStyle = "/api/suggest-style";
     private String extractLayers = "/extract-layers";
     private String chatGenerate = "/chat-generate";
@@ -51,6 +53,10 @@ public class AiServerProperties {
         return baseUrl + p;
     }
 
+    public String estimateUrl() {
+        return endpoint(estimate);
+    }
+
     public String chatUrl() {
         return endpoint(chat);
     }
@@ -61,6 +67,10 @@ public class AiServerProperties {
 
     public String regenImageUrl() {
         return endpoint(regenImage);
+    }
+
+    public String seedAnalysisUrl() {
+        return endpoint(seedAnalysis);
     }
 
     public String suggestStyleUrl() {

@@ -70,6 +70,11 @@ app:
     max-csv-bytes: ${UPLOAD_MAX_CSV_BYTES:52428800}
     # Tổng dung lượng một request (PDF / nhiều ảnh gói PRO): 512MB
     max-request-bytes: ${UPLOAD_MAX_REQUEST_BYTES:536870912}
+  analysis:
+    # Khớp qwenv3vagenAI main.py thumbnail — xem docs/BOUNDING_BOX_COORDINATES.md
+    max-edge-pixels: ${AI_ANALYSIS_MAX_EDGE:1536}
+    qwen-grid-max: 1000
+    coord-space-output: source_pixel
   persona:
     enabled: ${PERSONA_ENABLED:true}
     max-recent-analyses: ${PERSONA_MAX_RECENT_ANALYSES:3}
@@ -83,9 +88,11 @@ ai:
   server:
     # qwenv3vagenAI FastAPI root (NOT /v1/chat/completions). Docker: http://ai-server:8000
     url: ${AI_SERVER_URL:http://localhost:8000}
+    estimate: /estimate
     chat: /chat
     prepare-regen: /prepare-regen
     regen-image: /regen-image
+    seed-analysis: /seed-analysis
     suggest-style: /api/suggest-style
     extract-layers: /extract-layers
     chat-generate: /chat-generate
@@ -95,20 +102,37 @@ ai:
   qwen:
     model: ${QWEN_MODEL:qwen3-vl-flash}
     token-estimate:
-      patch-factor: 28
-      min-pixels: 3136
-      max-pixels: 12845056
-      chars-per-token: 3.2
-      safety-margin-percent: 2
+      # Đồng bộ qwenv3vagenAI/backend/token_estimate.py (env QWEN_ESTIMATE_*)
+      use-ai-server: ${QWEN_ESTIMATE_USE_AI_SERVER:false}
+      patch-factor: ${QWEN_PATCH_FACTOR:28}
+      min-pixels: ${QWEN_MIN_PIXELS:3136}
+      max-pixels: ${QWEN_MAX_PIXELS:12845056}
+      chars-per-token: ${QWEN_CHARS_PER_TOKEN:3.2}
+      safety-margin-percent: ${QWEN_ESTIMATE_SAFETY_MARGIN_PERCENT:2}
+      total-safety-margin-percent: ${QWEN_ESTIMATE_TOTAL_MARGIN_PERCENT:1.5}
       feedback:
-        base-prompt-tokens: 3386
-        output-tokens-typical: 1150
-        small-image-boost-threshold: 1300
-        small-image-boost-factor: 0.86
-        wallet-buffer-tokens: 100
+        base-prompt-tokens: ${QWEN_ESTIMATE_BASE_PROMPT:2650}
+        output-tokens-typical: ${QWEN_ESTIMATE_OUTPUT_TYPICAL:1100}
+        output-tokens-min: ${QWEN_ESTIMATE_OUTPUT_MIN:860}
+        output-tokens-max: ${QWEN_ESTIMATE_OUTPUT_MAX:1320}
+        output-image-pivot-tokens: ${QWEN_ESTIMATE_OUTPUT_PIVOT:1100}
+        output-small-image-adjust-divisor: ${QWEN_ESTIMATE_OUTPUT_SMALL_DIV:1.5}
+        output-large-image-adjust-factor: ${QWEN_ESTIMATE_OUTPUT_LARGE_FACTOR:0.4}
+        output-adjust-max: ${QWEN_ESTIMATE_OUTPUT_ADJUST_MAX:220}
+        small-image-boost-threshold: ${QWEN_ESTIMATE_BOOST_THRESHOLD:1500}
+        small-image-boost-factor: ${QWEN_ESTIMATE_BOOST_FACTOR:0.50}
+        wallet-buffer-tokens: ${QWEN_ESTIMATE_WALLET_BUFFER:100}
       chat:
-        system-and-context-tokens: 400
-        output-tokens: 900
+        plain-system-tokens: ${QWEN_ESTIMATE_CHAT_PLAIN_SYSTEM:120}
+        plain-output-tokens: ${QWEN_ESTIMATE_CHAT_PLAIN_OUTPUT:550}
+        routing-system-tokens: ${QWEN_ESTIMATE_CHAT_ROUTING_SYSTEM:1180}
+        routing-session-state-tokens: ${QWEN_ESTIMATE_CHAT_ROUTING_STATE:120}
+        routing-output-tokens: ${QWEN_ESTIMATE_CHAT_ROUTING_OUTPUT:480}
+        history-max-turns: ${QWEN_ESTIMATE_CHAT_HISTORY_TURNS:10}
+        routing-history-cap-tokens: ${QWEN_ESTIMATE_CHAT_HISTORY_CAP:450}
+        analysis-errors-base-tokens: ${QWEN_ESTIMATE_CHAT_ERRORS_BASE:160}
+        analysis-errors-per-error-tokens: ${QWEN_ESTIMATE_CHAT_ERRORS_EACH:42}
+        wallet-buffer-tokens: ${QWEN_ESTIMATE_CHAT_BUFFER:60}
   xai:
     api-key: ${XAI_API_KEY:}
   imgbb:

@@ -32,12 +32,24 @@ public class AiServerClient {
     private final AiServerProperties aiServer;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * Ước lượng token Phase 3 — cùng công thức Python {@code token_estimate.py}.
+     */
+    public JsonNode estimate(MultiValueMap<String, Object> form) {
+        return postMultipart(aiServer.estimateUrl(), form);
+    }
+
     public JsonNode chat(MultiValueMap<String, Object> form) {
         return postMultipart(aiServer.chatUrl(), form);
     }
 
     public JsonNode prepareRegen(MultiValueMap<String, Object> form) {
         return postMultipart(aiServer.prepareRegenUrl(), form);
+    }
+
+    /** Restore in-memory analysis for zoom/regen after AI server restart. */
+    public JsonNode seedAnalysis(MultiValueMap<String, Object> form) {
+        return postMultipart(aiServer.seedAnalysisUrl(), form);
     }
 
     public JsonNode regenImage(MultiValueMap<String, Object> form) {
