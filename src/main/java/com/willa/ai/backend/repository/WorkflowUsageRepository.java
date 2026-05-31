@@ -163,4 +163,17 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to,
             @Param("workflow") WorkflowType workflow);
+
+    @Query("""
+            SELECT w.workflow, COUNT(w)
+            FROM WorkflowUsage w
+            WHERE w.user.id = :userId
+              AND w.startedAt >= :from
+              AND w.startedAt <= :to
+            GROUP BY w.workflow
+            """)
+    List<Object[]> countWorkflowsByUserSince(
+            @Param("userId") Long userId,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
 }

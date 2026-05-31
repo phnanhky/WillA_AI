@@ -49,6 +49,7 @@ import com.willa.ai.backend.repository.WalletRepository;
 import com.willa.ai.backend.dto.response.QwenTokenEstimateResponse;
 import com.willa.ai.backend.service.ChatService;
 import com.willa.ai.backend.service.FileService;
+import com.willa.ai.backend.service.PersonaService;
 import com.willa.ai.backend.service.QwenTokenEstimateService;
 import com.willa.ai.backend.service.QwenTokenEstimateService.ImageEstimateInput;
 import com.willa.ai.backend.service.WalletService;
@@ -75,6 +76,7 @@ public class ChatServiceImpl implements ChatService {
     private final WorkflowUsageService workflowUsageService;
     private final UploadSizeValidator uploadSizeValidator;
     private final QwenTokenEstimateService qwenTokenEstimateService;
+    private final PersonaService personaService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${ai.qwen.model:qwen3-vl-flash}")
@@ -225,9 +227,11 @@ public class ChatServiceImpl implements ChatService {
 
             int actualInput = 0;
             int actualOutput = 0;
+            String personaContext = personaService.getAiContextJsonForUser(user.getId());
 
             if (images.isEmpty()) {
-                MultiValueMap<String, Object> body = aiServerClient.chatForm(sessionKey, content, actionType, errorIndex, box2d);
+                MultiValueMap<String, Object> body = aiServerClient.chatForm(
+                        sessionKey, content, actionType, errorIndex, box2d, personaContext);
                 JsonNode rootNode = AiAnalysisEnricher.enrich(aiServerClient.chat(body));
                 aiResponseContent = rootNode.toString();
                 TokenUsage usage = deductTokensForAiCall(user, wallet, rootNode, "CHAT");
@@ -241,7 +245,8 @@ public class ChatServiceImpl implements ChatService {
                 int imageIndex = 0;
                 for (ImagePart image : images) {
                     imageIndex++;
-                    MultiValueMap<String, Object> body = aiServerClient.chatForm(sessionKey, content, actionType, errorIndex, box2d);
+                    MultiValueMap<String, Object> body = aiServerClient.chatForm(
+                            sessionKey, content, actionType, errorIndex, box2d, personaContext);
                     body.add("file", AiServerClient.toFileResource(image.bytes(), image.filename()));
                     JsonNode rootNode = AiAnalysisEnricher.enrich(aiServerClient.chat(body));
                     arrayNode.add(rootNode);
@@ -291,7 +296,18 @@ public class ChatServiceImpl implements ChatService {
                 .tokensUsed(totalTokensCombined)
                 .build();
         ChatMessage savedAiMessage = chatMessageRepository.save(aiMessage);
+        if (isAnalysisPayload(aiResponseContent)) {
+            personaService.refreshAfterAnalysis(user.getId());
+        }
         return mapToMessageResponse(savedAiMessage);
+    }
+
+    private boolean isAnalysisPayload(String content) {
+        if (content == null || content.isBlank()) {
+            return false;
+        }
+        return content.contains("\"type\":\"analysis\"")
+                || content.contains("\"type\": \"analysis\"");
     }
 
     /**

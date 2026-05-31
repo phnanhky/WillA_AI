@@ -70,6 +70,14 @@ app:
     max-csv-bytes: ${UPLOAD_MAX_CSV_BYTES:52428800}
     # Tổng dung lượng một request (PDF / nhiều ảnh gói PRO): 512MB
     max-request-bytes: ${UPLOAD_MAX_REQUEST_BYTES:536870912}
+  persona:
+    enabled: ${PERSONA_ENABLED:true}
+    max-recent-analyses: ${PERSONA_MAX_RECENT_ANALYSES:3}
+    max-ai-context-chars: ${PERSONA_MAX_AI_CONTEXT_CHARS:4096}
+    refresh-cooldown-seconds: ${PERSONA_REFRESH_COOLDOWN_SECONDS:300}
+    behavior-window-days: ${PERSONA_BEHAVIOR_WINDOW_DAYS:30}
+    max-text-field-length: ${PERSONA_MAX_TEXT_FIELD_LENGTH:120}
+    max-top-categories: ${PERSONA_MAX_TOP_CATEGORIES:5}
 
 ai:
   server:

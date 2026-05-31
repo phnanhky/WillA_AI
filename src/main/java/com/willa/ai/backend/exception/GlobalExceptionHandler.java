@@ -83,6 +83,25 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(PersonaRateLimitException.class)
+    public ResponseEntity<?> handlePersonaRateLimitException(PersonaRateLimitException ex, WebRequest request) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ApiResponse.builder()
+                        .status(false)
+                        .message(ex.getMessage())
+                        .build());
+    }
+
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<?> handleAccessDeniedException(
+            org.springframework.security.access.AccessDeniedException ex, WebRequest request) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.builder()
+                        .status(false)
+                        .message("Access denied")
+                        .build());
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<?> handleRuntimeException(RuntimeException ex, WebRequest request) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

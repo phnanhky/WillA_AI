@@ -80,6 +80,19 @@ public class AiServerClient {
             String actionType,
             Integer errorIndex,
             String box2d) {
+        return chatForm(sessionId, message, actionType, errorIndex, box2d, null);
+    }
+
+    /**
+     * @param personaContextJson JSON đã sanitize từ PersonaService — không chứa PII.
+     */
+    public MultiValueMap<String, Object> chatForm(
+            String sessionId,
+            String message,
+            String actionType,
+            Integer errorIndex,
+            String box2d,
+            String personaContextJson) {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         if (message != null && !message.trim().isEmpty()) {
             body.add("message", message);
@@ -93,6 +106,9 @@ public class AiServerClient {
         }
         if (box2d != null && !box2d.trim().isEmpty()) {
             body.add("box_2d", box2d);
+        }
+        if (personaContextJson != null && !personaContextJson.isBlank()) {
+            body.add("persona_context", personaContextJson);
         }
         return body;
     }
