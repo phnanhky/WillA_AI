@@ -22,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.willa.ai.backend.client.AiServerClient;
 import com.willa.ai.backend.client.AiServerClient.TokenUsage;
 import com.willa.ai.backend.config.QwenTokenEstimateProperties;
@@ -68,6 +69,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 @RequiredArgsConstructor
 @Slf4j
 public class ChatServiceImpl implements ChatService {
+    private static final String AI_PAYLOAD_SCHEMA_VERSION = "1.0.0";
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -288,6 +290,8 @@ public class ChatServiceImpl implements ChatService {
             throw new RuntimeException("Failed to call AI or parse response: " + e.getMessage(), e);
         }
 
+        aiResponseContent = validateAndNormalizeAiPayload(aiResponseContent);
+
         String imageUrlStr = imageUrlsFuture.join();
 
         if (isAnalysisPayload(aiResponseContent) && imageUrlStr != null && !imageUrlStr.isBlank()) {
@@ -324,8 +328,36 @@ public class ChatServiceImpl implements ChatService {
         if (content == null || content.isBlank()) {
             return false;
         }
-        return content.contains("\"type\":\"analysis\"")
-                || content.contains("\"type\": \"analysis\"");
+        if (content.contains("\"type\":\"analysis\"")
+                || content.contains("\"type\": \"analysis\"")) {
+            return true;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(content);
+            if (root.isObject()) {
+                if ("analysis".equals(root.path("type").asText(""))) {
+                    return true;
+                }
+                JsonNode ad = root.get("analysis_data");
+                return ad != null && ad.isObject();
+            }
+            if (root.isArray()) {
+                for (JsonNode n : root) {
+                    if (n != null && n.isObject()) {
+                        if ("analysis".equals(n.path("type").asText(""))) {
+                            return true;
+                        }
+                        JsonNode ad = n.get("analysis_data");
+                        if (ad != null && ad.isObject()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // Fallback to false.
+        }
+        return false;
     }
 
     private boolean isZoomPayload(String content) {
@@ -345,7 +377,98 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private boolean isImagePayload(String content) {
-        return isZoomPayload(content) || isRegenResultPayload(content);
+        if (isZoomPayload(content) || isRegenResultPayload(content)) {
+            return true;
+        }
+        if (content == null || content.isBlank()) {
+            return false;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(content);
+            if (!root.isObject()) {
+                return false;
+            }
+            String dataUrl = root.path("image_data_url").asText("");
+            String b64 = root.path("image_b64").asText("");
+            return (dataUrl != null && !dataUrl.isBlank()) || (b64 != null && !b64.isBlank());
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Production contract gate for AI payload:
+     * - add schema_version
+     * - validate required fields for analysis/zoom/regen_result payloads
+     */
+    private String validateAndNormalizeAiPayload(String aiResponseContent) {
+        if (aiResponseContent == null || aiResponseContent.isBlank()) {
+            throw new RuntimeException("AI trả về payload rỗng.");
+        }
+        try {
+            JsonNode root = objectMapper.readTree(aiResponseContent);
+            if (root.isObject()) {
+                return validateAndNormalizePayloadObject((ObjectNode) root.deepCopy()).toString();
+            }
+            if (root.isArray()) {
+                ArrayNode arr = objectMapper.createArrayNode();
+                for (JsonNode item : root) {
+                    if (item != null && item.isObject()) {
+                        arr.add(validateAndNormalizePayloadObject((ObjectNode) item.deepCopy()));
+                    }
+                }
+                if (arr.size() > 0) {
+                    return arr.toString();
+                }
+            }
+            return aiResponseContent;
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            // Chat plain text / fallback string is still valid.
+            return aiResponseContent;
+        }
+    }
+
+    private ObjectNode validateAndNormalizePayloadObject(ObjectNode root) {
+        String type = root.path("type").asText("");
+        if (!root.hasNonNull("schema_version")) {
+            root.put("schema_version", AI_PAYLOAD_SCHEMA_VERSION);
+        }
+        if ("analysis".equals(type)) {
+            JsonNode adNode = root.get("analysis_data");
+            ObjectNode ad = adNode != null && adNode.isObject()
+                    ? (ObjectNode) adNode
+                    : objectMapper.createObjectNode();
+            if (!ad.has("e") || !ad.get("e").isArray()) {
+                ad.set("e", objectMapper.createArrayNode());
+            }
+            if (!ad.has("e_raw") || !ad.get("e_raw").isArray()) {
+                ad.set("e_raw", objectMapper.createArrayNode());
+            }
+            if (!ad.has("te") || !ad.get("te").canConvertToInt()) {
+                ad.put("te", ad.path("e").size());
+            }
+            if (!ad.has("ss") || !ad.get("ss").isObject()) {
+                ObjectNode ss = objectMapper.createObjectNode();
+                ss.put("minor", 0);
+                ss.put("major", 0);
+                ss.put("critical", 0);
+                ad.set("ss", ss);
+            }
+            root.set("analysis_data", ad);
+        } else if ("zoom".equals(type) || "regen_result".equals(type)) {
+            String dataUrl = root.path("image_data_url").asText("");
+            String b64 = root.path("image_b64").asText("");
+            if ((dataUrl == null || dataUrl.isBlank()) && (b64 == null || b64.isBlank())) {
+                throw new RuntimeException("Payload ảnh từ AI thiếu image_data_url/image_b64.");
+            }
+        } else if ("chat".equals(type)) {
+            if (!root.has("reply")) {
+                root.put("reply", "");
+            }
+        }
+        return root;
     }
 
     /**
@@ -373,14 +496,17 @@ public class ChatServiceImpl implements ChatService {
                 return extractDisplayText(aiResponseContent, aiResponseContent);
             }
             String type = root.path("type").asText("");
-            if (!"zoom".equals(type) && !"regen_result".equals(type)) {
-                return extractDisplayText(aiResponseContent, aiResponseContent);
-            }
-            ObjectNode out = ((ObjectNode) root).deepCopy();
             String dataUrl = root.path("image_data_url").asText(null);
             if (dataUrl == null || dataUrl.isBlank()) {
                 dataUrl = root.path("image_b64").asText(null);
             }
+            // Keep pure chat-only payloads as text. Keep any payload that carries image bytes/url.
+            if ((dataUrl == null || dataUrl.isBlank())
+                    && !"zoom".equals(type)
+                    && !"regen_result".equals(type)) {
+                return extractDisplayText(aiResponseContent, aiResponseContent);
+            }
+            ObjectNode out = ((ObjectNode) root).deepCopy();
             if (dataUrl != null && !dataUrl.isBlank()) {
                 String stored = storeGeneratedImageFromDataUrl(dataUrl);
                 if (stored != null && !stored.isBlank()) {
@@ -411,10 +537,6 @@ public class ChatServiceImpl implements ChatService {
         }
         try {
             JsonNode root = objectMapper.readTree(storedContent);
-            String type = root.path("type").asText("");
-            if (!"zoom".equals(type) && !"regen_result".equals(type)) {
-                return null;
-            }
             String url = root.path("image_data_url").asText(null);
             return url != null && !url.isBlank() ? url : null;
         } catch (Exception e) {
