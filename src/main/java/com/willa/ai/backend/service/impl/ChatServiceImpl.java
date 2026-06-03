@@ -26,8 +26,6 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.willa.ai.backend.client.AiServerClient;
 import com.willa.ai.backend.client.AiServerClient.TokenUsage;
 import com.willa.ai.backend.config.QwenTokenEstimateProperties;
-import com.willa.ai.backend.util.AiAnalysisEnricher;
-import com.willa.ai.backend.util.ImageDimensions;
 import com.willa.ai.backend.util.QwenVisionTokenMath;
 import com.willa.ai.backend.util.UploadSizeValidator;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -243,9 +241,8 @@ public class ChatServiceImpl implements ChatService {
                 }
                 MultiValueMap<String, Object> body = aiServerClient.chatForm(
                         sessionKey, content, actionType, errorIndex, box2d, personaContext);
-                JsonNode rootNode = AiAnalysisEnricher.enrich(
-                        callAiChatWithAnalysisRecovery(email, sessionId, body));
-                aiResponseContent = rootNode.toString();
+                JsonNode rootNode = callAiChatWithAnalysisRecovery(email, sessionId, body);
+                aiResponseContent = contentFromAiNode(rootNode);
                 TokenUsage usage = deductTokensForAiCall(user, wallet, rootNode, "CHAT");
                 totalTokensCombined = usage.getTotalTokens();
                 actualInput = usage.getPromptTokens();
@@ -260,8 +257,7 @@ public class ChatServiceImpl implements ChatService {
                     MultiValueMap<String, Object> body = aiServerClient.chatForm(
                             sessionKey, content, actionType, errorIndex, box2d, personaContext);
                     body.add("file", AiServerClient.toFileResource(image.bytes(), image.filename()));
-                    JsonNode rootNode = AiAnalysisEnricher.enrich(aiServerClient.chat(body));
-                    applySourceSizeToAnalysis(rootNode, image.bytes());
+                    JsonNode rootNode = aiServerClient.chat(body);
                     arrayNode.add(rootNode);
                     TokenUsage usage = deductTokensForAiCall(user, wallet, rootNode, "ANALYZE");
                     totalTokensCombined += usage.getTotalTokens();
@@ -290,13 +286,9 @@ public class ChatServiceImpl implements ChatService {
             throw new RuntimeException("Failed to call AI or parse response: " + e.getMessage(), e);
         }
 
-        aiResponseContent = validateAndNormalizeAiPayload(aiResponseContent);
+        aiResponseContent = passthroughAiPayload(aiResponseContent);
 
         String imageUrlStr = imageUrlsFuture.join();
-
-        if (isAnalysisPayload(aiResponseContent) && imageUrlStr != null && !imageUrlStr.isBlank()) {
-            aiResponseContent = finalizeAnalysisForPersistence(aiResponseContent, imageUrlStr);
-        }
 
         ChatMessage userMessage = ChatMessage.builder()
                 .session(session)
@@ -396,96 +388,48 @@ public class ChatServiceImpl implements ChatService {
         }
     }
 
+    /** Trả đúng JSON AI — không enrich/validate cứng (tránh lỗi xử lý box). */
+    private String contentFromAiNode(JsonNode rootNode) {
+        if (rootNode == null || rootNode.isNull()) {
+            return "";
+        }
+        return rootNode.toString();
+    }
+
     /**
-     * Production contract gate for AI payload:
-     * - add schema_version
-     * - validate required fields for analysis/zoom/regen_result payloads
+     * Gắn {@code schema_version} nếu thiếu; không throw, không sửa analysis/box.
      */
-    private String validateAndNormalizeAiPayload(String aiResponseContent) {
+    private String passthroughAiPayload(String aiResponseContent) {
         if (aiResponseContent == null || aiResponseContent.isBlank()) {
-            throw new RuntimeException("AI trả về payload rỗng.");
+            return aiResponseContent != null ? aiResponseContent : "";
         }
         try {
             JsonNode root = objectMapper.readTree(aiResponseContent);
             if (root.isObject()) {
-                return validateAndNormalizePayloadObject((ObjectNode) root.deepCopy()).toString();
-            }
-            if (root.isArray()) {
-                ArrayNode arr = objectMapper.createArrayNode();
-                for (JsonNode item : root) {
-                    if (item != null && item.isObject()) {
-                        arr.add(validateAndNormalizePayloadObject((ObjectNode) item.deepCopy()));
-                    }
+                ObjectNode obj = (ObjectNode) root.deepCopy();
+                if (!obj.hasNonNull("schema_version")) {
+                    obj.put("schema_version", AI_PAYLOAD_SCHEMA_VERSION);
                 }
-                if (arr.size() > 0) {
-                    return arr.toString();
-                }
+                return obj.toString();
             }
-            return aiResponseContent;
-        } catch (RuntimeException e) {
-            throw e;
+            return root.toString();
         } catch (Exception e) {
-            // Chat plain text / fallback string is still valid.
+            log.debug("passthroughAiPayload: keep raw AI string: {}", e.getMessage());
             return aiResponseContent;
         }
-    }
-
-    private ObjectNode validateAndNormalizePayloadObject(ObjectNode root) {
-        String type = root.path("type").asText("");
-        if (!root.hasNonNull("schema_version")) {
-            root.put("schema_version", AI_PAYLOAD_SCHEMA_VERSION);
-        }
-        if ("analysis".equals(type)) {
-            JsonNode adNode = root.get("analysis_data");
-            ObjectNode ad = adNode != null && adNode.isObject()
-                    ? (ObjectNode) adNode
-                    : objectMapper.createObjectNode();
-            if (!ad.has("e") || !ad.get("e").isArray()) {
-                ad.set("e", objectMapper.createArrayNode());
-            }
-            if (!ad.has("e_raw") || !ad.get("e_raw").isArray()) {
-                ad.set("e_raw", objectMapper.createArrayNode());
-            }
-            if (!ad.has("te") || !ad.get("te").canConvertToInt()) {
-                ad.put("te", ad.path("e").size());
-            }
-            if (!ad.has("ss") || !ad.get("ss").isObject()) {
-                ObjectNode ss = objectMapper.createObjectNode();
-                ss.put("minor", 0);
-                ss.put("major", 0);
-                ss.put("critical", 0);
-                ad.set("ss", ss);
-            }
-            root.set("analysis_data", ad);
-        } else if ("zoom".equals(type) || "regen_result".equals(type)) {
-            String dataUrl = root.path("image_data_url").asText("");
-            String b64 = root.path("image_b64").asText("");
-            if ((dataUrl == null || dataUrl.isBlank()) && (b64 == null || b64.isBlank())) {
-                throw new RuntimeException("Payload ảnh từ AI thiếu image_data_url/image_b64.");
-            }
-        } else if ("chat".equals(type)) {
-            if (!root.has("reply")) {
-                root.put("reply", "");
-            }
-        }
-        return root;
     }
 
     /**
-     * Analysis + zoom giữ JSON đầy đủ; zoom upload crop lên R2 thay base64.
-     * Chat/intent khác chỉ lưu {@code reply}.
+     * Lưu đúng JSON AI. Chỉ thử upload ảnh zoom/regen lên R2 (best-effort); lỗi thì giữ JSON gốc.
      */
     private String prepareAiContentForStorage(String aiResponseContent) {
         if (aiResponseContent == null || aiResponseContent.isBlank()) {
             return aiResponseContent;
         }
-        if (isAnalysisPayload(aiResponseContent)) {
-            return aiResponseContent;
-        }
         if (isImagePayload(aiResponseContent)) {
             return persistImagePayloadContent(aiResponseContent);
         }
-        return extractDisplayText(aiResponseContent, aiResponseContent);
+        return aiResponseContent;
     }
 
     /** Upload base64 image in zoom / regen_result JSON to R2; keep full JSON for reload. */
@@ -516,8 +460,8 @@ public class ChatServiceImpl implements ChatService {
             }
             return out.toString();
         } catch (Exception e) {
-            log.warn("persistImagePayloadContent failed: {}", e.getMessage());
-            return extractDisplayText(aiResponseContent, aiResponseContent);
+            log.warn("persistImagePayloadContent failed, keep AI JSON: {}", e.getMessage());
+            return aiResponseContent;
         }
     }
 
@@ -632,65 +576,6 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private record ImagePart(byte[] bytes, String filename, String contentType) {}
-
-    private void applySourceSizeToAnalysis(JsonNode rootNode, byte[] imageBytes) {
-        if (rootNode == null || !rootNode.isObject() || imageBytes == null || imageBytes.length == 0) {
-            return;
-        }
-        JsonNode ad = rootNode.get("analysis_data");
-        if (ad == null || !ad.isObject()) {
-            return;
-        }
-        int[] source = ImageDimensions.readWidthHeight(imageBytes);
-        if (source[0] > 0 && source[1] > 0) {
-            AiAnalysisEnricher.finalizeForDisplayStorage((ObjectNode) ad, source[0], source[1]);
-        }
-    }
-
-    /**
-     * Sau upload R2, remap {@code e[].c} + {@code isz} theo bytes thật trên storage
-     * (có thể khác bytes gửi AI khi nén). JSON lưu DB = hợp đồng FE + AI seed.
-     */
-    private String finalizeAnalysisForPersistence(String content, String imageUrl) {
-        if (content == null || content.isBlank() || !isAnalysisPayload(content)) {
-            return content;
-        }
-        String firstUrl = imageUrl.split(",")[0].trim();
-        byte[] stored = loadImageBytesFromStoredUrl(firstUrl);
-        if (stored == null || stored.length == 0) {
-            return content;
-        }
-        int[] dims = ImageDimensions.readWidthHeight(stored);
-        if (dims[0] <= 0 || dims[1] <= 0) {
-            return content;
-        }
-        try {
-            JsonNode root = objectMapper.readTree(content);
-            remapAnalysisPayloadToDisplaySize(root, dims[0], dims[1]);
-            return root.toString();
-        } catch (Exception e) {
-            log.warn("finalizeAnalysisForPersistence failed: {}", e.getMessage());
-            return content;
-        }
-    }
-
-    private void remapAnalysisPayloadToDisplaySize(JsonNode root, int width, int height) {
-        if (root == null || width <= 0 || height <= 0) {
-            return;
-        }
-        if (root.isObject() && root.has("analysis_data") && root.get("analysis_data").isObject()) {
-            AiAnalysisEnricher.finalizeForDisplayStorage((ObjectNode) root.get("analysis_data"), width, height);
-            return;
-        }
-        if (root.isArray()) {
-            for (JsonNode item : root) {
-                if (item != null && item.isObject() && item.has("analysis_data")
-                        && item.get("analysis_data").isObject()) {
-                    AiAnalysisEnricher.finalizeForDisplayStorage((ObjectNode) item.get("analysis_data"), width, height);
-                }
-            }
-        }
-    }
 
     private QwenTokenEstimateResponse estimateTokenUsage(
             List<ImagePart> images, String content, String personaContextJson, Long sessionId) {
@@ -1098,11 +983,6 @@ public class ChatServiceImpl implements ChatService {
                 throw new RuntimeException("Dữ liệu phân tích không hợp lệ.");
             }
             analysisResult = ((ObjectNode) analysisData).deepCopy();
-            // Giữ `e` đã enrich (pixel + cùng thứ tự với FE). e_raw chỉ dùng khi enrich, không seed.
-            int[] storedDims = ImageDimensions.readWidthHeight(imageBytes);
-            if (storedDims[0] > 0 && storedDims[1] > 0) {
-                AiAnalysisEnricher.finalizeForDisplayStorage(analysisResult, storedDims[0], storedDims[1]);
-            }
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {

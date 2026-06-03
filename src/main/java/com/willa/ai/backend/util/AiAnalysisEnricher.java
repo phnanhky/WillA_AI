@@ -360,6 +360,9 @@ public final class AiAnalysisEnricher {
                     || looksLikeMislabeledGrid(resolved, imgW, imgH)
                     ? toPixelBoxFromGrid1000(resolved, imgW, imgH)
                     : clampPixelBox(resolved, imgW, imgH, false);
+            if (pixel == null) {
+                continue;
+            }
             double score = scorePixelBox(pixel, imgW, imgH);
             if (!issue.isEmpty() && issue.equals(rawIssue)) {
                 score += 5;
@@ -500,6 +503,9 @@ public final class AiAnalysisEnricher {
             } else {
                 pixel = clampPixelBox(cand, imgW, imgH, false);
             }
+            if (pixel == null) {
+                continue;
+            }
             double score = scorePixelBox(pixel, imgW, imgH);
             if (cRaw != null && java.util.Arrays.equals(cand, cRaw)) {
                 score += 5;
@@ -548,6 +554,9 @@ public final class AiAnalysisEnricher {
     }
 
     private static double scorePixelBox(int[] box, int imgW, int imgH) {
+        if (box == null || box.length < 4 || imgW <= 0 || imgH <= 0) {
+            return -1;
+        }
         int w = box[2] - box[0];
         int h = box[3] - box[1];
         if (w < 5 || h < 5) {
@@ -573,6 +582,9 @@ public final class AiAnalysisEnricher {
     }
 
     private static int[] clampPixelBox(int[] box, int imgW, int imgH, boolean padOnePx) {
+        if (box == null || box.length < 4 || imgW <= 0 || imgH <= 0) {
+            return null;
+        }
         int x1 = Math.min(box[0], box[2]);
         int y1 = Math.min(box[1], box[3]);
         int x2 = Math.max(box[0], box[2]);
@@ -595,6 +607,9 @@ public final class AiAnalysisEnricher {
 
     /** Convert Qwen grid 0–1000 or inline tag coords to pixel box. */
     private static int[] toPixelBoxFromGrid1000(int[] box, int imgW, int imgH) {
+        if (box == null || box.length < 4 || imgW <= 0 || imgH <= 0) {
+            return null;
+        }
         int a0 = box[0], a1 = box[1], a2 = box[2], a3 = box[3];
         int x1 = (int) ((long) Math.min(a0, a2) * imgW / 1000);
         int y1 = (int) ((long) Math.min(a1, a3) * imgH / 1000);
