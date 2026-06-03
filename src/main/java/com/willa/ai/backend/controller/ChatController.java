@@ -157,6 +157,7 @@ public class ChatController {
             @Parameter(description = "Loại hành động (VD: zoom)") @RequestParam(value = "actionType", required = false) String actionType,
             @Parameter(description = "Index của lỗi nếu dùng zoom") @RequestParam(value = "errorIndex", required = false) Integer errorIndex,
             @Parameter(description = "Tọa độ pixel [x1,y1,x2,y2] JSON — ưu tiên hơn errorIndex khi zoom") @RequestParam(value = "box2d", required = false) String box2d,
+            @Parameter(description = "Pro multi-image: 0 = ảnh 1, 1 = ảnh 2") @RequestParam(value = "imageIndex", required = false) Integer imageIndex,
             @Parameter(description = "File ảnh upload lên") @RequestPart(value = "files", required = false) List<MultipartFile> files,
             Authentication authentication) {
 
@@ -168,7 +169,7 @@ public class ChatController {
                         .build());
             }
 
-            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, content, actionType, errorIndex, box2d, files);
+            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, content, actionType, errorIndex, box2d, imageIndex, files);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Message processed by AI")
@@ -216,9 +217,10 @@ public class ChatController {
     public ResponseEntity<ApiResponse> prepareRegen(
             Authentication authentication,
             @RequestParam("sessionId") Long sessionId,
-            @RequestParam(value = "errorIndices", required = false) String errorIndices) {
+            @RequestParam(value = "errorIndices", required = false) String errorIndices,
+            @RequestParam(value = "imageIndex", required = false) Integer imageIndex) {
         try {
-            Object result = chatService.prepareRegen(authentication.getName(), sessionId, errorIndices);
+            Object result = chatService.prepareRegen(authentication.getName(), sessionId, errorIndices, imageIndex);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Prepare regen successful")
@@ -237,9 +239,10 @@ public class ChatController {
             Authentication authentication,
             @RequestParam("sessionId") Long sessionId,
             @RequestParam(value = "errorIndices", required = false) String errorIndices,
-            @RequestParam(value = "finalPrompt", required = false) String finalPrompt) {
+            @RequestParam(value = "finalPrompt", required = false) String finalPrompt,
+            @RequestParam(value = "imageIndex", required = false) Integer imageIndex) {
         try {
-            Object result = chatService.regenImage(authentication.getName(), sessionId, errorIndices, finalPrompt);
+            Object result = chatService.regenImage(authentication.getName(), sessionId, errorIndices, finalPrompt, imageIndex);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Regen image successful")

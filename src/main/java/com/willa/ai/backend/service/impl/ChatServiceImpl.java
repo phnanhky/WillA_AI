@@ -179,14 +179,14 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     @Transactional
-    public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, List<MultipartFile> files) {
+    public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, Integer imageIndex, List<MultipartFile> files) {
         User user = getUserByEmail(email);
         WorkflowType workflow = hasAnalyzableUpload(files) ? WorkflowType.ANALYZE : WorkflowType.CHAT;
         return workflowUsageService.track(user, workflow, sessionId,
-                () -> doSendMessageToAi(user, email, sessionId, content, actionType, errorIndex, box2d, files));
+                () -> doSendMessageToAi(user, email, sessionId, content, actionType, errorIndex, box2d, imageIndex, files));
     }
 
-    private ChatMessageResponse doSendMessageToAi(User user, String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, List<MultipartFile> files) {
+    private ChatMessageResponse doSendMessageToAi(User user, String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, Integer imageIndex, List<MultipartFile> files) {
         String planName = getPlanNameForUser(user.getId());
         if (Boolean.TRUE.equals(user.getRequiresReview()) && planName.equalsIgnoreCase("Free")) {
             throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
@@ -237,7 +237,7 @@ public class ChatServiceImpl implements ChatService {
             int actualOutput = 0;
             if (images.isEmpty()) {
                 if ("zoom".equalsIgnoreCase(actionType)) {
-                    seedAiAnalysisFromSession(email, sessionId);
+                    seedAiAnalysisFromSession(email, sessionId, imageIndex);
                 }
                 MultiValueMap<String, Object> body = aiServerClient.chatForm(
                         sessionKey, content, actionType, errorIndex, box2d, personaContext);
@@ -251,21 +251,31 @@ public class ChatServiceImpl implements ChatService {
                 final List<ImagePart> imagesForUpload = images;
                 imageUrlsFuture = CompletableFuture.supplyAsync(() -> uploadImagesToR2(imagesForUpload));
                 com.fasterxml.jackson.databind.node.ArrayNode arrayNode = objectMapper.createArrayNode();
-                int imageIndex = 0;
+                int batchImageIndex = 0;
                 for (ImagePart image : images) {
-                    imageIndex++;
+                    batchImageIndex++;
                     MultiValueMap<String, Object> body = aiServerClient.chatForm(
                             sessionKey, content, actionType, errorIndex, box2d, personaContext);
                     body.add("file", AiServerClient.toFileResource(image.bytes(), image.filename()));
                     JsonNode rootNode = aiServerClient.chat(body);
-                    arrayNode.add(rootNode);
+                    JsonNode nodeToAdd = rootNode;
+                    if (rootNode != null && rootNode.isObject()) {
+                        ObjectNode copy = (ObjectNode) rootNode.deepCopy();
+                        copy.put("image_index", batchImageIndex);
+                        copy.put("image_total", images.size());
+                        if (!copy.hasNonNull("schema_version")) {
+                            copy.put("schema_version", AI_PAYLOAD_SCHEMA_VERSION);
+                        }
+                        nodeToAdd = copy;
+                    }
+                    arrayNode.add(nodeToAdd);
                     TokenUsage usage = deductTokensForAiCall(user, wallet, rootNode, "ANALYZE");
                     totalTokensCombined += usage.getTotalTokens();
                     actualInput += usage.getPromptTokens();
                     actualOutput += usage.getCompletionTokens();
                     log.info(
                             "Token ACTUAL per image [userId={}, sessionId={}, image {}/{}, file={}]: input={}, output={}, total={}",
-                            user.getId(), sessionId, imageIndex, images.size(), image.filename(),
+                            user.getId(), sessionId, batchImageIndex, images.size(), image.filename(),
                             usage.getPromptTokens(), usage.getCompletionTokens(), usage.getTotalTokens());
                 }
                 if (images.size() == 1 && arrayNode.size() > 0) {
@@ -411,6 +421,27 @@ public class ChatServiceImpl implements ChatService {
                     obj.put("schema_version", AI_PAYLOAD_SCHEMA_VERSION);
                 }
                 return obj.toString();
+            }
+            if (root.isArray()) {
+                com.fasterxml.jackson.databind.node.ArrayNode arr =
+                        objectMapper.createArrayNode();
+                int idx = 0;
+                for (JsonNode n : root) {
+                    idx++;
+                    if (n != null && n.isObject()) {
+                        ObjectNode o = (ObjectNode) n.deepCopy();
+                        if (!o.hasNonNull("schema_version")) {
+                            o.put("schema_version", AI_PAYLOAD_SCHEMA_VERSION);
+                        }
+                        if (!o.hasNonNull("image_index")) {
+                            o.put("image_index", idx);
+                        }
+                        arr.add(o);
+                    } else {
+                        arr.add(n);
+                    }
+                }
+                return arr.toString();
             }
             return root.toString();
         } catch (Exception e) {
@@ -677,10 +708,11 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     @Transactional(readOnly = true)
-    public Object prepareRegen(String email, Long sessionId, String errorIndices) {
+    public Object prepareRegen(String email, Long sessionId, String errorIndices, Integer imageIndex) {
         User user = getUserByEmail(email);
         return workflowUsageService.track(user, WorkflowType.PREPARE_REGEN, sessionId, () -> {
             getSessionEntity(email, sessionId);
+            seedAiAnalysisFromSession(email, sessionId, imageIndex);
             MultiValueMap<String, Object> body = aiServerClient.sessionForm(sessionId.toString());
             if (errorIndices != null) {
                 body.add("error_indices", errorIndices);
@@ -691,10 +723,11 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     @Transactional
-    public Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt) {
+    public Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt, Integer imageIndex) {
         User user = getUserByEmail(email);
         return workflowUsageService.track(user, WorkflowType.REGEN, sessionId, () -> {
             ChatSession session = getSessionEntity(email, sessionId);
+            seedAiAnalysisFromSession(email, sessionId, imageIndex);
             MultiValueMap<String, Object> body = aiServerClient.sessionForm(sessionId.toString());
             if (errorIndices != null) {
                 body.add("error_indices", errorIndices);
@@ -903,7 +936,7 @@ public class ChatServiceImpl implements ChatService {
             return aiServerClient.chat(body);
         } catch (RuntimeException e) {
             if (isNeedAnalysisError(e)) {
-                seedAiAnalysisFromSession(email, sessionId);
+                seedAiAnalysisFromSession(email, sessionId, null);
                 return aiServerClient.chat(body);
             }
             throw e;
@@ -915,7 +948,7 @@ public class ChatServiceImpl implements ChatService {
             return aiServerClient.prepareRegen(body);
         } catch (RuntimeException e) {
             if (isNeedAnalysisError(e)) {
-                seedAiAnalysisFromSession(email, sessionId);
+                seedAiAnalysisFromSession(email, sessionId, null);
                 return aiServerClient.prepareRegen(body);
             }
             throw e;
@@ -927,7 +960,7 @@ public class ChatServiceImpl implements ChatService {
             return aiServerClient.regenImage(body);
         } catch (RuntimeException e) {
             if (isNeedAnalysisError(e)) {
-                seedAiAnalysisFromSession(email, sessionId);
+                seedAiAnalysisFromSession(email, sessionId, null);
                 return aiServerClient.regenImage(body);
             }
             throw e;
@@ -937,7 +970,8 @@ public class ChatServiceImpl implements ChatService {
     /**
      * AI server giữ phân tích trong RAM — sau restart hoặc mở session cũ cần nạp lại từ DB.
      */
-    private void seedAiAnalysisFromSession(String email, Long sessionId) {
+    private void seedAiAnalysisFromSession(String email, Long sessionId, Integer imageIndex) {
+        int idx = imageIndex != null && imageIndex >= 0 ? imageIndex : 0;
         ChatSession session = getSessionEntity(email, sessionId);
         List<ChatMessage> messages = chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(session.getId());
 
@@ -955,8 +989,8 @@ public class ChatServiceImpl implements ChatService {
 
         String imageUrl = analysisMsg.getImageUrl();
         if (imageUrl == null || imageUrl.isBlank()) {
-            int idx = messages.indexOf(analysisMsg);
-            for (int i = idx - 1; i >= 0; i--) {
+            int msgIdx = messages.indexOf(analysisMsg);
+            for (int i = msgIdx - 1; i >= 0; i--) {
                 ChatMessage prev = messages.get(i);
                 if (prev.getImageUrl() != null && !prev.getImageUrl().isBlank()) {
                     imageUrl = prev.getImageUrl();
@@ -968,8 +1002,13 @@ public class ChatServiceImpl implements ChatService {
             throw new RuntimeException("Không tìm thấy ảnh gốc của phiên phân tích.");
         }
 
-        String firstImageUrl = imageUrl.split(",")[0].trim();
-        byte[] imageBytes = loadImageBytesFromStoredUrl(firstImageUrl);
+        String[] urlParts = imageUrl.split(",");
+        int urlIdx = Math.min(idx, urlParts.length - 1);
+        if (urlIdx < 0) {
+            urlIdx = 0;
+        }
+        String selectedImageUrl = urlParts[urlIdx].trim();
+        byte[] imageBytes = loadImageBytesFromStoredUrl(selectedImageUrl);
         if (imageBytes == null || imageBytes.length == 0) {
             throw new RuntimeException(
                     "Không đọc được ảnh phân tích đã lưu. Vui lòng upload và phân tích lại ảnh.");
@@ -978,7 +1017,7 @@ public class ChatServiceImpl implements ChatService {
         ObjectNode analysisResult;
         try {
             JsonNode root = objectMapper.readTree(analysisMsg.getContent());
-            JsonNode analysisData = extractAnalysisDataNode(root);
+            JsonNode analysisData = extractAnalysisDataNode(root, idx);
             if (analysisData == null || !analysisData.isObject()) {
                 throw new RuntimeException("Dữ liệu phân tích không hợp lệ.");
             }
@@ -994,11 +1033,16 @@ public class ChatServiceImpl implements ChatService {
         seedBody.add("analysis_json", analysisResult.toString());
         seedBody.add("file", AiServerClient.toFileResource(imageBytes, "analysis.png"));
         aiServerClient.seedAnalysis(seedBody);
-        log.info("Seeded AI analysis memory for sessionId={} from DB (errors={})",
-                sessionId, analysisResult.path("e").size());
+        log.info("Seeded AI analysis memory for sessionId={} imageIndex={} from DB (errors={})",
+                sessionId, idx, analysisResult.path("e").size());
     }
 
     private JsonNode extractAnalysisDataNode(JsonNode root) {
+        return extractAnalysisDataNode(root, 0);
+    }
+
+    private JsonNode extractAnalysisDataNode(JsonNode root, int imageIndex) {
+        int idx = Math.max(0, imageIndex);
         if (root == null || root.isNull()) {
             return null;
         }
@@ -1007,10 +1051,22 @@ public class ChatServiceImpl implements ChatService {
             return ad != null ? ad : root;
         }
         if (root.isArray()) {
+            int analysisIdx = 0;
+            for (int i = 0; i < root.size(); i++) {
+                JsonNode item = root.get(i);
+                if (item != null && item.isObject() && "analysis".equals(item.path("type").asText())) {
+                    if (analysisIdx == idx) {
+                        JsonNode ad = item.get("analysis_data");
+                        return ad != null ? ad : item;
+                    }
+                    analysisIdx++;
+                }
+            }
             for (int i = root.size() - 1; i >= 0; i--) {
                 JsonNode item = root.get(i);
                 if (item != null && item.isObject() && "analysis".equals(item.path("type").asText())) {
-                    return item.get("analysis_data");
+                    JsonNode ad = item.get("analysis_data");
+                    return ad != null ? ad : item;
                 }
             }
         }

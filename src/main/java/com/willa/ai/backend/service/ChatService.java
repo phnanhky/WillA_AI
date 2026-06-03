@@ -24,15 +24,15 @@ public interface ChatService {
     List<ChatMessageResponse> getAllSessionMessages(String email, Long sessionId);
     
     // AI Chat Integration
-    ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, List<MultipartFile> files);
+    ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, Integer imageIndex, List<MultipartFile> files);
 
     // AI Image Generation (text→image hoặc image→image qua regen)
     ChatMessageResponse generateImage(String email, Long sessionId, String prompt, List<MultipartFile> files);
 
     // AI Inpaint Integration
-    Object prepareRegen(String email, Long sessionId, String errorIndices);
+    Object prepareRegen(String email, Long sessionId, String errorIndices, Integer imageIndex);
 
-    Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt);
+    Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt, Integer imageIndex);
 
     Object suggestStyle(String email, MultipartFile file, String box2d, String suggestType);
 
