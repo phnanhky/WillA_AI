@@ -179,14 +179,14 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     @Transactional
-    public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, Integer imageIndex, List<MultipartFile> files) {
+    public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, Integer imageIndex, String replyLang, List<MultipartFile> files) {
         User user = getUserByEmail(email);
         WorkflowType workflow = hasAnalyzableUpload(files) ? WorkflowType.ANALYZE : WorkflowType.CHAT;
         return workflowUsageService.track(user, workflow, sessionId,
-                () -> doSendMessageToAi(user, email, sessionId, content, actionType, errorIndex, box2d, imageIndex, files));
+                () -> doSendMessageToAi(user, email, sessionId, content, actionType, errorIndex, box2d, imageIndex, replyLang, files));
     }
 
-    private ChatMessageResponse doSendMessageToAi(User user, String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, Integer imageIndex, List<MultipartFile> files) {
+    private ChatMessageResponse doSendMessageToAi(User user, String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, Integer imageIndex, String replyLang, List<MultipartFile> files) {
         String planName = getPlanNameForUser(user.getId());
         if (Boolean.TRUE.equals(user.getRequiresReview()) && planName.equalsIgnoreCase("Free")) {
             throw new RuntimeException("Bạn cần để lại đánh giá (Review) trước khi tiếp tục ở gói Free.");
@@ -240,7 +240,7 @@ public class ChatServiceImpl implements ChatService {
                     seedAiAnalysisFromSession(email, sessionId, imageIndex);
                 }
                 MultiValueMap<String, Object> body = aiServerClient.chatForm(
-                        sessionKey, content, actionType, errorIndex, box2d, personaContext);
+                        sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang);
                 JsonNode rootNode = callAiChatWithAnalysisRecovery(email, sessionId, body);
                 aiResponseContent = contentFromAiNode(rootNode);
                 TokenUsage usage = deductTokensForAiCall(user, wallet, rootNode, "CHAT");
@@ -255,7 +255,7 @@ public class ChatServiceImpl implements ChatService {
                 for (ImagePart image : images) {
                     batchImageIndex++;
                     MultiValueMap<String, Object> body = aiServerClient.chatForm(
-                            sessionKey, content, actionType, errorIndex, box2d, personaContext);
+                            sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang);
                     body.add("file", AiServerClient.toFileResource(image.bytes(), image.filename()));
                     JsonNode rootNode = aiServerClient.chat(body);
                     JsonNode nodeToAdd = rootNode;

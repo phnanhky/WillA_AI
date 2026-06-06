@@ -158,6 +158,7 @@ public class ChatController {
             @Parameter(description = "Index của lỗi nếu dùng zoom") @RequestParam(value = "errorIndex", required = false) Integer errorIndex,
             @Parameter(description = "Tọa độ pixel [x1,y1,x2,y2] JSON — ưu tiên hơn errorIndex khi zoom") @RequestParam(value = "box2d", required = false) String box2d,
             @Parameter(description = "Pro multi-image: 0 = ảnh 1, 1 = ảnh 2") @RequestParam(value = "imageIndex", required = false) Integer imageIndex,
+            @Parameter(description = "Ngôn ngữ UI: vi | en") @RequestParam(value = "replyLang", required = false) String replyLang,
             @Parameter(description = "File ảnh upload lên") @RequestPart(value = "files", required = false) List<MultipartFile> files,
             Authentication authentication) {
 
@@ -169,7 +170,7 @@ public class ChatController {
                         .build());
             }
 
-            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, content, actionType, errorIndex, box2d, imageIndex, files);
+            ChatMessageResponse response = chatService.sendMessageToAi(authentication.getName(), sessionId, content, actionType, errorIndex, box2d, imageIndex, replyLang, files);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Message processed by AI")

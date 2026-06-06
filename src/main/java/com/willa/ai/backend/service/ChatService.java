@@ -24,7 +24,7 @@ public interface ChatService {
     List<ChatMessageResponse> getAllSessionMessages(String email, Long sessionId);
     
     // AI Chat Integration
-    ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, Integer imageIndex, List<MultipartFile> files);
+    ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, Integer imageIndex, String replyLang, List<MultipartFile> files);
 
     // AI Image Generation (text→image hoặc image→image qua regen)
     ChatMessageResponse generateImage(String email, Long sessionId, String prompt, List<MultipartFile> files);

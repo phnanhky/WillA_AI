@@ -92,7 +92,7 @@ public class AiServerClient {
             String actionType,
             Integer errorIndex,
             String box2d) {
-        return chatForm(sessionId, message, actionType, errorIndex, box2d, null);
+        return chatForm(sessionId, message, actionType, errorIndex, box2d, null, null);
     }
 
     /**
@@ -105,6 +105,20 @@ public class AiServerClient {
             Integer errorIndex,
             String box2d,
             String personaContextJson) {
+        return chatForm(sessionId, message, actionType, errorIndex, box2d, personaContextJson, null);
+    }
+
+    /**
+     * @param replyLang Ngôn ngữ UI từ FE: vi | en
+     */
+    public MultiValueMap<String, Object> chatForm(
+            String sessionId,
+            String message,
+            String actionType,
+            Integer errorIndex,
+            String box2d,
+            String personaContextJson,
+            String replyLang) {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         if (message != null && !message.trim().isEmpty()) {
             body.add("message", message);
@@ -121,6 +135,9 @@ public class AiServerClient {
         }
         if (personaContextJson != null && !personaContextJson.isBlank()) {
             body.add("persona_context", personaContextJson);
+        }
+        if (replyLang != null && !replyLang.isBlank()) {
+            body.add("reply_lang", replyLang.trim());
         }
         return body;
     }
