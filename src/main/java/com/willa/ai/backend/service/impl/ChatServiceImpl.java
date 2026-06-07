@@ -94,6 +94,12 @@ public class ChatServiceImpl implements ChatService {
     @Autowired
     private AdvancedFileParserService advancedFileParserService;
 
+    @Autowired
+    private com.willa.ai.backend.repository.WorkflowUsageRepository workflowUsageRepository;
+
+    @Autowired
+    private GenerationLimitChecker generationLimitChecker;
+
     @Override
     @Transactional
     public ChatSessionResponse createSession(String email, ChatSessionRequest request) {
@@ -725,6 +731,8 @@ public class ChatServiceImpl implements ChatService {
     @Transactional
     public Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt, Integer imageIndex) {
         User user = getUserByEmail(email);
+        String planName = getPlanNameForUser(user.getId());
+        generationLimitChecker.checkLimit(user, planName);
         return workflowUsageService.track(user, WorkflowType.REGEN, sessionId, () -> {
             ChatSession session = getSessionEntity(email, sessionId);
             seedAiAnalysisFromSession(email, sessionId, imageIndex);

@@ -17,12 +17,12 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     List<Subscription> findSubscriptionsByStatus(SubscriptionStatus status);
     List<Subscription> findByUserIdAndStatus(Long userId, SubscriptionStatus status);
 
-    /** Gói tháng/năm — loại ONE_TIME (mua thêm token, không xác định tier). */
     @Query("""
             SELECT s FROM Subscription s
             JOIN s.plan p
             WHERE s.user.id = :userId
               AND s.status = :status
+              AND (s.endDate IS NULL OR s.endDate > CURRENT_TIMESTAMP)
               AND p.billingCycle IN (com.willa.ai.backend.entity.enums.BillingCycle.MONTHLY, com.willa.ai.backend.entity.enums.BillingCycle.YEARLY)
             ORDER BY s.createdAt DESC
             """)

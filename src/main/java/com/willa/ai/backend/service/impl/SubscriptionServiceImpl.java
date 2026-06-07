@@ -88,20 +88,26 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<SubscriptionResponse> getUserSubscriptions(String email, int page, int size) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
         Pageable pageable = PageRequest.of(page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
-        return subscriptionRepository.findByUserId(user.getId(), pageable).map(this::mapToResponse);
+        Page<Subscription> subscriptions = subscriptionRepository.findByUserId(user.getId(), pageable);
+        LocalDateTime now = LocalDateTime.now();
+        subscriptions.forEach(sub -> checkAndExpireSubscriptionInDb(sub, now));
+        return subscriptions.map(this::mapToResponse);
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<SubscriptionResponse> getAllSubscriptions(int page, int size) {
         Pageable pageable = PageRequest.of(page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
-        return subscriptionRepository.findAll(pageable).map(this::mapToResponse);
+        Page<Subscription> subscriptions = subscriptionRepository.findAll(pageable);
+        LocalDateTime now = LocalDateTime.now();
+        subscriptions.forEach(sub -> checkAndExpireSubscriptionInDb(sub, now));
+        return subscriptions.map(this::mapToResponse);
     }
 
     @Override
@@ -208,6 +214,12 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     }
 
     private SubscriptionResponse mapToResponse(Subscription subscription) {
+        SubscriptionStatus currentStatus = subscription.getStatus();
+        if (currentStatus == SubscriptionStatus.ACTIVE 
+                && subscription.getEndDate() != null 
+                && subscription.getEndDate().isBefore(LocalDateTime.now())) {
+            currentStatus = SubscriptionStatus.EXPIRED;
+        }
         return SubscriptionResponse.builder()
                 .id(subscription.getId())
                 .userId(subscription.getUser().getId())
@@ -217,8 +229,35 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                 .limitGranted(subscription.getPlan().getTokenLimit())
                 .startDate(subscription.getStartDate())
                 .endDate(subscription.getEndDate())
-                .status(subscription.getStatus())
+                .status(currentStatus)
                 .createdAt(subscription.getCreatedAt())
                 .build();
+    }
+
+    private void checkAndExpireSubscriptionInDb(Subscription sub, LocalDateTime now) {
+        if (sub.getStatus() == SubscriptionStatus.ACTIVE 
+                && sub.getPlan().getBillingCycle() != BillingCycle.ONE_TIME
+                && sub.getEndDate() != null 
+                && sub.getEndDate().isBefore(now)) {
+            sub.setStatus(SubscriptionStatus.EXPIRED);
+            subscriptionRepository.save(sub);
+
+            boolean hasOtherActiveRecurring = subscriptionRepository
+                    .findActiveRecurringByUserId(sub.getUser().getId(), SubscriptionStatus.ACTIVE)
+                    .stream()
+                    .anyMatch(other -> !other.getId().equals(sub.getId()));
+            if (!hasOtherActiveRecurring) {
+                planRepository.findByName("Free").ifPresent(freePlan -> {
+                    Subscription newFreeSub = Subscription.builder()
+                            .user(sub.getUser())
+                            .plan(freePlan)
+                            .startDate(now)
+                            .endDate(now.plusYears(100))
+                            .status(SubscriptionStatus.ACTIVE)
+                            .build();
+                    subscriptionRepository.save(newFreeSub);
+                });
+            }
+        }
     }
 }

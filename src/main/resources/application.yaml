@@ -43,6 +43,10 @@ spring:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URI:http://elasticsearch:9200}
+    connection-timeout: 5s
+    socket-timeout: 30s
   cache:
     type: redis
 server:
@@ -83,6 +87,9 @@ app:
     behavior-window-days: ${PERSONA_BEHAVIOR_WINDOW_DAYS:30}
     max-text-field-length: ${PERSONA_MAX_TEXT_FIELD_LENGTH:120}
     max-top-categories: ${PERSONA_MAX_TOP_CATEGORIES:5}
+  gallery:
+    elasticsearch:
+      enabled: ${GALLERY_ELASTICSEARCH_ENABLED:true}
 
 ai:
   server:
@@ -202,6 +209,8 @@ management:
       enabled: false
     mail:
       enabled: false
+    elasticsearch:
+      enabled: false
 
 resilience4j:
   circuitbreaker:
@@ -244,3 +253,9 @@ spring:
       path: /h2-console
   cache:
     type: none
+  elasticsearch:
+    uris: http://localhost:9200
+app:
+  gallery:
+    elasticsearch:
+      enabled: false
