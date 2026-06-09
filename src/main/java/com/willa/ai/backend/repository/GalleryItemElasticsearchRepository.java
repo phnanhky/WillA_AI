@@ -16,7 +16,7 @@ public interface GalleryItemElasticsearchRepository extends ElasticsearchReposit
               "bool": {
                 "must": [
                   { "term": { "userId": ?0 } },
-                  { "multi_match": { "query": "?1", "fields": ["sessionTitle^3", "description"] } }
+                  { "match": { "sessionTitle": { "query": "?1", "operator": "and" } } }
                 ]
               }
             }

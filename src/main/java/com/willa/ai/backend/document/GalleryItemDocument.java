@@ -38,7 +38,7 @@ public class GalleryItemDocument {
     @Field(type = FieldType.Keyword)
     private String imageUrl;
 
-    @Field(type = FieldType.Text, analyzer = "standard")
+    @Field(type = FieldType.Text, analyzer = "standard", index = false)
     private String description;
 
     @Field(type = FieldType.Date, format = DateFormat.epoch_millis)
