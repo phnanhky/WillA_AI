@@ -1122,14 +1122,11 @@ public class ChatServiceImpl implements ChatService {
             return null;
         }
         String key = path.substring(idx + marker.length());
-        int slash = key.indexOf('/');
-        if (slash >= 0) {
-            key = key.substring(0, slash);
-        }
         int query = key.indexOf('?');
         if (query >= 0) {
             key = key.substring(0, query);
         }
+        key = com.willa.ai.backend.service.impl.FileServiceImpl.decodeObjectKeyFromUrl(key);
         return key.isBlank() ? null : key;
     }
 

@@ -11,6 +11,7 @@ import java.util.Optional;
 @Repository
 public interface WorkspaceInviteRepository extends JpaRepository<WorkspaceInvite, Long> {
     List<WorkspaceInvite> findByWorkspaceIdAndStatus(Long workspaceId, InviteStatus status);
+    Optional<WorkspaceInvite> findByToken(String token);
     Optional<WorkspaceInvite> findByTokenAndStatus(String token, InviteStatus status);
     Optional<WorkspaceInvite> findByWorkspaceIdAndEmailAndStatus(Long workspaceId, String email, InviteStatus status);
     void deleteByWorkspaceId(Long workspaceId);

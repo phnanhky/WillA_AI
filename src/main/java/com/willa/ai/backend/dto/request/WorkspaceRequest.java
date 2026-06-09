@@ -5,7 +5,7 @@ import lombok.Data;
 
 @Data
 public class WorkspaceRequest {
-    @NotBlank(message = "Workspace name cannot be empty")
-    private String name;
+    @NotBlank
+    private String title;
     private String description;
 }

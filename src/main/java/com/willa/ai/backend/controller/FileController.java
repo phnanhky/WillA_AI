@@ -1,6 +1,9 @@
 package com.willa.ai.backend.controller;
 
+import com.willa.ai.backend.service.FileService;
 import com.willa.ai.backend.service.impl.AdvancedFileParserService;
+import com.willa.ai.backend.service.impl.FileServiceImpl;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,7 +19,7 @@ public class FileController {
     private AdvancedFileParserService fileParserService;
 
     @Autowired
-    private com.willa.ai.backend.service.FileService fileService;
+    private FileService fileService;
 
     @PostMapping("/upload")
     public ResponseEntity<?> uploadFile(@RequestParam("file") MultipartFile file) {
@@ -28,12 +31,20 @@ public class FileController {
         }
     }
 
-    @GetMapping("/download/{fileName}")
-    public ResponseEntity<byte[]> downloadFile(@PathVariable String fileName) {
+    @GetMapping("/download/**")
+    public ResponseEntity<byte[]> downloadFile(HttpServletRequest request) {
         try {
-            byte[] data = fileService.downloadFile(fileName);
+            String uri = request.getRequestURI();
+            String marker = "/api/files/download/";
+            int idx = uri.indexOf(marker);
+            if (idx < 0) {
+                return ResponseEntity.notFound().build();
+            }
+            String encodedKey = uri.substring(idx + marker.length());
+            String fileKey = FileServiceImpl.decodeObjectKeyFromUrl(encodedKey);
+            byte[] data = fileService.downloadFile(fileKey);
             String contentType = "application/octet-stream";
-            String lower = fileName.toLowerCase();
+            String lower = fileKey.toLowerCase();
             if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
                 contentType = "image/jpeg";
             } else if (lower.endsWith(".png")) {

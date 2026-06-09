@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 @Data
-public class WorkspaceNoteMessageRequest {
-    @NotBlank(message = "Nội dung ghi chú không được để trống")
+public class TaskCommentRequest {
+    @NotBlank
     private String content;
 }

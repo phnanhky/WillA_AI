@@ -8,7 +8,10 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "workspace_members")
+@Table(
+        name = "workspace_members",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"workspace_id", "user_id"})
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -30,7 +33,11 @@ public class WorkspaceMember {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
-    private WorkspaceRole role = WorkspaceRole.VIEWER; // ADMIN, EDITOR, VIEWER
+    private WorkspaceRole role = WorkspaceRole.MEMBER;
+
+    @Column(name = "is_important", nullable = false)
+    @Builder.Default
+    private Boolean isImportant = false;
 
     @CreationTimestamp
     private LocalDateTime joinedAt;

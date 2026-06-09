@@ -35,7 +35,7 @@ public class WorkspaceInvite {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
-    private WorkspaceRole role = WorkspaceRole.VIEWER;
+    private WorkspaceRole role = WorkspaceRole.MEMBER;
 
     @Column(nullable = false, unique = true, length = 64)
     private String token;

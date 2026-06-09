@@ -8,5 +8,10 @@ public interface FileService {
     /** Upload raw bytes (dùng khi upload song song với gọi AI). */
     String uploadBytes(byte[] data, String originalFilename, String contentType);
 
+    /** Upload bytes tới key R2 cố định (không nén — dùng QR, file nhị phân). */
+    String uploadRawBytes(byte[] data, String objectKey, String contentType);
+
     byte[] downloadFile(String fileName);
+
+    String buildDownloadUrl(String objectKey);
 }

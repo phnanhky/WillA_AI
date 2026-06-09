@@ -14,5 +14,6 @@ public class WorkspaceMemberResponse {
     private String userName;
     private String email;
     private WorkspaceRole role;
+    private Boolean isImportant;
     private LocalDateTime joinedAt;
 }

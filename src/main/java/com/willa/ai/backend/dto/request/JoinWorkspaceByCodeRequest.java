@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 @Data
-public class UpdatePageDesignRequest {
-    @NotBlank(message = "designData is required")
-    private String designData;
+public class JoinWorkspaceByCodeRequest {
+    @NotBlank
+    private String inviteCode;
 }

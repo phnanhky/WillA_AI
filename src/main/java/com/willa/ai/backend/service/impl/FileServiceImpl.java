@@ -15,7 +15,12 @@ import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -55,23 +60,54 @@ public class FileServiceImpl implements FileService {
         ImageUploadCompressor.PreparedUpload prepared =
                 imageUploadCompressor.prepare(data, contentType, originalFilename);
         String uniqueFileName = UUID.randomUUID().toString() + prepared.extension();
-        byte[] uploadData = prepared.data();
-        String resolvedContentType = prepared.contentType();
+        return putObject(uniqueFileName, prepared.data(), prepared.contentType());
+    }
 
+    @Override
+    public String uploadRawBytes(byte[] data, String objectKey, String contentType) {
+        if (data == null || data.length == 0) {
+            throw new IllegalArgumentException("Cannot upload empty file");
+        }
+        if (objectKey == null || objectKey.isBlank()) {
+            throw new IllegalArgumentException("Object key is required");
+        }
+        return putObject(objectKey, data, contentType != null ? contentType : "application/octet-stream");
+    }
+
+    private String putObject(String objectKey, byte[] data, String contentType) {
         try {
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
-                    .key(uniqueFileName)
-                    .contentType(resolvedContentType)
+                    .key(objectKey)
+                    .contentType(contentType)
                     .build();
 
-            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(uploadData));
-
-            String apiBase = appBaseUrl.endsWith("/") ? appBaseUrl.substring(0, appBaseUrl.length() - 1) : appBaseUrl;
-            return apiBase + "/api/files/download/" + uniqueFileName;
+            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(data));
+            return buildDownloadUrl(objectKey);
         } catch (Exception e) {
             throw new RuntimeException("Failed to upload file to Cloudflare R2", e);
         }
+    }
+
+    @Override
+    public String buildDownloadUrl(String objectKey) {
+        String apiBase = appBaseUrl.endsWith("/") ? appBaseUrl.substring(0, appBaseUrl.length() - 1) : appBaseUrl;
+        return apiBase + "/api/files/download/" + encodeObjectKeyForUrl(objectKey);
+    }
+
+    public static String encodeObjectKeyForUrl(String objectKey) {
+        return Arrays.stream(objectKey.split("/"))
+                .map(seg -> URLEncoder.encode(seg, StandardCharsets.UTF_8))
+                .collect(Collectors.joining("/"));
+    }
+
+    public static String decodeObjectKeyFromUrl(String encodedPath) {
+        if (encodedPath == null || encodedPath.isBlank()) {
+            return encodedPath;
+        }
+        return Arrays.stream(encodedPath.split("/"))
+                .map(seg -> URLDecoder.decode(seg, StandardCharsets.UTF_8))
+                .collect(Collectors.joining("/"));
     }
 
     @Override

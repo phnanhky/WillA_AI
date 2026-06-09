@@ -1,18 +1,17 @@
 package com.willa.ai.backend.dto.response;
 
+import java.time.LocalDateTime;
+
 import lombok.Builder;
 import lombok.Data;
 
-import java.time.LocalDateTime;
-
 @Data
 @Builder
-public class WorkspaceNoteMessageResponse {
+public class TaskCommentResponse {
     private Long id;
-    private Long workspaceId;
+    private Long taskId;
     private Long userId;
     private String userName;
-    private String userEmail;
     private String content;
     private LocalDateTime createdAt;
 }

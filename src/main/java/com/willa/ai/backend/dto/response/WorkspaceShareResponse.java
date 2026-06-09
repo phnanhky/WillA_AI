@@ -12,6 +12,9 @@ public class WorkspaceShareResponse {
     private String workspaceName;
     private Long ownerId;
     private String ownerName;
+    private String inviteCode;
+    private String inviteLink;
+    private String qrCodeUrl;
     private List<WorkspaceMemberResponse> members;
     private List<WorkspaceInviteResponse> pendingInvites;
     private boolean canManageMembers;

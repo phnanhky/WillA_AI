@@ -1,0 +1,20 @@
+package com.willa.ai.backend.dto.request;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+import com.willa.ai.backend.entity.enums.TaskStatus;
+
+import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+
+@Data
+public class TaskRequest {
+    @NotBlank
+    private String title;
+    private String description;
+    private TaskStatus status;
+    private LocalDateTime dueDate;
+    private Integer position;
+    private List<Long> assigneeUserIds;
+}

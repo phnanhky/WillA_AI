@@ -20,45 +20,24 @@ public class Workspace {
     private Long id;
 
     @Column(nullable = false)
-    private String name;
+    private String title;
 
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    /** Ghi chú chung của dự án (collaboration) */
-    @Column(columnDefinition = "TEXT")
-    private String notes;
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id", nullable = false)
     private User owner;
+
+    @Column(name = "invite_code", unique = true, length = 12)
+    private String inviteCode;
+
+    @Column(name = "qr_code_url", length = 500)
+    private String qrCodeUrl;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
-
-    @Column(name = "storage_used")
-    @Builder.Default
-    private Long storageUsed = 0L;
-
-    @Column(name = "is_public")
-    @Builder.Default
-    private Boolean isPublic = false;
-
-    @Column(name = "likes_count")
-    @Builder.Default
-    private Integer likesCount = 0;
-
-    @Column(name = "clones_count")
-    @Builder.Default
-    private Integer clonesCount = 0;
-
-    /** Ảnh tải lên trong sidebar "Hình ảnh của bạn" — riêng từng workspace */
-    @Column(name = "library_image_url", columnDefinition = "TEXT")
-    private String libraryImageUrl;
-
-    @Column(name = "library_file_size_bytes")
-    private Long libraryFileSizeBytes;
 }
