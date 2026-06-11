@@ -1,6 +1,5 @@
 package com.willa.ai.backend.cron;
 
-import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.Subscription;
 import com.willa.ai.backend.entity.Wallet;
 import com.willa.ai.backend.entity.enums.BillingCycle;
@@ -8,6 +7,7 @@ import com.willa.ai.backend.entity.enums.SubscriptionStatus;
 import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.SubscriptionRepository;
 import com.willa.ai.backend.repository.WalletRepository;
+import com.willa.ai.backend.service.SubscriptionTokenSettlementService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -23,6 +23,8 @@ public class SubscriptionCronTask {
 
     private final SubscriptionRepository subscriptionRepository;
     private final PlanRepository planRepository;
+    private final WalletRepository walletRepository;
+    private final SubscriptionTokenSettlementService tokenSettlementService;
 
     /**
      * Run every day at midnight to check expired subscriptions.
@@ -41,6 +43,16 @@ public class SubscriptionCronTask {
             }
             if (sub.getEndDate() != null && sub.getEndDate().isBefore(now)) {
                 log.info("Subscription id {} has expired. User: {}", sub.getId(), sub.getUser().getEmail());
+
+                Wallet wallet = walletRepository.findByUserId(sub.getUser().getId())
+                        .orElse(Wallet.builder()
+                                .user(sub.getUser())
+                                .tokenBalance(0L)
+                                .totalRecharged(0L)
+                                .build());
+                tokenSettlementService.settleRecurringPeriod(wallet, sub);
+                walletRepository.save(wallet);
+
                 sub.setStatus(SubscriptionStatus.EXPIRED);
                 subscriptionRepository.save(sub);
 

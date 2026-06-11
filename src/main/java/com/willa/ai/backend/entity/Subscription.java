@@ -47,6 +47,14 @@ public class Subscription {
     @Builder.Default
     private SubscriptionStatus status = SubscriptionStatus.PENDING;
 
+    /** Số dư ví ngay trước khi cộng token của gói (chu kỳ MONTHLY/YEARLY). */
+    @Column(name = "period_start_token_balance")
+    private Long periodStartTokenBalance;
+
+    /** Số token plan đã cộng vào ví ở đầu chu kỳ. */
+    @Column(name = "period_token_grant")
+    private Long periodTokenGrant;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

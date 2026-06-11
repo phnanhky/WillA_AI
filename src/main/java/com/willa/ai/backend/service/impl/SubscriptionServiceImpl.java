@@ -24,17 +24,21 @@ import com.willa.ai.backend.repository.SubscriptionRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WalletRepository;
 import com.willa.ai.backend.service.SubscriptionService;
+import com.willa.ai.backend.service.SubscriptionTokenSettlementService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SubscriptionServiceImpl implements SubscriptionService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final PlanRepository planRepository;
     private final UserRepository userRepository;
     private final WalletRepository walletRepository;
+    private final SubscriptionTokenSettlementService tokenSettlementService;
 
     @Override
     @Transactional
@@ -58,10 +62,13 @@ public class SubscriptionServiceImpl implements SubscriptionService {
             return buildOneTimeTopUpResponse(user, plan);
         }
 
-        cancelActiveRecurringSubscriptions(user.getId());
+        Wallet wallet = settleAndCancelActiveRecurring(user);
 
         LocalDateTime startDate = LocalDateTime.now();
         LocalDateTime endDate = calculateEndDate(startDate, plan.getBillingCycle());
+
+        long balanceBeforeGrant = wallet.getTokenBalance();
+        long grant = plan.getTokenLimit().longValue();
 
         Subscription subscription = Subscription.builder()
                 .user(user)
@@ -69,11 +76,13 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                 .startDate(startDate)
                 .endDate(endDate)
                 .status(SubscriptionStatus.ACTIVE)
+                .periodStartTokenBalance(balanceBeforeGrant)
+                .periodTokenGrant(grant)
                 .build();
 
         Subscription savedSubscription = subscriptionRepository.save(subscription);
 
-        creditWalletTokens(user, plan);
+        creditRecurringPlanTokens(wallet, grant);
         clearReviewRequirementIfPaidPlan(user, plan);
 
         return mapToResponse(savedSubscription);
@@ -131,6 +140,10 @@ public class SubscriptionServiceImpl implements SubscriptionService {
             throw new IllegalArgumentException("Gói mua thêm token (ONE_TIME) không hủy qua subscription — chỉ cộng token vào ví.");
         }
 
+        Wallet wallet = getOrCreateWallet(user);
+        tokenSettlementService.settleRecurringPeriod(wallet, subscription);
+        walletRepository.save(wallet);
+
         subscription.setStatus(SubscriptionStatus.CANCELLED);
 
         Subscription updatedSubscription = subscriptionRepository.save(subscription);
@@ -156,10 +169,13 @@ public class SubscriptionServiceImpl implements SubscriptionService {
             return;
         }
 
-        cancelActiveRecurringSubscriptions(user.getId());
+        Wallet wallet = settleAndCancelActiveRecurring(user);
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime endDate = calculateEndDate(now, plan.getBillingCycle());
+
+        long balanceBeforeGrant = wallet.getTokenBalance();
+        long grant = plan.getTokenLimit().longValue();
 
         Subscription subscription = new Subscription();
         subscription.setUser(user);
@@ -167,26 +183,46 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         subscription.setStartDate(now);
         subscription.setEndDate(endDate);
         subscription.setStatus(SubscriptionStatus.ACTIVE);
+        subscription.setPeriodStartTokenBalance(balanceBeforeGrant);
+        subscription.setPeriodTokenGrant(grant);
 
         subscriptionRepository.save(subscription);
 
-        creditWalletTokens(user, plan);
+        creditRecurringPlanTokens(wallet, grant);
         clearReviewRequirementIfPaidPlan(user, plan);
     }
 
-    private void cancelActiveRecurringSubscriptions(Long userId) {
+    private Wallet getOrCreateWallet(User user) {
+        return walletRepository.findByUserId(user.getId())
+                .orElseGet(() -> walletRepository.save(
+                        Wallet.builder().user(user).tokenBalance(0L).totalRecharged(0L).build()));
+    }
+
+    /** Quyết toán token gói cũ, hủy subscription recurring đang active, trả ví sau quyết toán. */
+    private Wallet settleAndCancelActiveRecurring(User user) {
+        Wallet wallet = getOrCreateWallet(user);
         List<Subscription> activeSubs = subscriptionRepository.findActiveRecurringByUserId(
-                userId, SubscriptionStatus.ACTIVE);
+                user.getId(), SubscriptionStatus.ACTIVE);
         for (Subscription sub : activeSubs) {
+            tokenSettlementService.settleRecurringPeriod(wallet, sub);
             sub.setStatus(SubscriptionStatus.CANCELLED);
             subscriptionRepository.save(sub);
+            walletRepository.save(wallet);
+            log.info("Cancelled recurring subscription {} after token settlement for user {}",
+                    sub.getId(), user.getEmail());
         }
+        return wallet;
     }
 
     private void creditWalletTokens(User user, Plan plan) {
-        Wallet wallet = walletRepository.findByUserId(user.getId())
-                .orElse(Wallet.builder().user(user).tokenBalance(0L).totalRecharged(0L).build());
-        long grant = Long.valueOf(plan.getTokenLimit());
+        Wallet wallet = getOrCreateWallet(user);
+        long grant = plan.getTokenLimit().longValue();
+        wallet.setTokenBalance(wallet.getTokenBalance() + grant);
+        wallet.setTotalRecharged(wallet.getTotalRecharged() + grant);
+        walletRepository.save(wallet);
+    }
+
+    private void creditRecurringPlanTokens(Wallet wallet, long grant) {
         wallet.setTokenBalance(wallet.getTokenBalance() + grant);
         wallet.setTotalRecharged(wallet.getTotalRecharged() + grant);
         walletRepository.save(wallet);
@@ -239,6 +275,10 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                 && sub.getPlan().getBillingCycle() != BillingCycle.ONE_TIME
                 && sub.getEndDate() != null 
                 && sub.getEndDate().isBefore(now)) {
+            Wallet wallet = getOrCreateWallet(sub.getUser());
+            tokenSettlementService.settleRecurringPeriod(wallet, sub);
+            walletRepository.save(wallet);
+
             sub.setStatus(SubscriptionStatus.EXPIRED);
             subscriptionRepository.save(sub);
 
