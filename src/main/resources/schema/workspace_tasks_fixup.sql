@@ -88,3 +88,43 @@ CREATE TABLE IF NOT EXISTS task_comments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_workspace_status ON tasks(workspace_id, status);
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS meet_link VARCHAR(512);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS label_priority VARCHAR(20) NOT NULL DEFAULT 'NONE';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP NULL;
+
+UPDATE tasks
+SET completed_at = updated_at
+WHERE completed = TRUE AND completed_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS task_checklists (
+    id BIGSERIAL PRIMARY KEY,
+    task_id BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    position INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS task_checklist_items (
+    id BIGSERIAL PRIMARY KEY,
+    checklist_id BIGINT NOT NULL REFERENCES task_checklists(id) ON DELETE CASCADE,
+    title VARCHAR(500) NOT NULL,
+    completed BOOLEAN NOT NULL DEFAULT FALSE,
+    position INT NOT NULL DEFAULT 0,
+    due_date TIMESTAMP NULL,
+    assignee_user_id BIGINT NULL REFERENCES users(id),
+    priority VARCHAR(20) NOT NULL DEFAULT 'NONE',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE task_checklist_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP NULL;
+
+UPDATE task_checklist_items
+SET completed_at = updated_at
+WHERE completed = TRUE AND completed_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_task_checklists_task ON task_checklists(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_checklist_items_checklist ON task_checklist_items(checklist_id);

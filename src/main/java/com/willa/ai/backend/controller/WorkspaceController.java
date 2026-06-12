@@ -8,6 +8,7 @@ import com.willa.ai.backend.dto.request.UpdateMemberRoleRequest;
 import com.willa.ai.backend.dto.request.WorkspaceRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.service.WorkspaceService;
+import com.willa.ai.backend.service.WorkspaceMemberStatsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 @SecurityRequirement(name = "bearerAuth")
 public class WorkspaceController {
     private final WorkspaceService workspaceService;
+    private final WorkspaceMemberStatsService workspaceMemberStatsService;
 
     @PostMapping
     @Operation(summary = "Tạo workspace mới")
@@ -179,6 +181,20 @@ public class WorkspaceController {
                     .status(true)
                     .message("Invite accepted")
                     .data(workspaceService.acceptInvite(auth.getName(), request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/{workspaceId}/member-stats")
+    @Operation(summary = "Thống kê hiệu suất thành viên trong workspace")
+    public ResponseEntity<ApiResponse> getMemberStats(Authentication auth, @PathVariable Long workspaceId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Member stats retrieved")
+                    .data(workspaceMemberStatsService.getMemberStats(auth.getName(), workspaceId))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

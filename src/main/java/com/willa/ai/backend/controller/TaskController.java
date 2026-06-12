@@ -1,5 +1,8 @@
 package com.willa.ai.backend.controller;
 
+import com.willa.ai.backend.dto.request.TaskAttachmentUpdateRequest;
+import com.willa.ai.backend.dto.request.TaskChecklistItemRequest;
+import com.willa.ai.backend.dto.request.TaskChecklistRequest;
 import com.willa.ai.backend.dto.request.TaskCommentRequest;
 import com.willa.ai.backend.dto.request.TaskRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
@@ -151,6 +154,199 @@ public class TaskController {
                     .message("Attachment uploaded")
                     .data(taskService.addAttachment(auth.getName(), workspaceId, taskId, file))
                     .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PatchMapping("/{taskId}/attachments/{attachmentId}")
+    @Operation(summary = "Đổi tên tệp đính kèm")
+    public ResponseEntity<ApiResponse> updateAttachment(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId,
+            @PathVariable Long attachmentId,
+            @Valid @RequestBody TaskAttachmentUpdateRequest request) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Attachment updated")
+                    .data(taskService.updateAttachment(
+                            auth.getName(), workspaceId, taskId, attachmentId, request.getFileName()))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @DeleteMapping("/{taskId}/attachments/{attachmentId}")
+    @Operation(summary = "Xóa tệp đính kèm")
+    public ResponseEntity<ApiResponse> deleteAttachment(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId,
+            @PathVariable Long attachmentId) {
+        try {
+            taskService.deleteAttachment(auth.getName(), workspaceId, taskId, attachmentId);
+            return ResponseEntity.ok(ApiResponse.builder().status(true).message("Attachment deleted").build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/{taskId}/google-meet")
+    @Operation(summary = "Tạo link Google Meet cho task")
+    public ResponseEntity<ApiResponse> createGoogleMeet(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Google Meet created")
+                    .data(taskService.createGoogleMeet(auth.getName(), workspaceId, taskId))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @DeleteMapping("/{taskId}/google-meet")
+    @Operation(summary = "Gỡ link Google Meet")
+    public ResponseEntity<ApiResponse> removeGoogleMeet(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Google Meet removed")
+                    .data(taskService.removeGoogleMeet(auth.getName(), workspaceId, taskId))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/{taskId}/checklists")
+    @Operation(summary = "Danh sách checklist của task")
+    public ResponseEntity<ApiResponse> listChecklists(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Checklists retrieved")
+                    .data(taskService.listChecklists(auth.getName(), workspaceId, taskId))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/{taskId}/checklists")
+    @Operation(summary = "Tạo checklist")
+    public ResponseEntity<ApiResponse> createChecklist(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId,
+            @Valid @RequestBody TaskChecklistRequest request) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Checklist created")
+                    .data(taskService.createChecklist(auth.getName(), workspaceId, taskId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PutMapping("/{taskId}/checklists/{checklistId}")
+    @Operation(summary = "Cập nhật tiêu đề checklist")
+    public ResponseEntity<ApiResponse> updateChecklist(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId,
+            @PathVariable Long checklistId,
+            @Valid @RequestBody TaskChecklistRequest request) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Checklist updated")
+                    .data(taskService.updateChecklist(auth.getName(), workspaceId, taskId, checklistId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @DeleteMapping("/{taskId}/checklists/{checklistId}")
+    @Operation(summary = "Xóa checklist")
+    public ResponseEntity<ApiResponse> deleteChecklist(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId,
+            @PathVariable Long checklistId) {
+        try {
+            taskService.deleteChecklist(auth.getName(), workspaceId, taskId, checklistId);
+            return ResponseEntity.ok(ApiResponse.builder().status(true).message("Checklist deleted").build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/{taskId}/checklists/{checklistId}/items")
+    @Operation(summary = "Thêm mục checklist")
+    public ResponseEntity<ApiResponse> addChecklistItem(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId,
+            @PathVariable Long checklistId,
+            @RequestBody TaskChecklistItemRequest request) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Checklist item added")
+                    .data(taskService.addChecklistItem(auth.getName(), workspaceId, taskId, checklistId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PutMapping("/{taskId}/checklists/{checklistId}/items/{itemId}")
+    @Operation(summary = "Cập nhật mục checklist")
+    public ResponseEntity<ApiResponse> updateChecklistItem(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId,
+            @PathVariable Long checklistId,
+            @PathVariable Long itemId,
+            @RequestBody TaskChecklistItemRequest request) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Checklist item updated")
+                    .data(taskService.updateChecklistItem(auth.getName(), workspaceId, taskId, checklistId, itemId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @DeleteMapping("/{taskId}/checklists/{checklistId}/items/{itemId}")
+    @Operation(summary = "Xóa mục checklist")
+    public ResponseEntity<ApiResponse> deleteChecklistItem(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long taskId,
+            @PathVariable Long checklistId,
+            @PathVariable Long itemId) {
+        try {
+            taskService.deleteChecklistItem(auth.getName(), workspaceId, taskId, checklistId, itemId);
+            return ResponseEntity.ok(ApiResponse.builder().status(true).message("Checklist item deleted").build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
         }

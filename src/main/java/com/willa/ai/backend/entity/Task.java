@@ -1,5 +1,6 @@
 package com.willa.ai.backend.entity;
 
+import com.willa.ai.backend.entity.enums.ChecklistPriority;
 import com.willa.ai.backend.entity.enums.TaskStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -39,6 +40,20 @@ public class Task {
 
     @Column(name = "due_date")
     private LocalDateTime dueDate;
+
+    @Column(name = "meet_link", length = 512)
+    private String meetLink;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "label_priority", nullable = false, length = 20)
+    @Builder.Default
+    private ChecklistPriority labelPriority = ChecklistPriority.NONE;
+
+    @Builder.Default
+    private Boolean completed = false;
+
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
 
     @Builder.Default
     private Integer position = 0;

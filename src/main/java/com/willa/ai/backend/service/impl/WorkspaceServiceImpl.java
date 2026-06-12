@@ -39,6 +39,8 @@ import com.willa.ai.backend.repository.WorkspaceMemberRepository;
 import com.willa.ai.backend.repository.WorkspaceRepository;
 import com.willa.ai.backend.service.EmailService;
 import com.willa.ai.backend.service.FileService;
+import com.willa.ai.backend.service.WorkspaceDataPurger;
+import com.willa.ai.backend.service.WorkspaceRealtimeService;
 import com.willa.ai.backend.service.WorkspaceService;
 import com.willa.ai.backend.util.QrCodeGenerator;
 
@@ -56,10 +58,12 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final WorkspaceInviteRepository workspaceInviteRepository;
+    private final WorkspaceDataPurger workspaceDataPurger;
     private final UserRepository userRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final EmailService emailService;
     private final FileService fileService;
+    private final WorkspaceRealtimeService workspaceRealtimeService;
 
     @Value("${app.frontendUrl:http://localhost:5173}")
     private String frontendUrl;
@@ -111,13 +115,32 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     @Transactional
     public void deleteWorkspace(String email, Long workspaceId) {
         User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
-        Workspace workspace = getWorkspaceOrThrow(workspaceId);
-        if (!workspace.getOwner().getId().equals(user.getId())) {
+        Workspace workspace = workspaceRepository.findByIdWithOwner(workspaceId)
+                .orElseThrow(() -> new RuntimeException("Workspace not found"));
+        Long ownerId = workspace.getOwner().getId();
+        if (!ownerId.equals(user.getId())) {
+            log.warn("deleteWorkspace denied workspaceId={} userId={} ownerId={}", workspaceId, user.getId(), ownerId);
             throw new RuntimeException("Chỉ chủ sở hữu mới có thể xóa workspace này");
         }
-        workspaceInviteRepository.deleteByWorkspaceId(workspaceId);
-        workspaceMemberRepository.deleteByWorkspaceId(workspaceId);
-        workspaceRepository.delete(workspace);
+        try {
+            workspaceDataPurger.purgeWorkspaceTaskData(workspaceId);
+            workspaceInviteRepository.deleteByWorkspaceId(workspaceId);
+            workspaceMemberRepository.deleteByWorkspaceId(workspaceId);
+            workspaceRepository.delete(workspace);
+            log.info("Deleted workspace id={} by user id={}", workspaceId, user.getId());
+        } catch (RuntimeException e) {
+            log.error("deleteWorkspace failed workspaceId={}: {}", workspaceId, e.getMessage(), e);
+            throw new RuntimeException("Không thể xóa workspace: " + rootMessage(e), e);
+        }
+    }
+
+    private static String rootMessage(Throwable e) {
+        Throwable cur = e;
+        while (cur.getCause() != null && cur.getCause() != cur) {
+            cur = cur.getCause();
+        }
+        String msg = cur.getMessage();
+        return msg != null && !msg.isBlank() ? msg : e.getClass().getSimpleName();
     }
 
     @Override
@@ -207,6 +230,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                     .user(invitee)
                     .role(WorkspaceRole.MEMBER)
                     .build());
+            workspaceRealtimeService.publishWorkspaceChanged(workspaceId);
             return InviteMemberResultResponse.builder()
                     .resultType("MEMBER_ADDED")
                     .message("Đã thêm thành viên vào workspace")
@@ -358,6 +382,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             throw new RuntimeException("Không thể xóa chủ sở hữu");
         }
         workspaceMemberRepository.delete(member);
+        workspaceRealtimeService.publishWorkspaceChanged(workspaceId);
     }
 
     @Override

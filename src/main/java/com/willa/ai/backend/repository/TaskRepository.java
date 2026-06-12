@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,6 +17,18 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     List<Task> findByWorkspaceIdAndStatusOrderByPositionAscIdAsc(Long workspaceId, TaskStatus status);
 
     Optional<Task> findByIdAndWorkspaceId(Long id, Long workspaceId);
+
+    @Query("""
+            SELECT DISTINCT t FROM Task t
+            LEFT JOIN FETCH t.assignees
+            WHERE t.workspace.id = :workspaceId
+            ORDER BY t.position ASC, t.id ASC
+            """)
+    List<Task> findByWorkspaceIdWithAssignees(@Param("workspaceId") Long workspaceId);
+
+    @Modifying
+    @Query(value = "DELETE FROM tasks WHERE workspace_id = :workspaceId", nativeQuery = true)
+    void deleteByWorkspaceId(@Param("workspaceId") Long workspaceId);
 
     @Query("""
             SELECT t FROM Task t

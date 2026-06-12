@@ -3,6 +3,7 @@ package com.willa.ai.backend.dto.response;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.willa.ai.backend.entity.enums.ChecklistPriority;
 import com.willa.ai.backend.entity.enums.TaskStatus;
 
 import lombok.Builder;
@@ -20,6 +21,10 @@ public class TaskResponse {
     private Integer position;
     private List<TaskAssigneeResponse> assignees;
     private List<TaskAttachmentResponse> attachments;
+    private String meetLink;
+    private ChecklistPriority labelPriority;
+    private Boolean completed;
+    private LocalDateTime completedAt;
     private int commentCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
