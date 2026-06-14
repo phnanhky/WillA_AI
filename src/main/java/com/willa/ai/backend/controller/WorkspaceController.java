@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/workspaces")
 @RequiredArgsConstructor
+@Slf4j
 @Tag(name = "Workspace", description = "Quản lý workspace chia task")
 @SecurityRequirement(name = "bearerAuth")
 public class WorkspaceController {
@@ -237,6 +239,26 @@ public class WorkspaceController {
                     .status(true)
                     .message("Member role updated")
                     .data(workspaceService.updateMemberRole(auth.getName(), workspaceId, memberId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+    @PostMapping("/{workspaceId}/chat-extract")
+    @Operation(summary = "Trích xuất task từ tin nhắn chat (dùng xAI)")
+    public ResponseEntity<ApiResponse> extractTaskFromChat(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @Valid @RequestBody com.willa.ai.backend.dto.request.WorkspaceChatExtractRequest request) {
+        try {
+            com.willa.ai.backend.dto.response.WorkspaceChatExtractResponse extracted = workspaceService.extractTaskFromChat(auth.getName(), workspaceId, request);
+            try {
+                log.info("FINAL DTO: {}", new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(extracted));
+            } catch(Exception e) {}
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Chat extracted")
+                    .data(extracted)
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

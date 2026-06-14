@@ -42,4 +42,6 @@ public interface WorkspaceService {
     WorkspaceMemberResponse updateMemberRole(String email, Long workspaceId, Long memberId, UpdateMemberRoleRequest request);
 
     List<WorkspaceMemberResponse> getWorkspaceMembers(String email, Long workspaceId);
+
+    com.willa.ai.backend.dto.response.WorkspaceChatExtractResponse extractTaskFromChat(String email, Long workspaceId, com.willa.ai.backend.dto.request.WorkspaceChatExtractRequest request);
 }

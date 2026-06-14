@@ -572,4 +572,88 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .createdAt(invite.getCreatedAt())
                 .build();
     }
+
+    @Value("${ai.xai.api-key:}")
+    private String xaiApiKey;
+
+    @Override
+    @Transactional(readOnly = true)
+    public com.willa.ai.backend.dto.response.WorkspaceChatExtractResponse extractTaskFromChat(String email, Long workspaceId, com.willa.ai.backend.dto.request.WorkspaceChatExtractRequest request) {
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
+        assertIsMember(user, workspaceId);
+
+        List<WorkspaceMember> members = workspaceMemberRepository.findByWorkspaceId(workspaceId);
+        String membersNames = members.stream()
+                .map(m -> m.getUser().getFullName() + " (Email: " + m.getUser().getEmail() + ", ID: " + m.getUser().getId() + ")")
+                .collect(Collectors.joining(", "));
+
+        String systemPrompt = "Tin nhắn chat: \"" + request.getMessage() + "\"\n"
+                + "Thành viên trong workspace: " + membersNames + "\n"
+                + "Hôm nay là ngày: " + request.getCurrentDate() + "\n"
+                + "Nếu tin nhắn này chứa một hoặc nhiều task được giao (có người được giao + việc cần làm), trả về JSON. Nếu không có task nào, trả về {\"tasks\": []}.\n"
+                + "Dưới đây là danh sách các cột (status) hiện có trong workspace (định dạng Tên cột (STATUS_CODE)): " + (request.getLists() != null ? request.getLists() : "TODO") + "\n"
+                + "Nếu người dùng nhắc đến tên cột/danh sách (ví dụ Cần làm, Biz...), hãy trích xuất mã STATUS_CODE tương ứng vào trường 'status'. Nếu không rõ thì mặc định là 'TODO'.\n"
+                + "ĐẶC BIỆT LƯU Ý: Nếu người dùng yêu cầu tạo thêm danh sách, tạo cột mới (ví dụ 'thêm danh sách thiết kế', 'tạo cột Thiết Kế'), BẮT BUỘC phải trả về mảng 'newLists' chứa tên các danh sách/cột đó.\n"
+                + "Nếu người dùng VỪA yêu cầu tạo cột VỪA giao việc, bạn phải trả về CẢ 'newLists' VÀ 'tasks'. Nếu giao việc cho cột mới đó, hãy gán 'status' bằng CHÍNH XÁC tên của cột mới đó (ví dụ 'Thiết Kế').\n"
+                + "Format JSON phải có cấu trúc sau (các trường không có dữ liệu thì để mảng rỗng []):\n"
+                + "{\n"
+                + "  \"tasks\": [\n"
+                + "    { \"assigneeUserId\": <ID>, \"assignee\": \"tên\", \"task\": \"mô tả\", \"deadline\": \"YYYY-MM-DDT23:59:59\", \"priority\": \"URGENT/HIGH/MEDIUM/LOW/NONE\", \"status\": \"STATUS_CODE\", \"checklists\": [{ \"title\": \"việc 1\", \"assigneeUserId\": <ID>, \"deadline\": \"YYYY-MM-DDT23:59:59\", \"priority\": \"URGENT/HIGH/MEDIUM/LOW/NONE\" }] }\n"
+                + "  ],\n"
+                + "  \"newLists\": [\"tên danh sách mới\"]\n"
+                + "}\n"
+                + "Chú ý: Cố gắng map tên người nhận với assigneeUserId dựa vào danh sách thành viên. Nếu không map được thì để assigneeUserId là null. "
+                + "Chỉ trả JSON, không giải thích gì thêm, không markdown.";
+
+        if (xaiApiKey == null || xaiApiKey.isBlank()) {
+            throw new RuntimeException("XAI API Key is not configured.");
+        }
+
+        try {
+            org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(xaiApiKey);
+
+            java.util.Map<String, Object> body = new java.util.HashMap<>();
+            body.put("model", "grok-build-0.1");
+            
+            java.util.List<java.util.Map<String, String>> messages = new java.util.ArrayList<>();
+            java.util.Map<String, String> msg = new java.util.HashMap<>();
+            msg.put("role", "user");
+            msg.put("content", systemPrompt);
+            messages.add(msg);
+            
+            body.put("messages", messages);
+            body.put("temperature", 0.0);
+
+            org.springframework.http.HttpEntity<java.util.Map<String, Object>> entity = new org.springframework.http.HttpEntity<>(body, headers);
+            
+            org.springframework.http.ResponseEntity<String> response = restTemplate.postForEntity(
+                "https://api.x.ai/v1/chat/completions", entity, String.class);
+                
+            String respBody = response.getBody();
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode rootNode = mapper.readTree(respBody);
+            
+            String content = rootNode.path("choices").get(0).path("message").path("content").asText("");
+            log.info("AI response: {}", content);
+            content = content.trim();
+            if (content.startsWith("```json")) {
+                content = content.substring(7);
+            }
+            if (content.startsWith("```")) {
+                content = content.substring(3);
+            }
+            if (content.endsWith("```")) {
+                content = content.substring(0, content.length() - 3);
+            }
+            
+            return mapper.readValue(content.trim(), com.willa.ai.backend.dto.response.WorkspaceChatExtractResponse.class);
+
+        } catch (Exception e) {
+            log.error("Failed to extract task from chat: ", e);
+            throw new RuntimeException("Lỗi khi phân tích bằng AI: " + e.getMessage());
+        }
+    }
 }

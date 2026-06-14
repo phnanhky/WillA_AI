@@ -100,6 +100,7 @@ public class TaskServiceImpl implements TaskService {
                 .dueDate(request.getDueDate())
                 .position(position)
                 .assignees(resolveAssignees(workspaceId, request.getAssigneeUserIds()))
+                .labelPriority(request.getLabelPriority() != null ? request.getLabelPriority() : com.willa.ai.backend.entity.enums.ChecklistPriority.NONE)
                 .build();
 
         TaskResponse response = mapToResponse(taskRepository.save(task));
