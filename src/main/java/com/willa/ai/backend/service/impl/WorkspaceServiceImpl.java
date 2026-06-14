@@ -270,7 +270,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public WorkspaceShareResponse getWorkspaceShare(String email, Long workspaceId) {
         User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
         Workspace workspace = getWorkspaceOrThrow(workspaceId);
@@ -494,6 +494,9 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     }
 
     private String uploadInviteQrCode(String inviteLink, String inviteCode) {
+        if (inviteCode == null || inviteCode.isBlank()) {
+            throw new IllegalArgumentException("inviteCode is required");
+        }
         try {
             byte[] png = QrCodeGenerator.generatePng(inviteLink, 512);
             String prefix = qrObjectPrefix.endsWith("/") ? qrObjectPrefix : qrObjectPrefix + "/";
@@ -513,6 +516,10 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     }
 
     private Workspace ensureWorkspaceQrCode(Workspace workspace) {
+        if (workspace.getInviteCode() == null || workspace.getInviteCode().isBlank()) {
+            workspace.setInviteCode(generateUniqueInviteCode());
+            workspace = workspaceRepository.save(workspace);
+        }
         if (isStoredQrImageUrl(workspace.getQrCodeUrl())) {
             return workspace;
         }

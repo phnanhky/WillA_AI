@@ -128,3 +128,8 @@ WHERE completed = TRUE AND completed_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_task_checklists_task ON task_checklists(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_checklist_items_checklist ON task_checklist_items(checklist_id);
+
+-- Workspace cũ thiếu invite_code (trước migration v2)
+UPDATE workspaces
+SET invite_code = upper(substr(md5(random()::text || id::text), 1, 10))
+WHERE invite_code IS NULL OR btrim(invite_code) = '';
