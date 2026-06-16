@@ -1,5 +1,6 @@
 package com.willa.ai.backend.entity;
 
+import com.willa.ai.backend.entity.converter.WorkspaceRoleConverter;
 import com.willa.ai.backend.entity.enums.WorkspaceRole;
 import jakarta.persistence.*;
 import lombok.*;
@@ -30,7 +31,7 @@ public class WorkspaceMember {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = WorkspaceRoleConverter.class)
     @Column(nullable = false)
     @Builder.Default
     private WorkspaceRole role = WorkspaceRole.MEMBER;

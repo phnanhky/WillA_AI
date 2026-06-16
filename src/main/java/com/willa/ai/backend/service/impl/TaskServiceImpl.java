@@ -40,6 +40,7 @@ import com.willa.ai.backend.repository.WorkspaceRepository;
 import com.willa.ai.backend.service.FileService;
 import com.willa.ai.backend.service.GoogleMeetService;
 import com.willa.ai.backend.service.TaskService;
+import com.willa.ai.backend.service.WorkspaceDataPurger;
 import com.willa.ai.backend.service.WorkspaceRealtimeService;
 
 import lombok.RequiredArgsConstructor;
@@ -59,6 +60,7 @@ public class TaskServiceImpl implements TaskService {
     private final FileService fileService;
     private final GoogleMeetService googleMeetService;
     private final WorkspaceRealtimeService workspaceRealtimeService;
+    private final WorkspaceDataPurger workspaceDataPurger;
 
     @Override
     @Transactional(readOnly = true)
@@ -193,6 +195,7 @@ public class TaskServiceImpl implements TaskService {
         assertIsMember(user, workspaceId);
         Task task = taskRepository.findByIdAndWorkspaceId(taskId, workspaceId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
+        workspaceDataPurger.purgeTaskData(taskId);
         taskRepository.delete(task);
         notifyWorkspaceChanged(workspaceId);
     }

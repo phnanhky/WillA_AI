@@ -1,5 +1,6 @@
 package com.willa.ai.backend.entity;
 
+import com.willa.ai.backend.entity.converter.WorkspaceRoleConverter;
 import com.willa.ai.backend.entity.enums.InviteStatus;
 import com.willa.ai.backend.entity.enums.WorkspaceRole;
 import jakarta.persistence.*;
@@ -32,7 +33,7 @@ public class WorkspaceInvite {
     @Column(nullable = false)
     private String email;
 
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = WorkspaceRoleConverter.class)
     @Column(nullable = false)
     @Builder.Default
     private WorkspaceRole role = WorkspaceRole.MEMBER;

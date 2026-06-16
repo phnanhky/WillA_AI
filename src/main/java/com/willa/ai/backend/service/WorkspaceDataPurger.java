@@ -66,6 +66,23 @@ public class WorkspaceDataPurger {
         purgeTableIfExists("workspace_library_images", workspaceId);
     }
 
+    /** Xóa dữ liệu con của một task (FK) trước khi xóa bản ghi tasks. */
+    public void purgeTaskData(Long taskId) {
+        runForTask(
+                """
+                DELETE FROM task_checklist_items AS i
+                USING task_checklists AS c
+                WHERE i.checklist_id = c.id AND c.task_id = :tid
+                """,
+                taskId,
+                "task_checklist_items");
+
+        runForTask("DELETE FROM task_checklists WHERE task_id = :tid", taskId, "task_checklists");
+        runForTask("DELETE FROM task_comments WHERE task_id = :tid", taskId, "task_comments");
+        runForTask("DELETE FROM task_attachments WHERE task_id = :tid", taskId, "task_attachments");
+        runForTask("DELETE FROM task_assignees WHERE task_id = :tid", taskId, "task_assignees");
+    }
+
     private boolean tableExists(String tableName) {
         Object result = entityManager.createNativeQuery(
                 """
@@ -96,5 +113,12 @@ public class WorkspaceDataPurger {
                 .setParameter("wid", workspaceId)
                 .executeUpdate();
         log.debug("purge {} workspaceId={} rows={}", label, workspaceId, rows);
+    }
+
+    private void runForTask(String sql, Long taskId, String label) {
+        int rows = entityManager.createNativeQuery(sql)
+                .setParameter("tid", taskId)
+                .executeUpdate();
+        log.debug("purge {} taskId={} rows={}", label, taskId, rows);
     }
 }
