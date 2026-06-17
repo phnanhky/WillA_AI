@@ -1,6 +1,9 @@
 -- Chuẩn hóa workspace role cũ (ADMIN, EDITOR, VIEWER) → OWNER/MEMBER
--- Chạy trên VPS nếu chưa deploy bản BE mới:
+-- Chạy trên VPS nếu backend crash vì workspace_invites_role_check:
 -- docker exec -i willa-ai-postgres psql -U postgres -d willa_ai < workspace_roles_fixup.sql
+
+ALTER TABLE workspace_members DROP CONSTRAINT IF EXISTS workspace_members_role_check;
+ALTER TABLE workspace_invites DROP CONSTRAINT IF EXISTS workspace_invites_role_check;
 
 UPDATE workspace_members wm
 SET role = 'OWNER'

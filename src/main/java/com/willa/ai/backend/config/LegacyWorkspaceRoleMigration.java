@@ -20,6 +20,16 @@ public class LegacyWorkspaceRoleMigration {
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void migrateLegacyRoles() {
+        try {
+            migrateLegacyRolesInternal();
+        } catch (Exception e) {
+            log.warn("Legacy workspace role migration skipped: {}", e.getMessage());
+        }
+    }
+
+    private void migrateLegacyRolesInternal() {
+        dropLegacyRoleChecks();
+
         int owners = entityManager.createNativeQuery("""
                 UPDATE workspace_members wm
                 SET role = 'OWNER'
@@ -48,18 +58,40 @@ public class LegacyWorkspaceRoleMigration {
         }
     }
 
-    private int migrateInviteRoles() {
-        Object exists = entityManager.createNativeQuery("""
+    private void dropLegacyRoleChecks() {
+        entityManager
+                .createNativeQuery(
+                        "ALTER TABLE workspace_members DROP CONSTRAINT IF EXISTS workspace_members_role_check")
+                .executeUpdate();
+        if (tableExists("workspace_invites")) {
+            entityManager
+                    .createNativeQuery(
+                            "ALTER TABLE workspace_invites DROP CONSTRAINT IF EXISTS workspace_invites_role_check")
+                    .executeUpdate();
+        }
+    }
+
+    private boolean tableExists(String tableName) {
+        Object result = entityManager
+                .createNativeQuery(
+                        """
                 SELECT EXISTS (
                   SELECT 1 FROM information_schema.tables
-                  WHERE table_schema = 'public' AND table_name = 'workspace_invites'
+                  WHERE table_schema = 'public' AND table_name = :table
                 )
                 """)
+                .setParameter("table", tableName)
                 .getSingleResult();
-        if (!Boolean.TRUE.equals(exists)) {
+        return Boolean.TRUE.equals(result);
+    }
+
+    private int migrateInviteRoles() {
+        if (!tableExists("workspace_invites")) {
             return 0;
         }
-        return entityManager.createNativeQuery("""
+        return entityManager
+                .createNativeQuery(
+                        """
                 UPDATE workspace_invites
                 SET role = 'MEMBER'
                 WHERE role NOT IN ('OWNER', 'MEMBER')

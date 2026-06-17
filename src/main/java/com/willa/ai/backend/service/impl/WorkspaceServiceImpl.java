@@ -108,7 +108,9 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
         workspace.setTitle(request.getTitle().trim());
         workspace.setDescription(request.getDescription());
-        return mapToResponse(workspaceRepository.save(workspace), user);
+        WorkspaceResponse response = mapToResponse(workspaceRepository.save(workspace), user);
+        workspaceRealtimeService.publishWorkspaceChanged(workspaceId);
+        return response;
     }
 
     @Override
@@ -183,6 +185,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .role(WorkspaceRole.MEMBER)
                 .isImportant(false)
                 .build());
+        workspaceRealtimeService.publishWorkspaceChanged(workspace.getId());
         return mapToMemberResponse(member);
     }
 
@@ -363,6 +366,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .build());
         invite.setStatus(InviteStatus.ACCEPTED);
         workspaceInviteRepository.save(invite);
+        workspaceRealtimeService.publishWorkspaceChanged(workspace.getId());
         return mapToMemberResponse(member);
     }
 
