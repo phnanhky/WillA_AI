@@ -39,6 +39,7 @@ import com.willa.ai.backend.repository.WorkspaceMemberRepository;
 import com.willa.ai.backend.repository.WorkspaceRepository;
 import com.willa.ai.backend.service.EmailService;
 import com.willa.ai.backend.service.FileService;
+import com.willa.ai.backend.service.WorkspaceChannelService;
 import com.willa.ai.backend.service.WorkspaceDataPurger;
 import com.willa.ai.backend.service.WorkspaceRealtimeService;
 import com.willa.ai.backend.service.WorkspaceService;
@@ -64,6 +65,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     private final EmailService emailService;
     private final FileService fileService;
     private final WorkspaceRealtimeService workspaceRealtimeService;
+    private final WorkspaceChannelService workspaceChannelService;
 
     @Value("${app.frontendUrl:http://localhost:5173}")
     private String frontendUrl;
@@ -95,6 +97,8 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .role(WorkspaceRole.OWNER)
                 .isImportant(false)
                 .build());
+
+        workspaceChannelService.ensureWelcomeChannel(workspace);
 
         return mapToResponse(workspace, user);
     }
