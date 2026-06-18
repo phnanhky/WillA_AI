@@ -109,7 +109,7 @@ public class AiServerClient {
     }
 
     /**
-     * @param replyLang Ngôn ngữ UI từ FE: vi | en
+     * @param replyLang Ngôn ngữ phản hồi: auto | vi | en (auto = theo ngôn ngữ user chat)
      */
     public MultiValueMap<String, Object> chatForm(
             String sessionId,
@@ -119,6 +119,18 @@ public class AiServerClient {
             String box2d,
             String personaContextJson,
             String replyLang) {
+        return chatForm(sessionId, message, actionType, errorIndex, box2d, personaContextJson, replyLang, null);
+    }
+
+    public MultiValueMap<String, Object> chatForm(
+            String sessionId,
+            String message,
+            String actionType,
+            Integer errorIndex,
+            String box2d,
+            String personaContextJson,
+            String replyLang,
+            String chatHistoryJson) {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         if (message != null && !message.trim().isEmpty()) {
             body.add("message", message);
@@ -138,6 +150,9 @@ public class AiServerClient {
         }
         if (replyLang != null && !replyLang.isBlank()) {
             body.add("reply_lang", replyLang.trim());
+        }
+        if (chatHistoryJson != null && !chatHistoryJson.isBlank()) {
+            body.add("chat_history", chatHistoryJson);
         }
         return body;
     }

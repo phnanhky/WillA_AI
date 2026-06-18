@@ -203,6 +203,7 @@ public class ChatServiceImpl implements ChatService {
 
         ChatSession session = getSessionEntity(email, sessionId);
         String sessionKey = sessionId.toString();
+        String chatHistoryJson = buildChatHistoryJson(session.getId());
         String aiResponseContent;
         int totalTokensCombined = 0;
         CompletableFuture<String> imageUrlsFuture = CompletableFuture.completedFuture(null);
@@ -246,7 +247,7 @@ public class ChatServiceImpl implements ChatService {
                     seedAiAnalysisFromSession(email, sessionId, imageIndex);
                 }
                 MultiValueMap<String, Object> body = aiServerClient.chatForm(
-                        sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang);
+                        sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang, chatHistoryJson);
                 JsonNode rootNode = callAiChatWithAnalysisRecovery(email, sessionId, body);
                 aiResponseContent = contentFromAiNode(rootNode);
                 TokenUsage usage = deductTokensForAiCall(user, wallet, rootNode, "CHAT");
@@ -261,7 +262,7 @@ public class ChatServiceImpl implements ChatService {
                 for (ImagePart image : images) {
                     batchImageIndex++;
                     MultiValueMap<String, Object> body = aiServerClient.chatForm(
-                            sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang);
+                            sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang, chatHistoryJson);
                     body.add("file", AiServerClient.toFileResource(image.bytes(), image.filename()));
                     JsonNode rootNode = aiServerClient.chat(body);
                     JsonNode nodeToAdd = rootNode;
@@ -523,6 +524,46 @@ public class ChatServiceImpl implements ChatService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Đồng bộ lịch sử chat DB → AI server để câu sau nối được câu trước (sau restart / session cũ).
+     */
+    private String buildChatHistoryJson(Long sessionId) {
+        List<ChatMessage> messages = chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
+        if (messages.isEmpty()) {
+            return null;
+        }
+        int maxTurns = 24;
+        int from = Math.max(0, messages.size() - maxTurns);
+        ArrayNode arr = objectMapper.createArrayNode();
+        for (int i = from; i < messages.size(); i++) {
+            ChatMessage m = messages.get(i);
+            String role = m.getRole() == MessageRole.USER ? "user" : "assistant";
+            String text = messageTextForAiHistory(m);
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            ObjectNode item = objectMapper.createObjectNode();
+            item.put("role", role);
+            item.put("text", text);
+            arr.add(item);
+        }
+        return arr.isEmpty() ? null : arr.toString();
+    }
+
+    private String messageTextForAiHistory(ChatMessage message) {
+        if (message == null || message.getContent() == null) {
+            return "";
+        }
+        String raw = message.getContent().trim();
+        if (raw.isEmpty()) {
+            return "";
+        }
+        if (message.getRole() == MessageRole.USER) {
+            return raw;
+        }
+        return extractDisplayText(raw, raw);
     }
 
     /**
