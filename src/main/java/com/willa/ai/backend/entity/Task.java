@@ -27,6 +27,10 @@ public class Task {
     @JoinColumn(name = "workspace_id", nullable = false)
     private Workspace workspace;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "project_id")
+    private WorkspaceProject project;
+
     @Column(nullable = false)
     private String title;
 

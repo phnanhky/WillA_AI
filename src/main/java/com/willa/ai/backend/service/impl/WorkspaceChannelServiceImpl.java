@@ -43,6 +43,13 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
 
     @Override
     @Transactional
+    public void ensureDefaultChannels(Workspace workspace) {
+        ensureWelcomeChannel(workspace);
+        ensureGeneralChannel(workspace);
+    }
+
+    @Override
+    @Transactional
     public void ensureWelcomeChannel(Workspace workspace) {
         if (channelRepository.findByWorkspaceIdAndNameIgnoreCase(workspace.getId(), WELCOME_CHANNEL_NAME).isPresent()) {
             return;
@@ -53,6 +60,33 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
                 .position(0)
                 .isSystem(true)
                 .build());
+    }
+
+    private void ensureGeneralChannel(Workspace workspace) {
+        if (channelRepository.findByWorkspaceIdAndNameIgnoreCase(workspace.getId(), GENERAL_CHANNEL_NAME).isPresent()) {
+            return;
+        }
+        channelRepository.save(WorkspaceChannel.builder()
+                .workspace(workspace)
+                .name(GENERAL_CHANNEL_NAME)
+                .position(1)
+                .isSystem(true)
+                .build());
+    }
+
+    @Override
+    @Transactional
+    public WorkspaceChannel ensureProjectChannel(Workspace workspace, String projectName) {
+        return channelRepository.findByWorkspaceIdAndNameIgnoreCase(workspace.getId(), projectName)
+                .orElseGet(() -> {
+                    int nextPos = channelRepository.findByWorkspaceIdOrderByPositionAscIdAsc(workspace.getId()).size();
+                    return channelRepository.save(WorkspaceChannel.builder()
+                            .workspace(workspace)
+                            .name(projectName)
+                            .position(nextPos)
+                            .isSystem(false)
+                            .build());
+                });
     }
 
     @Override
@@ -95,7 +129,7 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
         assertIsMember(user, workspaceId);
         WorkspaceChannel channel = getChannelOrThrow(channelId, workspaceId);
         if (Boolean.TRUE.equals(channel.getIsSystem())) {
-            throw new RuntimeException("Không thể đổi tên kênh hệ thống Welcome");
+            throw new RuntimeException("Không thể đổi tên kênh hệ thống");
         }
         String name = normalizeChannelName(request.getName());
         channelRepository.findByWorkspaceIdAndNameIgnoreCase(workspaceId, name).ifPresent(existing -> {
@@ -116,7 +150,7 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
         assertIsMember(user, workspaceId);
         WorkspaceChannel channel = getChannelOrThrow(channelId, workspaceId);
         if (Boolean.TRUE.equals(channel.getIsSystem())) {
-            throw new RuntimeException("Không thể xóa kênh Welcome");
+            throw new RuntimeException("Không thể xóa kênh hệ thống");
         }
         channelRepository.delete(channel);
         workspaceRealtimeService.publishChannelChanged(workspaceId, "CHANNEL_DELETED", channelId);

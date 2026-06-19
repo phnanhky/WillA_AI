@@ -108,9 +108,10 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         LocalDateTime weekStart = LocalDate.now().minusDays(7).atStartOfDay();
         LocalDateTime monthStart = LocalDate.now().minusDays(30).atStartOfDay();
 
-        Object[] periodTotals = workflowUsageRepository.totalDurationAndCountInRange(startDt, endDt);
-        long totalDurationMs = periodTotals[0] != null ? ((Number) periodTotals[0]).longValue() : 0L;
-        long totalRuns = periodTotals[1] != null ? ((Number) periodTotals[1]).longValue() : 0L;
+        Object[] periodTotals = unwrapSingletonRow(
+                workflowUsageRepository.totalDurationAndCountInRange(startDt, endDt));
+        long totalDurationMs = asLong(periodTotals[0]);
+        long totalRuns = asLong(periodTotals[1]);
 
         Long activeUsers = workflowUsageRepository.countDistinctUsersInRange(startDt, endDt);
 
@@ -125,9 +126,9 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                         row -> row[0].toString(),
                         row -> WorkflowTypeStats.builder()
                                 .workflow(row[0].toString())
-                                .runCount(((Number) row[1]).longValue())
-                                .totalDurationMs(((Number) row[2]).longValue())
-                                .avgDurationMs(((Number) row[3]).doubleValue())
+                                .runCount(asLong(row[1]))
+                                .totalDurationMs(asLong(row[2]))
+                                .avgDurationMs(asDouble(row[3]))
                                 .build(),
                         (a, b) -> a,
                         LinkedHashMap::new));
@@ -140,8 +141,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .collect(Collectors.toMap(
                         row -> toLocalDate(row[0]),
                         row -> DailyWorkflowStats.builder()
-                                .runCount(((Number) row[1]).longValue())
-                                .totalDurationMs(((Number) row[2]).longValue())
+                                .runCount(asLong(row[1]))
+                                .totalDurationMs(asLong(row[2]))
                                 .build(),
                         (a, b) -> a,
                         LinkedHashMap::new));
@@ -150,10 +151,10 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .topUsersByWorkflowTime(startDt, endDt, PageRequest.of(0, 10))
                 .stream()
                 .map(row -> WorkflowUserActivity.builder()
-                        .userId(((Number) row[0]).longValue())
+                        .userId(asLong(row[0]))
                         .email((String) row[1])
-                        .runCount(((Number) row[2]).longValue())
-                        .totalDurationMs(((Number) row[3]).longValue())
+                        .runCount(asLong(row[2]))
+                        .totalDurationMs(asLong(row[3]))
                         .build())
                 .collect(Collectors.toList());
 
@@ -162,7 +163,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .stream()
                 .collect(Collectors.toMap(
                         row -> row[0].toString(),
-                        row -> ((Number) row[1]).longValue()));
+                        row -> asLong(row[1])));
 
         WorkflowToolStats regen = buildToolStats(
                 WorkflowType.REGEN, startDt, endDt, todayStart, weekStart, monthStart, now, failedRunsByWorkflow);
@@ -229,10 +230,11 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             LocalDateTime monthStart,
             LocalDateTime now,
             Map<String, Long> failedRunsByWorkflow) {
-        Object[] period = workflowUsageRepository.statsForWorkflowInRange(periodStart, periodEnd, workflow);
-        long durationMs = period[0] != null ? ((Number) period[0]).longValue() : 0L;
-        long runCount = period[1] != null ? ((Number) period[1]).longValue() : 0L;
-        double avgMs = period[2] != null ? ((Number) period[2]).doubleValue() : 0.0;
+        Object[] period = unwrapSingletonRow(
+                workflowUsageRepository.statsForWorkflowInRange(periodStart, periodEnd, workflow));
+        long durationMs = asLong(period[0]);
+        long runCount = asLong(period[1]);
+        double avgMs = asDouble(period[2]);
 
         long runsToday = countRunsForWorkflow(workflow, todayStart, now);
         long runsWeek = countRunsForWorkflow(workflow, weekStart, now);
@@ -257,15 +259,15 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
 
     private long countRunsForWorkflow(WorkflowType workflow, LocalDateTime from, LocalDateTime to) {
-        Object[] totals = workflowUsageRepository.statsForWorkflowInRange(from, to, workflow);
-        return totals[1] != null ? ((Number) totals[1]).longValue() : 0L;
+        Object[] totals = unwrapSingletonRow(
+                workflowUsageRepository.statsForWorkflowInRange(from, to, workflow));
+        return asLong(totals[1]);
     }
 
     private PeriodSnapshot periodSnapshot(LocalDateTime from, LocalDateTime to) {
-        Object[] totals = workflowUsageRepository.totalDurationAndCountInRange(from, to);
-        long durationMs = totals[0] != null ? ((Number) totals[0]).longValue() : 0L;
-        long runs = totals[1] != null ? ((Number) totals[1]).longValue() : 0L;
-        return new PeriodSnapshot(runs, durationMs);
+        Object[] totals = unwrapSingletonRow(
+                workflowUsageRepository.totalDurationAndCountInRange(from, to));
+        return new PeriodSnapshot(asLong(totals[1]), asLong(totals[0]));
     }
 
     private static LocalDate toLocalDate(Object value) {
@@ -282,6 +284,40 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
 
     private record PeriodSnapshot(long runs, long durationMs) {}
+
+    /** Hibernate/Spring Data đôi khi bọc kết quả aggregate 1 dòng thành Object[] lồng nhau. */
+    private static Object[] unwrapSingletonRow(Object[] row) {
+        if (row != null && row.length == 1 && row[0] instanceof Object[] nested) {
+            return nested;
+        }
+        return row;
+    }
+
+    private static long asLong(Object value) {
+        if (value == null) {
+            return 0L;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof Object[] arr) {
+            return arr.length > 0 ? asLong(arr[0]) : 0L;
+        }
+        throw new IllegalArgumentException("Cannot convert to long: " + value.getClass().getName());
+    }
+
+    private static double asDouble(Object value) {
+        if (value == null) {
+            return 0.0;
+        }
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value instanceof Object[] arr) {
+            return arr.length > 0 ? asDouble(arr[0]) : 0.0;
+        }
+        throw new IllegalArgumentException("Cannot convert to double: " + value.getClass().getName());
+    }
 
     /** Bổ sung regen / tách layer vào map feature cũ (ai_token_usages không có các loại này). */
     private Map<String, Long> enrichFeatureUsageWithWorkflows(
@@ -309,8 +345,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         
         return results.stream()
             .collect(Collectors.toMap(
-                row -> ((java.sql.Date) row[0]).toLocalDate(),
-                row -> ((Number) row[1]).longValue()
+                row -> toLocalDate(row[0]),
+                row -> asLong(row[1])
             ));
     }
     
@@ -319,11 +355,11 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         
         return results.stream()
             .map(row -> UserActivityDTO.builder()
-                .userId(((Number) row[0]).longValue())
+                .userId(asLong(row[0]))
                 .email((String) row[1])
                 .planName((String) row[2])
-                .chatCount(((Number) row[3]).longValue())
-                .aiTokensUsed(((Number) row[4]).longValue())
+                .chatCount(asLong(row[3]))
+                .aiTokensUsed(asLong(row[4]))
                 .build())
             .collect(Collectors.toList());
     }
@@ -334,7 +370,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         return results.stream()
             .collect(Collectors.toMap(
                 row -> (String) row[0],
-                row -> ((Number) row[1]).longValue()
+                row -> asLong(row[1])
             ));
     }
     
@@ -344,7 +380,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         return results.stream()
             .collect(Collectors.toMap(
                 row -> (String) row[0],
-                row -> ((Number) row[1]).longValue()
+                row -> asLong(row[1])
             ));
     }
     
@@ -354,7 +390,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         return results.stream()
             .collect(Collectors.toMap(
                 row -> (String) row[0],
-                row -> ((Number) row[1]).longValue()
+                row -> asLong(row[1])
             ));
     }
 }

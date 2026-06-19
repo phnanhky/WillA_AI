@@ -15,7 +15,7 @@ import com.willa.ai.backend.dto.response.TaskCommentResponse;
 import com.willa.ai.backend.dto.response.TaskResponse;
 
 public interface TaskService {
-    List<TaskResponse> listTasks(String email, Long workspaceId);
+    List<TaskResponse> listTasks(String email, Long workspaceId, Long projectId);
 
     TaskResponse getTask(String email, Long workspaceId, Long taskId);
 

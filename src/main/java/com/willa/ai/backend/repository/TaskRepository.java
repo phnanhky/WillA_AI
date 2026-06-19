@@ -14,9 +14,16 @@ import com.willa.ai.backend.entity.enums.TaskStatus;
 public interface TaskRepository extends JpaRepository<Task, Long> {
     List<Task> findByWorkspaceIdOrderByPositionAscIdAsc(Long workspaceId);
 
+    List<Task> findByWorkspaceIdAndProjectIdOrderByPositionAscIdAsc(Long workspaceId, Long projectId);
+
     List<Task> findByWorkspaceIdAndStatusOrderByPositionAscIdAsc(Long workspaceId, TaskStatus status);
 
+    List<Task> findByWorkspaceIdAndProjectIdAndStatusOrderByPositionAscIdAsc(
+            Long workspaceId, Long projectId, TaskStatus status);
+
     Optional<Task> findByIdAndWorkspaceId(Long id, Long workspaceId);
+
+    long countByWorkspaceIdAndProjectId(Long workspaceId, Long projectId);
 
     @Query("""
             SELECT DISTINCT t FROM Task t

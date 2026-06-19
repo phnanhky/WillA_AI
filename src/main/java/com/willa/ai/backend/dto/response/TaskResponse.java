@@ -14,6 +14,7 @@ import lombok.Data;
 public class TaskResponse {
     private Long id;
     private Long workspaceId;
+    private Long projectId;
     private String title;
     private String description;
     private TaskStatus status;

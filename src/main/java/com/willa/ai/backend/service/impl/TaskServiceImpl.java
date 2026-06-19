@@ -27,6 +27,7 @@ import com.willa.ai.backend.entity.TaskChecklistItem;
 import com.willa.ai.backend.entity.TaskComment;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.Workspace;
+import com.willa.ai.backend.entity.WorkspaceProject;
 import com.willa.ai.backend.entity.enums.ChecklistPriority;
 import com.willa.ai.backend.entity.enums.TaskStatus;
 import com.willa.ai.backend.repository.TaskAttachmentRepository;
@@ -36,6 +37,7 @@ import com.willa.ai.backend.repository.TaskCommentRepository;
 import com.willa.ai.backend.repository.TaskRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WorkspaceMemberRepository;
+import com.willa.ai.backend.repository.WorkspaceProjectRepository;
 import com.willa.ai.backend.repository.WorkspaceRepository;
 import com.willa.ai.backend.service.FileService;
 import com.willa.ai.backend.service.GoogleMeetService;
@@ -56,6 +58,7 @@ public class TaskServiceImpl implements TaskService {
     private final TaskChecklistItemRepository taskChecklistItemRepository;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final WorkspaceProjectRepository workspaceProjectRepository;
     private final UserRepository userRepository;
     private final FileService fileService;
     private final GoogleMeetService googleMeetService;
@@ -64,10 +67,17 @@ public class TaskServiceImpl implements TaskService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<TaskResponse> listTasks(String email, Long workspaceId) {
+    public List<TaskResponse> listTasks(String email, Long workspaceId, Long projectId) {
         User user = requireUser(email);
         assertIsMember(user, workspaceId);
-        return taskRepository.findByWorkspaceIdOrderByPositionAscIdAsc(workspaceId).stream()
+        List<Task> tasks;
+        if (projectId != null) {
+            assertProjectInWorkspace(workspaceId, projectId);
+            tasks = taskRepository.findByWorkspaceIdAndProjectIdOrderByPositionAscIdAsc(workspaceId, projectId);
+        } else {
+            tasks = taskRepository.findByWorkspaceIdOrderByPositionAscIdAsc(workspaceId);
+        }
+        return tasks.stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
@@ -90,12 +100,17 @@ public class TaskServiceImpl implements TaskService {
         assertIsMember(user, workspaceId);
 
         TaskStatus status = request.getStatus() != null ? request.getStatus() : TaskStatus.TODO;
+        if (status == TaskStatus.REVIEW) {
+            status = TaskStatus.IN_PROGRESS;
+        }
+        WorkspaceProject project = resolveProject(workspaceId, request.getProjectId());
         int position = request.getPosition() != null
                 ? request.getPosition()
-                : nextPosition(workspaceId, status);
+                : nextPosition(workspaceId, project.getId(), status);
 
         Task task = Task.builder()
                 .workspace(workspace)
+                .project(project)
                 .title(request.getTitle().trim())
                 .description(request.getDescription())
                 .status(status)
@@ -125,7 +140,11 @@ public class TaskServiceImpl implements TaskService {
             task.setDescription(request.getDescription());
         }
         if (request.getStatus() != null) {
-            task.setStatus(request.getStatus());
+            TaskStatus status = request.getStatus();
+            if (status == TaskStatus.REVIEW) {
+                status = TaskStatus.IN_PROGRESS;
+            }
+            task.setStatus(status);
         }
         if (request.getDueDate() != null || request.getDueDate() == null) {
             task.setDueDate(request.getDueDate());
@@ -524,12 +543,27 @@ public class TaskServiceImpl implements TaskService {
                 .orElseThrow(() -> new RuntimeException("Task not found"));
     }
 
-    private int nextPosition(Long workspaceId, TaskStatus status) {
-        List<Task> existing = taskRepository.findByWorkspaceIdAndStatusOrderByPositionAscIdAsc(workspaceId, status);
+    private int nextPosition(Long workspaceId, Long projectId, TaskStatus status) {
+        List<Task> existing = taskRepository
+                .findByWorkspaceIdAndProjectIdAndStatusOrderByPositionAscIdAsc(workspaceId, projectId, status);
         if (existing.isEmpty()) {
             return 0;
         }
         return existing.get(existing.size() - 1).getPosition() + 1;
+    }
+
+    private WorkspaceProject resolveProject(Long workspaceId, Long projectId) {
+        if (projectId == null) {
+            throw new RuntimeException("projectId là bắt buộc");
+        }
+        return workspaceProjectRepository.findByIdAndWorkspaceId(projectId, workspaceId)
+                .orElseThrow(() -> new RuntimeException("Project không tồn tại"));
+    }
+
+    private void assertProjectInWorkspace(Long workspaceId, Long projectId) {
+        if (!workspaceProjectRepository.findByIdAndWorkspaceId(projectId, workspaceId).isPresent()) {
+            throw new RuntimeException("Project không tồn tại");
+        }
     }
 
     private Set<User> resolveAssignees(Long workspaceId, List<Long> userIds) {
@@ -568,6 +602,7 @@ public class TaskServiceImpl implements TaskService {
         return TaskResponse.builder()
                 .id(task.getId())
                 .workspaceId(task.getWorkspace().getId())
+                .projectId(task.getProject() != null ? task.getProject().getId() : null)
                 .title(task.getTitle())
                 .description(task.getDescription())
                 .status(task.getStatus())

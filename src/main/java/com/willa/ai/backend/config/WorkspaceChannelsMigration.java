@@ -35,7 +35,7 @@ public class WorkspaceChannelsMigration {
             if (!tableExists("workspace_channels")) {
                 applySchema();
             }
-            backfillWelcomeChannels();
+            backfillDefaultChannels();
         } catch (Exception e) {
             log.warn("Workspace channels migration skipped: {}", e.getMessage());
         }
@@ -99,13 +99,13 @@ public class WorkspaceChannelsMigration {
         log.info("Created workspace channel/DM tables");
     }
 
-    private void backfillWelcomeChannels() {
+    private void backfillDefaultChannels() {
         List<Workspace> workspaces = workspaceRepository.findAll();
         for (Workspace workspace : workspaces) {
-            workspaceChannelService.ensureWelcomeChannel(workspace);
+            workspaceChannelService.ensureDefaultChannels(workspace);
         }
         if (!workspaces.isEmpty()) {
-            log.info("Ensured Welcome channel for {} workspace(s)", workspaces.size());
+            log.info("Ensured Welcome + General channels for {} workspace(s)", workspaces.size());
         }
     }
 

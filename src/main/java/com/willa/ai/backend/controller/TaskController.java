@@ -28,12 +28,15 @@ public class TaskController {
 
     @GetMapping
     @Operation(summary = "Danh sách task")
-    public ResponseEntity<ApiResponse> listTasks(Authentication auth, @PathVariable Long workspaceId) {
+    public ResponseEntity<ApiResponse> listTasks(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @RequestParam(required = false) Long projectId) {
         try {
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Tasks retrieved")
-                    .data(taskService.listTasks(auth.getName(), workspaceId))
+                    .data(taskService.listTasks(auth.getName(), workspaceId, projectId))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

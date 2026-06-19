@@ -23,4 +23,5 @@ public class TaskRequest {
     private ChecklistPriority labelPriority;
     private Boolean clearLabelPriority;
     private Boolean completed;
+    private Long projectId;
 }

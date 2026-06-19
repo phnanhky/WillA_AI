@@ -30,13 +30,17 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
      * Lấy top active users với số chat
      */
     @Query(value = """
-        SELECT cs.user_id, u.email, p.name as plan_name, COUNT(cm.id) as chat_count, COALESCE(SUM(atu.total_tokens), 0) as tokens_used
+        SELECT cs.user_id, u.email, p.name as plan_name, COUNT(cm.id) as chat_count,
+               COALESCE((
+                   SELECT SUM(atu.total_tokens)
+                   FROM ai_token_usages atu
+                   WHERE atu.user_id = cs.user_id AND atu.created_at >= :startDate
+               ), 0) as tokens_used
         FROM chat_sessions cs
-        LEFT JOIN chat_messages cm ON cs.id = cm.session_id
+        LEFT JOIN chat_messages cm ON cs.id = cm.session_id AND cm.created_at >= :startDate
         LEFT JOIN users u ON cs.user_id = u.id
         LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'ACTIVE'
         LEFT JOIN plans p ON s.plan_id = p.id
-        LEFT JOIN ai_token_usages atu ON cs.user_id = atu.user_id
         WHERE cs.created_at >= :startDate
         GROUP BY cs.user_id, u.email, p.name
         ORDER BY chat_count DESC

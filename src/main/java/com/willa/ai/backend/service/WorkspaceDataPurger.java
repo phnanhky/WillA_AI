@@ -63,6 +63,7 @@ public class WorkspaceDataPurger {
                 "task_assignees");
 
         run("DELETE FROM tasks WHERE workspace_id = :wid", workspaceId, "tasks");
+        purgeTableIfExists("workspace_projects", workspaceId);
         purgeTableIfExists("workspace_library_images", workspaceId);
     }
 

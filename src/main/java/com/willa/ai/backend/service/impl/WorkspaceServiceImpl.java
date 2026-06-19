@@ -98,7 +98,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .isImportant(false)
                 .build());
 
-        workspaceChannelService.ensureWelcomeChannel(workspace);
+        workspaceChannelService.ensureDefaultChannels(workspace);
 
         return mapToResponse(workspace, user);
     }
