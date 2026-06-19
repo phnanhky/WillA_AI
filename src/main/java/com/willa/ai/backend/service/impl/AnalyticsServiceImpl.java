@@ -333,6 +333,10 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         return merged;
     }
 
+    private static String mapKey(Object value) {
+        return value != null ? value.toString() : "Unknown";
+    }
+
     private void putWorkflowRunCount(Map<String, Long> merged, WorkflowToolStats stats) {
         if (stats == null || stats.getRunCount() == null || stats.getRunCount() <= 0) {
             return;
@@ -369,7 +373,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         
         return results.stream()
             .collect(Collectors.toMap(
-                row -> (String) row[0],
+                row -> mapKey(row[0]),
                 row -> asLong(row[1])
             ));
     }
@@ -379,8 +383,9 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         
         return results.stream()
             .collect(Collectors.toMap(
-                row -> (String) row[0],
-                row -> asLong(row[1])
+                row -> mapKey(row[0]),
+                row -> asLong(row[1]),
+                Long::sum
             ));
     }
     
@@ -389,8 +394,9 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         
         return results.stream()
             .collect(Collectors.toMap(
-                row -> (String) row[0],
-                row -> asLong(row[1])
+                row -> mapKey(row[0]),
+                row -> asLong(row[1]),
+                Long::sum
             ));
     }
 }

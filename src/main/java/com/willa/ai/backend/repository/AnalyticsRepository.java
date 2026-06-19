@@ -88,11 +88,11 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
      * Lấy số users và chats theo plan
      */
     @Query(value = """
-        SELECT p.name, COUNT(DISTINCT u.id) as user_count
+        SELECT COALESCE(p.name, 'Unknown'), COUNT(DISTINCT u.id) as user_count
         FROM users u
         LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'ACTIVE'
         LEFT JOIN plans p ON s.plan_id = p.id
-        GROUP BY p.name
+        GROUP BY COALESCE(p.name, 'Unknown')
         """, nativeQuery = true)
     List<Object[]> getUsersByPlan();
     
@@ -103,7 +103,7 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         LEFT JOIN subscriptions s ON cs.user_id = s.user_id AND s.status = 'ACTIVE'
         LEFT JOIN plans p ON s.plan_id = p.id
         WHERE cm.created_at >= :startDate
-        GROUP BY p.name
+        GROUP BY COALESCE(p.name, 'Unknown')
         """, nativeQuery = true)
     List<Object[]> getChatsByPlan(@Param("startDate") LocalDateTime startDate);
 }
