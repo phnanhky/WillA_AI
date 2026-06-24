@@ -76,6 +76,17 @@ public class FileServiceImpl implements FileService {
 
     private String putObject(String objectKey, byte[] data, String contentType) {
         try {
+            if ("dummy".equals(bucketName) || bucketName == null || bucketName.isEmpty()) {
+                java.nio.file.Path uploadDir = java.nio.file.Paths.get("uploads");
+                if (!java.nio.file.Files.exists(uploadDir)) {
+                    java.nio.file.Files.createDirectories(uploadDir);
+                }
+                String safeKey = objectKey.replace("/", "_");
+                java.nio.file.Path filePath = uploadDir.resolve(safeKey);
+                java.nio.file.Files.write(filePath, data);
+                return buildDownloadUrl(safeKey);
+            }
+
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(objectKey)
@@ -113,6 +124,13 @@ public class FileServiceImpl implements FileService {
     @Override
     public byte[] downloadFile(String fileName) {
         try {
+            if ("dummy".equals(bucketName) || bucketName == null || bucketName.isEmpty()) {
+                java.nio.file.Path filePath = java.nio.file.Paths.get("uploads").resolve(fileName.replace("/", "_"));
+                if (java.nio.file.Files.exists(filePath)) {
+                    return java.nio.file.Files.readAllBytes(filePath);
+                }
+            }
+
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                     .bucket(bucketName)
                     .key(fileName)
