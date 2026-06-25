@@ -93,9 +93,11 @@ public class WorkflowUsageServiceImpl implements WorkflowUsageService {
 
         List<Long> ids = userIds.stream().distinct().toList();
 
-        Object[] totals = workflowUsageRepository.totalDurationAndCount(ids, from, to);
+        Object[] totals = unwrapSingletonRow(workflowUsageRepository.totalDurationAndCount(ids, from, to));
         long totalDurationMs = totals[0] != null ? ((Number) totals[0]).longValue() : 0L;
         long totalRuns = totals[1] != null ? ((Number) totals[1]).longValue() : 0L;
+        long failedRuns = nullSafeLong(workflowUsageRepository.countFailedInRange(ids, from, to));
+        long successfulRuns = Math.max(totalRuns - failedRuns, 0L);
 
         List<WorkflowUsageSummaryItem> byWorkflow = workflowUsageRepository
                 .aggregateByWorkflow(ids, from, to)
@@ -148,10 +150,90 @@ public class WorkflowUsageServiceImpl implements WorkflowUsageService {
                 .userIds(ids)
                 .totalRuns(totalRuns)
                 .totalDurationMs(totalDurationMs)
+                .activeUsers((long) ids.size())
+                .failedRuns(failedRuns)
+                .successfulRuns(successfulRuns)
                 .byWorkflow(byWorkflow)
                 .byUser(byUser)
                 .logs(logs)
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public WorkflowUsageReportResponse getSystemReport(
+            LocalDateTime from, LocalDateTime to, boolean includeLogs) {
+        if (from == null || to == null) {
+            throw new IllegalArgumentException("from and to are required");
+        }
+        if (to.isBefore(from)) {
+            throw new IllegalArgumentException("to must be after from");
+        }
+
+        Object[] totals = unwrapSingletonRow(workflowUsageRepository.totalDurationAndCountInRange(from, to));
+        long totalDurationMs = totals[0] != null ? ((Number) totals[0]).longValue() : 0L;
+        long totalRuns = totals[1] != null ? ((Number) totals[1]).longValue() : 0L;
+        long failedRuns = nullSafeLong(workflowUsageRepository.countFailedInRangeAll(from, to));
+        long successfulRuns = Math.max(totalRuns - failedRuns, 0L);
+        Long activeUsers = workflowUsageRepository.countDistinctUsersInRange(from, to);
+
+        List<WorkflowUsageSummaryItem> byWorkflow = workflowUsageRepository
+                .aggregateByWorkflowInRange(from, to)
+                .stream()
+                .map(row -> WorkflowUsageSummaryItem.builder()
+                        .workflow(row[0].toString())
+                        .runCount(((Number) row[1]).longValue())
+                        .totalDurationMs(((Number) row[2]).longValue())
+                        .avgDurationMs(((Number) row[3]).doubleValue())
+                        .build())
+                .toList();
+
+        List<UserWorkflowUsageSummary> byUser = workflowUsageRepository
+                .topUsersByWorkflowTime(from, to, PageRequest.of(0, 50))
+                .stream()
+                .map(row -> UserWorkflowUsageSummary.builder()
+                        .userId(((Number) row[0]).longValue())
+                        .email((String) row[1])
+                        .runCount(((Number) row[2]).longValue())
+                        .totalDurationMs(((Number) row[3]).longValue())
+                        .durationMsByWorkflow(Map.of())
+                        .build())
+                .toList();
+
+        List<WorkflowUsageLogItem> logs = List.of();
+        if (includeLogs) {
+            logs = workflowUsageRepository
+                    .findByStartedAtBetweenOrderByStartedAtDesc(from, to, PageRequest.of(0, MAX_LOG_ROWS))
+                    .getContent()
+                    .stream()
+                    .map(this::toLogItem)
+                    .toList();
+        }
+
+        return WorkflowUsageReportResponse.builder()
+                .from(from)
+                .to(to)
+                .userIds(List.of())
+                .totalRuns(totalRuns)
+                .totalDurationMs(totalDurationMs)
+                .activeUsers(activeUsers != null ? activeUsers : 0L)
+                .failedRuns(failedRuns)
+                .successfulRuns(successfulRuns)
+                .byWorkflow(byWorkflow)
+                .byUser(byUser)
+                .logs(logs)
+                .build();
+    }
+
+    private static Object[] unwrapSingletonRow(Object[] row) {
+        if (row != null && row.length == 1 && row[0] instanceof Object[] nested) {
+            return nested;
+        }
+        return row;
+    }
+
+    private static long nullSafeLong(Long value) {
+        return value != null ? value : 0L;
     }
 
     private WorkflowUsageLogItem toLogItem(WorkflowUsage w) {

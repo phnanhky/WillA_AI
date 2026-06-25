@@ -95,9 +95,6 @@ public class ChatServiceImpl implements ChatService {
     private AdvancedFileParserService advancedFileParserService;
 
     @Autowired
-    private com.willa.ai.backend.repository.WorkflowUsageRepository workflowUsageRepository;
-
-    @Autowired
     private GenerationLimitChecker generationLimitChecker;
 
     @Override

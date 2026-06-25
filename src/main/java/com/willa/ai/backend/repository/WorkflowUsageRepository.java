@@ -97,6 +97,11 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to);
 
+    org.springframework.data.domain.Page<WorkflowUsage> findByStartedAtBetweenOrderByStartedAtDesc(
+            LocalDateTime from,
+            LocalDateTime to,
+            org.springframework.data.domain.Pageable pageable);
+
     @Query("""
             SELECT COUNT(DISTINCT w.user.id)
             FROM WorkflowUsage w
@@ -174,6 +179,28 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
             """)
     List<Object[]> countWorkflowsByUserSince(
             @Param("userId") Long userId,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
+
+    @Query("""
+            SELECT COUNT(w)
+            FROM WorkflowUsage w
+            WHERE w.startedAt >= :from AND w.startedAt <= :to
+            AND w.user.id IN :userIds
+            AND w.status = com.willa.ai.backend.entity.enums.WorkflowUsageStatus.FAILED
+            """)
+    Long countFailedInRange(
+            @Param("userIds") Collection<Long> userIds,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
+
+    @Query("""
+            SELECT COUNT(w)
+            FROM WorkflowUsage w
+            WHERE w.startedAt >= :from AND w.startedAt <= :to
+            AND w.status = com.willa.ai.backend.entity.enums.WorkflowUsageStatus.FAILED
+            """)
+    Long countFailedInRangeAll(
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to);
 }

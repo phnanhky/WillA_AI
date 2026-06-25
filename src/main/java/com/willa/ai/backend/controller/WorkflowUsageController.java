@@ -57,8 +57,12 @@ public class WorkflowUsageController {
         List<Long> ids = parseUserIds(userId, userIds);
         LocalDateTime from = start.atStartOfDay();
         LocalDateTime to = end.atTime(LocalTime.MAX);
-        WorkflowUsageReportResponse report =
-                workflowUsageService.getReport(ids, from, to, includeLogs);
+        WorkflowUsageReportResponse report;
+        if (ids == null || ids.isEmpty()) {
+            report = workflowUsageService.getSystemReport(from, to, includeLogs);
+        } else {
+            report = workflowUsageService.getReport(ids, from, to, includeLogs);
+        }
         return ok(report);
     }
 
@@ -73,11 +77,16 @@ public class WorkflowUsageController {
         List<Long> ids = parseUserIds(userId, userIds);
         LocalDateTime from = date.atStartOfDay();
         LocalDateTime to = date.atTime(LocalTime.MAX);
-        WorkflowUsageReportResponse report =
-                workflowUsageService.getReport(ids, from, to, includeLogs);
+        WorkflowUsageReportResponse report;
+        if (ids == null || ids.isEmpty()) {
+            report = workflowUsageService.getSystemReport(from, to, includeLogs);
+        } else {
+            report = workflowUsageService.getReport(ids, from, to, includeLogs);
+        }
         return ok(report);
     }
 
+    /** null = toàn hệ thống (admin overview) */
     private List<Long> parseUserIds(Long userId, String userIdsCsv) {
         if (userIdsCsv != null && !userIdsCsv.isBlank()) {
             return Arrays.stream(userIdsCsv.split(","))
@@ -90,7 +99,7 @@ public class WorkflowUsageController {
         if (userId != null) {
             return List.of(userId);
         }
-        throw new IllegalArgumentException("Provide userId or userIds (comma-separated)");
+        return List.of();
     }
 
     private Long resolveUserId(Authentication authentication) {

@@ -10,6 +10,11 @@ public interface AnalyticsService {
      * Lấy analytics từ ngày bắt đầu đến nay
      */
     AnalyticsResponse getAnalytics(LocalDate startDate);
+
+    /**
+     * Lấy analytics trong khoảng ngày (inclusive)
+     */
+    AnalyticsResponse getAnalytics(LocalDate startDate, LocalDate endDate);
     
     /**
      * Lấy analytics cho ngày hôm nay

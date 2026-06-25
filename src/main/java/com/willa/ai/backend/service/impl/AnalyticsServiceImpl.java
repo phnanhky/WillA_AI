@@ -32,9 +32,16 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     
     @Override
     public AnalyticsResponse getAnalytics(LocalDate startDate) {
+        return getAnalytics(startDate, LocalDate.now());
+    }
+
+    @Override
+    public AnalyticsResponse getAnalytics(LocalDate startDate, LocalDate endDate) {
+        if (endDate.isBefore(startDate)) {
+            throw new IllegalArgumentException("endDate must be on or after startDate");
+        }
         LocalDateTime startDt = startDate.atStartOfDay();
-        LocalDateTime endDt = LocalDateTime.now();
-        
+        LocalDateTime endDt = endDate.atTime(LocalTime.MAX);
         return buildAnalyticsResponse(startDt, endDt);
     }
     
@@ -56,7 +63,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     
     private AnalyticsResponse buildAnalyticsResponse(LocalDateTime startDt, LocalDateTime endDt) {
         // Lấy dữ liệu từ repository
-        Long totalActiveUsers = analyticsRepository.getActiveUserCount(startDt);
+        Long totalActiveUsers = analyticsRepository.getActiveUserCount(startDt, endDt);
+        Long totalChatsInPeriod = analyticsRepository.getChatCount(startDt, endDt);
         Long totalChatsToday = analyticsRepository.getChatCount(
             LocalDate.now().atStartOfDay(),
             LocalDateTime.now()
@@ -74,16 +82,16 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         Map<LocalDate, Long> dailyChatCounts = getDailyChatCounts(startDt, endDt);
         
         // Top active users
-        List<UserActivityDTO> topActiveUsers = getTopActiveUsers(startDt, 10);
+        List<UserActivityDTO> topActiveUsers = getTopActiveUsers(startDt, endDt, 10);
         
         // Feature usage
-        Map<String, Long> featureUsageByActionType = getFeatureUsage(startDt);
+        Map<String, Long> featureUsageByActionType = getFeatureUsage(startDt, endDt);
         
         // Users by plan
         Map<String, Long> usersByPlan = getUsersByPlan();
         
         // Chats by plan
-        Map<String, Long> chatsByPlan = getChatsByPlan(startDt);
+        Map<String, Long> chatsByPlan = getChatsByPlan(startDt, endDt);
 
         WorkflowUsageAnalytics workflowUsage = buildWorkflowUsageAnalytics(startDt, endDt);
         featureUsageByActionType = enrichFeatureUsageWithWorkflows(featureUsageByActionType, workflowUsage);
@@ -93,6 +101,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .totalChatsToday(totalChatsToday != null ? totalChatsToday : 0)
             .totalChatsThisWeek(totalChatsThisWeek != null ? totalChatsThisWeek : 0)
             .totalChatsThisMonth(totalChatsThisMonth != null ? totalChatsThisMonth : 0)
+            .totalChatsInPeriod(totalChatsInPeriod != null ? totalChatsInPeriod : 0)
             .dailyChatCounts(dailyChatCounts)
             .topActiveUsers(topActiveUsers)
             .featureUsageByActionType(featureUsageByActionType)
@@ -200,6 +209,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             WorkflowType.PREPARE_REGEN,
             WorkflowType.SUGGEST_STYLE,
             WorkflowType.EXTRACT_LAYERS,
+            WorkflowType.WORKSPACE,
     };
 
     private Map<String, WorkflowTypeStats> fillAllWorkflowTypes(Map<String, WorkflowTypeStats> existing) {
@@ -354,8 +364,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             ));
     }
     
-    private List<UserActivityDTO> getTopActiveUsers(LocalDateTime startDt, int limit) {
-        List<Object[]> results = analyticsRepository.getTopActiveUsers(startDt, limit);
+    private List<UserActivityDTO> getTopActiveUsers(LocalDateTime startDt, LocalDateTime endDt, int limit) {
+        List<Object[]> results = analyticsRepository.getTopActiveUsers(startDt, endDt, limit);
         
         return results.stream()
             .map(row -> UserActivityDTO.builder()
@@ -368,8 +378,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .collect(Collectors.toList());
     }
     
-    private Map<String, Long> getFeatureUsage(LocalDateTime startDt) {
-        List<Object[]> results = analyticsRepository.getFeatureUsageStats(startDt);
+    private Map<String, Long> getFeatureUsage(LocalDateTime startDt, LocalDateTime endDt) {
+        List<Object[]> results = analyticsRepository.getFeatureUsageStats(startDt, endDt);
         
         return results.stream()
             .collect(Collectors.toMap(
@@ -389,8 +399,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             ));
     }
     
-    private Map<String, Long> getChatsByPlan(LocalDateTime startDt) {
-        List<Object[]> results = analyticsRepository.getChatsByPlan(startDt);
+    private Map<String, Long> getChatsByPlan(LocalDateTime startDt, LocalDateTime endDt) {
+        List<Object[]> results = analyticsRepository.getChatsByPlan(startDt, endDt);
         
         return results.stream()
             .collect(Collectors.toMap(

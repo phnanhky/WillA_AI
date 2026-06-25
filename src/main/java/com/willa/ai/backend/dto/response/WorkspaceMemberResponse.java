@@ -12,6 +12,7 @@ public class WorkspaceMemberResponse {
     private Long workspaceId;
     private Long userId;
     private String userName;
+    private String avatarUrl;
     private String email;
     private WorkspaceRole role;
     private Boolean isImportant;

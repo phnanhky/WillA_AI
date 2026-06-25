@@ -28,16 +28,21 @@ import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.Subscription;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.Wallet;
+import com.willa.ai.backend.entity.WorkspacePlan;
+import com.willa.ai.backend.entity.WorkspaceSubscription;
 import com.willa.ai.backend.entity.enums.Gender;
 import com.willa.ai.backend.entity.enums.Role;
 import com.willa.ai.backend.entity.enums.SubscriptionStatus;
+import com.willa.ai.backend.entity.enums.WorkspacePlanTier;
 import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.SubscriptionRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WalletRepository;
+import com.willa.ai.backend.repository.WorkspaceSubscriptionRepository;
 import com.willa.ai.backend.security.JwtTokenProvider;
 import com.willa.ai.backend.service.AuthenticationService;
 import com.willa.ai.backend.service.EmailService;
+import com.willa.ai.backend.service.WorkspacePlanService;
 
 @Service
 @Transactional
@@ -63,6 +68,12 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     @Autowired
     private EmailService emailService;
+
+    @Autowired
+    private WorkspacePlanService workspacePlanService;
+
+    @Autowired
+    private WorkspaceSubscriptionRepository workspaceSubscriptionRepository;
 
     @Value("${app.mail.from}")
     private String mailFrom;
@@ -101,7 +112,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                     .build();
 
             user = userRepository.save(user);
-            System.out.println("User saved: " + user.getId());
+            assignDefaultWorkspacePlan(user);
+            assignDefaultWorkspaceSubscription(user);
 
             // Vẫn chưa gen token ở bước này vì account isEnabled = false
 
@@ -261,6 +273,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .isActive(true)
                         .build();
                 user = userRepository.save(user);
+                assignDefaultWorkspacePlan(user);
+                assignDefaultWorkspaceSubscription(user);
 
                 // Assign Free Plan and initialize Wallet
                 Optional<Plan> defaultPlanOpt = planRepository.findByName("Free");
@@ -354,6 +368,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         .isStudent(false)
                         .build();
                 user = userRepository.save(user);
+                assignDefaultWorkspacePlan(user);
+                assignDefaultWorkspaceSubscription(user);
 
                 // Initialize standard user features
                 Plan freePlan = planRepository.findByName("Free")
@@ -503,6 +519,37 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             }
         } catch (Exception e) {
             throw new RuntimeException("Email verification failed: " + e.getMessage());
+        }
+    }
+
+    private void assignDefaultWorkspaceSubscription(User user) {
+        try {
+            WorkspacePlan freePlan = workspacePlanService.getDefaultPlan();
+            WorkspaceSubscription freeSub = WorkspaceSubscription.builder()
+                    .user(user)
+                    .workspacePlan(freePlan)
+                    .startDate(LocalDateTime.now())
+                    .endDate(LocalDateTime.now().plusYears(100))
+                    .status(SubscriptionStatus.ACTIVE)
+                    .build();
+            workspaceSubscriptionRepository.save(freeSub);
+        } catch (Exception ignored) {
+            // workspace_plans chưa migrate
+        }
+    }
+
+    private void assignDefaultWorkspacePlan(User user) {
+        try {
+            WorkspacePlan plan = workspacePlanService.getDefaultPlan();
+            user.setWorkspacePlan(plan);
+            try {
+                user.setWorkspacePlanTier(WorkspacePlanTier.valueOf(plan.getCode()));
+            } catch (IllegalArgumentException ignored) {
+                user.setWorkspacePlanTier(WorkspacePlanTier.FREE_WORKSPACE);
+            }
+            userRepository.save(user);
+        } catch (Exception ignored) {
+            // workspace_plans chưa migrate — user vẫn có tier mặc định từ entity
         }
     }
 }

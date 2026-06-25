@@ -41,8 +41,12 @@ public class Payment {
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "plan_id", nullable = false)
+    @JoinColumn(name = "plan_id")
     private Plan plan;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workspace_plan_id")
+    private WorkspacePlan workspacePlan;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

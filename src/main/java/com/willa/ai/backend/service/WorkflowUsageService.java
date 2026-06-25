@@ -33,4 +33,7 @@ public interface WorkflowUsageService {
             boolean includeLogs);
 
     WorkflowUsageReportResponse getReportForUser(Long userId, LocalDateTime from, LocalDateTime to, boolean includeLogs);
+
+    /** Báo cáo toàn hệ thống (mọi user) trong khoảng thời gian. */
+    WorkflowUsageReportResponse getSystemReport(LocalDateTime from, LocalDateTime to, boolean includeLogs);
 }

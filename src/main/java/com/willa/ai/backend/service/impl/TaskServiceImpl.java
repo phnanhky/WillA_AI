@@ -243,13 +243,34 @@ public class TaskServiceImpl implements TaskService {
             throw new RuntimeException("Nội dung bình luận không được để trống");
         }
 
+        TaskComment parent = null;
+        if (request.getParentCommentId() != null) {
+            parent = taskCommentRepository.findById(request.getParentCommentId())
+                    .orElseThrow(() -> new RuntimeException("Bình luận gốc không tồn tại"));
+            if (!parent.getTask().getId().equals(taskId)) {
+                throw new RuntimeException("Bình luận gốc không thuộc task này");
+            }
+        }
+
         TaskComment saved = taskCommentRepository.save(TaskComment.builder()
                 .task(task)
                 .user(user)
                 .content(content)
+                .parentComment(parent)
                 .build());
         notifyWorkspaceChanged(workspaceId);
         return mapComment(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TaskCommentResponse> listHubComments(String email, Long workspaceId) {
+        User user = requireUser(email);
+        assertIsMember(user, workspaceId);
+        return taskCommentRepository.findHubActivity(workspaceId, user.getId()).stream()
+                .limit(200)
+                .map(this::mapCommentWithTask)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -621,14 +642,25 @@ public class TaskServiceImpl implements TaskService {
     }
 
     private TaskCommentResponse mapComment(TaskComment comment) {
+        TaskComment parent = comment.getParentComment();
         return TaskCommentResponse.builder()
                 .id(comment.getId())
                 .taskId(comment.getTask().getId())
                 .userId(comment.getUser().getId())
                 .userName(comment.getUser().getFullName())
+                .userAvatarUrl(comment.getUser().getAvatarUrl())
                 .content(comment.getContent())
+                .parentCommentId(parent != null ? parent.getId() : null)
+                .parentUserId(parent != null ? parent.getUser().getId() : null)
+                .parentUserName(parent != null ? parent.getUser().getFullName() : null)
                 .createdAt(comment.getCreatedAt())
                 .build();
+    }
+
+    private TaskCommentResponse mapCommentWithTask(TaskComment comment) {
+        TaskCommentResponse base = mapComment(comment);
+        base.setTaskTitle(comment.getTask().getTitle());
+        return base;
     }
 
     private TaskAttachmentResponse mapAttachment(TaskAttachment attachment) {

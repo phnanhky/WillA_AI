@@ -34,19 +34,26 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                COALESCE((
                    SELECT SUM(atu.total_tokens)
                    FROM ai_token_usages atu
-                   WHERE atu.user_id = cs.user_id AND atu.created_at >= :startDate
+                   WHERE atu.user_id = cs.user_id
+                     AND atu.created_at >= :startDate
+                     AND atu.created_at <= :endDate
                ), 0) as tokens_used
         FROM chat_sessions cs
-        LEFT JOIN chat_messages cm ON cs.id = cm.session_id AND cm.created_at >= :startDate
+        LEFT JOIN chat_messages cm ON cs.id = cm.session_id
+            AND cm.created_at >= :startDate
+            AND cm.created_at <= :endDate
         LEFT JOIN users u ON cs.user_id = u.id
         LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'ACTIVE'
         LEFT JOIN plans p ON s.plan_id = p.id
         WHERE cs.created_at >= :startDate
+          AND cs.created_at <= :endDate
         GROUP BY cs.user_id, u.email, p.name
+        HAVING COUNT(cm.id) > 0
         ORDER BY chat_count DESC
         LIMIT :limit
         """, nativeQuery = true)
     List<Object[]> getTopActiveUsers(@Param("startDate") LocalDateTime startDate,
+                                      @Param("endDate") LocalDateTime endDate,
                                       @Param("limit") int limit);
     
     /**
@@ -56,8 +63,10 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         SELECT COUNT(DISTINCT cs.user_id)
         FROM chat_sessions cs
         WHERE cs.created_at >= :startDate
+          AND cs.created_at <= :endDate
         """, nativeQuery = true)
-    Long getActiveUserCount(@Param("startDate") LocalDateTime startDate);
+    Long getActiveUserCount(@Param("startDate") LocalDateTime startDate,
+                            @Param("endDate") LocalDateTime endDate);
     
     /**
      * Lấy số chat trong khoảng thời gian
@@ -78,11 +87,13 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         SELECT atu.service_type, COUNT(*) as usage_count
         FROM ai_token_usages atu
         WHERE atu.created_at >= :startDate
-        AND atu.service_type IS NOT NULL
+          AND atu.created_at <= :endDate
+          AND atu.service_type IS NOT NULL
         GROUP BY atu.service_type
         ORDER BY usage_count DESC
         """, nativeQuery = true)
-    List<Object[]> getFeatureUsageStats(@Param("startDate") LocalDateTime startDate);
+    List<Object[]> getFeatureUsageStats(@Param("startDate") LocalDateTime startDate,
+                                        @Param("endDate") LocalDateTime endDate);
     
     /**
      * Lấy số users và chats theo plan
@@ -103,7 +114,9 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         LEFT JOIN subscriptions s ON cs.user_id = s.user_id AND s.status = 'ACTIVE'
         LEFT JOIN plans p ON s.plan_id = p.id
         WHERE cm.created_at >= :startDate
+          AND cm.created_at <= :endDate
         GROUP BY COALESCE(p.name, 'Unknown')
         """, nativeQuery = true)
-    List<Object[]> getChatsByPlan(@Param("startDate") LocalDateTime startDate);
+    List<Object[]> getChatsByPlan(@Param("startDate") LocalDateTime startDate,
+                                  @Param("endDate") LocalDateTime endDate);
 }

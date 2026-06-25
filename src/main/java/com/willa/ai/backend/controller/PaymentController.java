@@ -35,9 +35,12 @@ public class PaymentController {
             }
             
             Long planId = Long.parseLong(request.get("planId").toString());
-            String email = authentication.getName(); // Từ token
+            String planType = request.containsKey("planType") && request.get("planType") != null
+                    ? request.get("planType").toString()
+                    : "FEEDBACK";
+            String email = authentication.getName();
 
-            CheckoutResponseData result = paymentService.createPaymentLink(email, planId);
+            CheckoutResponseData result = paymentService.createPaymentLink(email, planId, planType);
 
             return ResponseEntity.ok(ApiResponse.<CheckoutResponseData>builder()
                     .success(true)

@@ -12,6 +12,11 @@ public class TaskCommentResponse {
     private Long taskId;
     private Long userId;
     private String userName;
+    private String userAvatarUrl;
     private String content;
+    private Long parentCommentId;
+    private Long parentUserId;
+    private String parentUserName;
+    private String taskTitle;
     private LocalDateTime createdAt;
 }

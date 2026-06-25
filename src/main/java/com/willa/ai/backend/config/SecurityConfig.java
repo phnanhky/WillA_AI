@@ -54,6 +54,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers(HttpMethod.GET, "/api/v1/plans", "/api/v1/plans/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/workspace-plans", "/api/v1/workspace-plans/**").permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/api/files/download/**",

@@ -9,6 +9,8 @@ import com.willa.ai.backend.dto.request.WorkspaceRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.service.WorkspaceService;
 import com.willa.ai.backend.service.WorkspaceMemberStatsService;
+import com.willa.ai.backend.service.TaskService;
+import com.willa.ai.backend.service.ExpertService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -28,6 +30,8 @@ import org.springframework.web.bind.annotation.*;
 public class WorkspaceController {
     private final WorkspaceService workspaceService;
     private final WorkspaceMemberStatsService workspaceMemberStatsService;
+    private final TaskService taskService;
+    private final ExpertService expertService;
 
     @PostMapping
     @Operation(summary = "Tạo workspace mới")
@@ -203,6 +207,20 @@ public class WorkspaceController {
         }
     }
 
+    @GetMapping("/{workspaceId}/hub/comments")
+    @Operation(summary = "Bình luận liên quan tới My Space (assignee, reply, thread)")
+    public ResponseEntity<ApiResponse> listHubComments(Authentication auth, @PathVariable Long workspaceId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Hub comments retrieved")
+                    .data(taskService.listHubComments(auth.getName(), workspaceId))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
     @GetMapping("/{workspaceId}/members")
     @Operation(summary = "Danh sách thành viên")
     public ResponseEntity<ApiResponse> getMembers(Authentication auth, @PathVariable Long workspaceId) {
@@ -259,6 +277,22 @@ public class WorkspaceController {
                     .status(true)
                     .message("Chat extracted")
                     .data(extracted)
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/{workspaceId}/experts")
+    @Operation(summary = "Danh sách expert trong workspace")
+    public ResponseEntity<ApiResponse> getWorkspaceExperts(
+            Authentication auth,
+            @PathVariable Long workspaceId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Experts retrieved successfully")
+                    .data(expertService.listWorkspaceExperts(auth.getName(), workspaceId))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

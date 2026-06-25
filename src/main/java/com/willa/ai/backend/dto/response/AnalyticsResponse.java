@@ -19,6 +19,8 @@ public class AnalyticsResponse {
     private Long totalChatsToday;
     private Long totalChatsThisWeek;
     private Long totalChatsThisMonth;
+    /** Tổng chat trong khoảng báo cáo (start–end) */
+    private Long totalChatsInPeriod;
     
     // Chi tiết người dùng
     private List<UserActivityDTO> topActiveUsers;

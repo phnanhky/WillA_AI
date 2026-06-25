@@ -1,0 +1,28 @@
+package com.willa.ai.backend.dto.response;
+
+import com.willa.ai.backend.entity.enums.BillingCycle;
+import com.willa.ai.backend.entity.enums.SubscriptionStatus;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class WorkspaceSubscriptionResponse {
+    private Long id;
+    private Long userId;
+    private String userEmail;
+    private Long workspacePlanId;
+    private String workspacePlanCode;
+    private String workspacePlanName;
+    private BillingCycle billingCycle;
+    private LocalDateTime startDate;
+    private LocalDateTime endDate;
+    private SubscriptionStatus status;
+    private LocalDateTime createdAt;
+}

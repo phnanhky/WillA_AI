@@ -2,7 +2,11 @@ package com.willa.ai.backend.service.impl;
 
 import com.willa.ai.backend.dto.response.UserResponse;
 import com.willa.ai.backend.entity.User;
+import com.willa.ai.backend.entity.WorkspacePlan;
+import com.willa.ai.backend.entity.enums.WorkspacePlanTier;
 import com.willa.ai.backend.repository.UserRepository;
+import com.willa.ai.backend.repository.WorkspacePlanRepository;
+import com.willa.ai.backend.service.FileService;
 import com.willa.ai.backend.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +16,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -26,6 +31,10 @@ public class UserServiceImpl implements UserService {
     private UserRepository userRepository;
     @Autowired
     private JavaMailSender javaMailSender;
+    @Autowired
+    private FileService fileService;
+    @Autowired
+    private WorkspacePlanRepository workspacePlanRepository;
 
     @Override
     public Page<UserResponse> getAllUsers(Pageable pageable) {
@@ -102,6 +111,21 @@ public class UserServiceImpl implements UserService {
         } catch (Exception e) {
             log.error("Error updating user: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to update user: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public UserResponse uploadAvatar(String email, MultipartFile file) {
+        try {
+            log.info("Uploading avatar for user: {}", email);
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+            String url = fileService.uploadFile(file);
+            user.setAvatarUrl(url);
+            return convertToResponse(userRepository.save(user));
+        } catch (Exception e) {
+            log.error("Error uploading avatar: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to upload avatar: " + e.getMessage());
         }
     }
 
@@ -185,11 +209,45 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
     }
 
+    @Override
+    public UserResponse updateWorkspacePlanTier(Long userId, WorkspacePlanTier tier) {
+        WorkspacePlan plan = workspacePlanRepository.findByCode(tier.name())
+                .orElseThrow(() -> new RuntimeException("Gói workspace không tồn tại: " + tier.name()));
+        return assignWorkspacePlan(userId, plan);
+    }
+
+    @Override
+    public UserResponse updateUserWorkspacePlan(Long userId, Long workspacePlanId) {
+        WorkspacePlan plan = workspacePlanRepository.findById(workspacePlanId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy gói workspace"));
+        return assignWorkspacePlan(userId, plan);
+    }
+
+    private UserResponse assignWorkspacePlan(Long userId, WorkspacePlan plan) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+        user.setWorkspacePlan(plan);
+        syncWorkspacePlanTier(user, plan);
+        return convertToResponse(userRepository.save(user));
+    }
+
+    private void syncWorkspacePlanTier(User user, WorkspacePlan plan) {
+        try {
+            user.setWorkspacePlanTier(WorkspacePlanTier.valueOf(plan.getCode()));
+        } catch (IllegalArgumentException ignored) {
+            // custom plan code — giữ tier cũ hoặc FREE
+            if (user.getWorkspacePlanTier() == null) {
+                user.setWorkspacePlanTier(WorkspacePlanTier.FREE_WORKSPACE);
+            }
+        }
+    }
+
     private UserResponse convertToResponse(User user) {
         return UserResponse.builder()
                 .id(user.getId())
                 .email(user.getEmail())
                 .fullName(user.getFullName())
+                .avatarUrl(user.getAvatarUrl())
                 .phoneNumber(user.getPhoneNumber())
                 .gender(user.getGender())
                 .occupation(user.getOccupation())
@@ -198,6 +256,10 @@ public class UserServiceImpl implements UserService {
                 .isEnabled(user.getIsEnabled())
                 .isActive(user.getIsActive())
                 .isStudent(user.getIsStudent())
+                .workspacePlanTier(user.getWorkspacePlanTier() != null ? user.getWorkspacePlanTier().name() : null)
+                .workspacePlanId(user.getWorkspacePlan() != null ? user.getWorkspacePlan().getId() : null)
+                .workspacePlanCode(user.getWorkspacePlan() != null ? user.getWorkspacePlan().getCode() : null)
+                .workspacePlanName(user.getWorkspacePlan() != null ? user.getWorkspacePlan().getName() : null)
                 .requiresReview(user.getRequiresReview())
                 .studentVerifiedAt(user.getStudentVerifiedAt())
                 .firebaseUid(user.getFirebaseUid())

@@ -29,6 +29,8 @@ public interface TaskService {
 
     TaskCommentResponse addComment(String email, Long workspaceId, Long taskId, TaskCommentRequest request);
 
+    List<TaskCommentResponse> listHubComments(String email, Long workspaceId);
+
     TaskAttachmentResponse addAttachment(
             String email, Long workspaceId, Long taskId, MultipartFile file);
 

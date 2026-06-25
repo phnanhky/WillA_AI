@@ -21,6 +21,10 @@ public class WorkflowUsageReportResponse {
     private List<Long> userIds;
     private long totalRuns;
     private long totalDurationMs;
+    /** Distinct users with workflow activity in range (system report) */
+    private Long activeUsers;
+    private long failedRuns;
+    private long successfulRuns;
     /** Aggregated by workflow type across all selected users */
     private List<WorkflowUsageSummaryItem> byWorkflow;
     /** Per-user totals (populated when multiple users or admin detail view) */

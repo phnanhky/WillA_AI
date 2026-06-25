@@ -15,8 +15,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/users")
@@ -91,6 +93,28 @@ public class UserController {
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("User info fetched successfully")
+                    .data(user)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.builder()
+                            .status(false)
+                            .message(e.getMessage())
+                            .build());
+        }
+    }
+
+    @PostMapping(value = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload avatar for current user")
+    public ResponseEntity<?> uploadMyAvatar(
+            Authentication authentication,
+            @RequestParam("file") MultipartFile file) {
+        try {
+            String email = authentication.getName();
+            UserResponse user = userService.uploadAvatar(email, file);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Avatar uploaded successfully")
                     .data(user)
                     .build());
         } catch (Exception e) {

@@ -17,6 +17,7 @@ public class UserResponse {
     private Long id;
     private String email;
     private String fullName;
+    private String avatarUrl;
     private String phoneNumber;
     private Gender gender;
     private String occupation;
@@ -25,6 +26,11 @@ public class UserResponse {
     private Boolean isEnabled;
     private Boolean isActive;
     private Boolean isStudent;
+    /** Gói workspace: FREE_WORKSPACE | STUDENT_WORKSPACE | PRO_WORKSPACE (legacy sync) */
+    private String workspacePlanTier;
+    private Long workspacePlanId;
+    private String workspacePlanCode;
+    private String workspacePlanName;
     private Boolean requiresReview;
     private LocalDateTime studentVerifiedAt;
     private String firebaseUid;

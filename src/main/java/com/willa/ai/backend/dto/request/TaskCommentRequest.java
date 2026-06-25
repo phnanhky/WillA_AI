@@ -7,4 +7,6 @@ import lombok.Data;
 public class TaskCommentRequest {
     @NotBlank
     private String content;
+
+    private Long parentCommentId;
 }

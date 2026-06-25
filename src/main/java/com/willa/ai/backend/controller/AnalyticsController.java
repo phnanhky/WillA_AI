@@ -48,6 +48,22 @@ public class AnalyticsController {
             .build());
     }
     
+    @GetMapping("/range")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Lấy analytics trong khoảng ngày (yyyy-MM-dd)")
+    public ResponseEntity<ApiResponse> getAnalyticsRange(
+            @Parameter(description = "Ngày bắt đầu (yyyy-MM-dd)")
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @Parameter(description = "Ngày kết thúc (yyyy-MM-dd)")
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        AnalyticsResponse analytics = analyticsService.getAnalytics(startDate, endDate);
+        return ResponseEntity.ok(ApiResponse.builder()
+            .status(true)
+            .message("Analytics range retrieved successfully")
+            .data(analytics)
+            .build());
+    }
+
     @GetMapping("/from-date")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Lấy analytics từ một ngày cụ thể đến nay")

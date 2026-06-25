@@ -29,6 +29,10 @@ public class TaskComment {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_comment_id")
+    private TaskComment parentComment;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 }

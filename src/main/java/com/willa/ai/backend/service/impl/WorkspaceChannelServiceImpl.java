@@ -309,6 +309,7 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
                 .channelId(message.getChannel().getId())
                 .userId(author.getId())
                 .userName(displayName(author))
+                .userAvatarUrl(author.getAvatarUrl())
                 .content(message.getContent())
                 .createdAt(message.getCreatedAt())
                 .build();
@@ -321,6 +322,7 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
                 .conversationId(message.getConversation().getId())
                 .userId(sender.getId())
                 .userName(displayName(sender))
+                .userAvatarUrl(sender.getAvatarUrl())
                 .content(message.getContent())
                 .createdAt(message.getCreatedAt())
                 .build();

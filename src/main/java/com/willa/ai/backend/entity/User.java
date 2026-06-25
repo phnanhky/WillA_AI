@@ -10,15 +10,19 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 import com.willa.ai.backend.entity.enums.Gender;
 import com.willa.ai.backend.entity.enums.Role;
+import com.willa.ai.backend.entity.enums.WorkspacePlanTier;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -81,6 +85,15 @@ public class User implements UserDetails {
     @Builder.Default
     private Boolean isStudent = false;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "workspace_plan_tier", nullable = false)
+    @Builder.Default
+    private WorkspacePlanTier workspacePlanTier = WorkspacePlanTier.FREE_WORKSPACE;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workspace_plan_id")
+    private WorkspacePlan workspacePlan;
+
     @Column(name = "requires_review")
     @Builder.Default
     private Boolean requiresReview = false;
@@ -93,6 +106,9 @@ public class User implements UserDetails {
 
     @Column(name = "student_verified_at")
     private LocalDateTime studentVerifiedAt;
+
+    @Column(name = "avatar_url", columnDefinition = "TEXT")
+    private String avatarUrl;
 
     @Column(name = "firebase_uid", length = 1000)
     private String firebaseUid;

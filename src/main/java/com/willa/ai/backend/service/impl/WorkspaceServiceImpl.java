@@ -24,15 +24,13 @@ import com.willa.ai.backend.dto.response.WorkspaceInviteResponse;
 import com.willa.ai.backend.dto.response.WorkspaceMemberResponse;
 import com.willa.ai.backend.dto.response.WorkspaceResponse;
 import com.willa.ai.backend.dto.response.WorkspaceShareResponse;
-import com.willa.ai.backend.entity.Subscription;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.Workspace;
 import com.willa.ai.backend.entity.WorkspaceInvite;
 import com.willa.ai.backend.entity.WorkspaceMember;
 import com.willa.ai.backend.entity.enums.InviteStatus;
-import com.willa.ai.backend.entity.enums.SubscriptionStatus;
 import com.willa.ai.backend.entity.enums.WorkspaceRole;
-import com.willa.ai.backend.repository.SubscriptionRepository;
+import com.willa.ai.backend.entity.enums.WorkflowType;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WorkspaceInviteRepository;
 import com.willa.ai.backend.repository.WorkspaceMemberRepository;
@@ -41,8 +39,10 @@ import com.willa.ai.backend.service.EmailService;
 import com.willa.ai.backend.service.FileService;
 import com.willa.ai.backend.service.WorkspaceChannelService;
 import com.willa.ai.backend.service.WorkspaceDataPurger;
+import com.willa.ai.backend.service.WorkspacePlanService;
 import com.willa.ai.backend.service.WorkspaceRealtimeService;
 import com.willa.ai.backend.service.WorkspaceService;
+import com.willa.ai.backend.service.WorkflowUsageService;
 import com.willa.ai.backend.util.QrCodeGenerator;
 
 import lombok.RequiredArgsConstructor;
@@ -61,11 +61,12 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     private final WorkspaceInviteRepository workspaceInviteRepository;
     private final WorkspaceDataPurger workspaceDataPurger;
     private final UserRepository userRepository;
-    private final SubscriptionRepository subscriptionRepository;
     private final EmailService emailService;
     private final FileService fileService;
     private final WorkspaceRealtimeService workspaceRealtimeService;
     private final WorkspaceChannelService workspaceChannelService;
+    private final WorkspacePlanService workspacePlanService;
+    private final WorkflowUsageService workflowUsageService;
 
     @Value("${app.frontendUrl:http://localhost:5173}")
     private String frontendUrl;
@@ -111,7 +112,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         assertCanManageWorkspace(user, workspace);
 
         workspace.setTitle(request.getTitle().trim());
-        workspace.setDescription(request.getDescription());
+            workspace.setDescription(request.getDescription());
         WorkspaceResponse response = mapToResponse(workspaceRepository.save(workspace), user);
         workspaceRealtimeService.publishWorkspaceChanged(workspaceId);
         return response;
@@ -418,8 +419,8 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
         assertIsMember(user, workspaceId);
         return workspaceMemberRepository.findByWorkspaceId(workspaceId).stream()
-                .map(this::mapToMemberResponse)
-                .collect(Collectors.toList());
+            .map(this::mapToMemberResponse)
+            .collect(Collectors.toList());
     }
 
     private Workspace getWorkspaceOrThrow(Long workspaceId) {
@@ -447,35 +448,23 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     }
 
     private void assertWorkspaceCreateAllowed(User user) {
-        Subscription activeSub = subscriptionRepository
-                .findActiveRecurringByUserId(user.getId(), SubscriptionStatus.ACTIVE)
-                .stream()
-                .findFirst()
-                .orElse(null);
-        String planName = (activeSub != null && activeSub.getPlan() != null) ? activeSub.getPlan().getName() : "Free";
         int count = workspaceRepository.countByOwnerId(user.getId());
-        if (planName.equalsIgnoreCase("Free") && count >= 1) {
-            throw new RuntimeException("Tài khoản Free chỉ có tối đa 1 Workspace. Hãy nâng cấp!");
-        }
-        if (planName.equalsIgnoreCase("Student") && count >= 3) {
-            throw new RuntimeException("Sinh viên được tạo tối đa 3 Workspace!");
+        int max = workspacePlanService.maxOwnedWorkspaces(user);
+        if (count >= max) {
+            throw new RuntimeException("Gói " + workspacePlanService.displayNameForUser(user)
+                    + " chỉ có tối đa " + (max == Integer.MAX_VALUE ? "không giới hạn" : max)
+                    + " workspace. Hãy nâng cấp gói workspace!");
         }
     }
 
     private void assertMemberLimitNotExceeded(Workspace workspace) {
         User owner = workspace.getOwner();
-        Subscription activeSub = subscriptionRepository
-                .findActiveRecurringByUserId(owner.getId(), SubscriptionStatus.ACTIVE)
-                .stream()
-                .findFirst()
-                .orElse(null);
-        String planName = (activeSub != null && activeSub.getPlan() != null) ? activeSub.getPlan().getName() : "Free";
         long count = workspaceMemberRepository.countByWorkspaceId(workspace.getId());
-        if (planName.equalsIgnoreCase("Free") && count >= 2) {
-            throw new RuntimeException("Gói Free chỉ hỗ trợ tối đa 2 thành viên mỗi workspace");
-        }
-        if (planName.equalsIgnoreCase("Student") && count >= 5) {
-            throw new RuntimeException("Gói Student hỗ trợ tối đa 5 thành viên mỗi workspace");
+        int max = workspacePlanService.maxMembersPerWorkspace(owner);
+        if (count >= max) {
+            throw new RuntimeException("Gói " + workspacePlanService.displayNameForUser(owner)
+                    + " chỉ hỗ trợ tối đa " + (max == Integer.MAX_VALUE ? "không giới hạn" : max)
+                    + " thành viên mỗi workspace");
         }
     }
 
@@ -566,6 +555,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .workspaceId(member.getWorkspace().getId())
                 .userId(member.getUser().getId())
                 .userName(member.getUser().getFullName())
+                .avatarUrl(member.getUser().getAvatarUrl())
                 .email(member.getUser().getEmail())
                 .role(member.getRole())
                 .isImportant(member.getIsImportant())
@@ -624,51 +614,55 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             throw new RuntimeException("XAI API Key is not configured.");
         }
 
-        try {
-            org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
-            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(xaiApiKey);
+        return workflowUsageService.track(user, WorkflowType.WORKSPACE, null, () -> {
+            try {
+                org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+                org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+                headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+                headers.setBearerAuth(xaiApiKey);
 
-            java.util.Map<String, Object> body = new java.util.HashMap<>();
-            body.put("model", "grok-build-0.1");
-            
-            java.util.List<java.util.Map<String, String>> messages = new java.util.ArrayList<>();
-            java.util.Map<String, String> msg = new java.util.HashMap<>();
-            msg.put("role", "user");
-            msg.put("content", systemPrompt);
-            messages.add(msg);
-            
-            body.put("messages", messages);
-            body.put("temperature", 0.0);
+                java.util.Map<String, Object> body = new java.util.HashMap<>();
+                body.put("model", "grok-build-0.1");
 
-            org.springframework.http.HttpEntity<java.util.Map<String, Object>> entity = new org.springframework.http.HttpEntity<>(body, headers);
-            
-            org.springframework.http.ResponseEntity<String> response = restTemplate.postForEntity(
-                "https://api.x.ai/v1/chat/completions", entity, String.class);
-                
-            String respBody = response.getBody();
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            com.fasterxml.jackson.databind.JsonNode rootNode = mapper.readTree(respBody);
-            
-            String content = rootNode.path("choices").get(0).path("message").path("content").asText("");
-            log.info("AI response: {}", content);
-            content = content.trim();
-            if (content.startsWith("```json")) {
-                content = content.substring(7);
-            }
-            if (content.startsWith("```")) {
-                content = content.substring(3);
-            }
-            if (content.endsWith("```")) {
-                content = content.substring(0, content.length() - 3);
-            }
-            
-            return mapper.readValue(content.trim(), com.willa.ai.backend.dto.response.WorkspaceChatExtractResponse.class);
+                java.util.List<java.util.Map<String, String>> messages = new java.util.ArrayList<>();
+                java.util.Map<String, String> msg = new java.util.HashMap<>();
+                msg.put("role", "user");
+                msg.put("content", systemPrompt);
+                messages.add(msg);
 
-        } catch (Exception e) {
-            log.error("Failed to extract task from chat: ", e);
-            throw new RuntimeException("Lỗi khi phân tích bằng AI: " + e.getMessage());
-        }
+                body.put("messages", messages);
+                body.put("temperature", 0.0);
+
+                org.springframework.http.HttpEntity<java.util.Map<String, Object>> entity =
+                        new org.springframework.http.HttpEntity<>(body, headers);
+
+                org.springframework.http.ResponseEntity<String> response = restTemplate.postForEntity(
+                        "https://api.x.ai/v1/chat/completions", entity, String.class);
+
+                String respBody = response.getBody();
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                com.fasterxml.jackson.databind.JsonNode rootNode = mapper.readTree(respBody);
+
+                String content = rootNode.path("choices").get(0).path("message").path("content").asText("");
+                log.info("AI response: {}", content);
+                content = content.trim();
+                if (content.startsWith("```json")) {
+                    content = content.substring(7);
+                }
+                if (content.startsWith("```")) {
+                    content = content.substring(3);
+                }
+                if (content.endsWith("```")) {
+                    content = content.substring(0, content.length() - 3);
+                }
+
+                return mapper.readValue(content.trim(), com.willa.ai.backend.dto.response.WorkspaceChatExtractResponse.class);
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                log.error("Failed to extract task from chat: ", e);
+                throw new RuntimeException("Lỗi khi phân tích bằng AI: " + e.getMessage());
+            }
+        });
     }
 }

@@ -3,13 +3,16 @@ package com.willa.ai.backend.service.impl;
 import com.willa.ai.backend.entity.Payment;
 import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.User;
+import com.willa.ai.backend.entity.WorkspacePlan;
 import com.willa.ai.backend.entity.enums.PaymentStatus;
 import com.willa.ai.backend.exception.ResourceNotFoundException;
 import com.willa.ai.backend.repository.PaymentRepository;
 import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.UserRepository;
+import com.willa.ai.backend.repository.WorkspacePlanRepository;
 import com.willa.ai.backend.service.PaymentService;
 import com.willa.ai.backend.service.SubscriptionService;
+import com.willa.ai.backend.service.WorkspaceSubscriptionService;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,7 +54,13 @@ public class PaymentServiceImpl implements PaymentService {
     private PlanRepository planRepository;
 
     @Autowired
+    private WorkspacePlanRepository workspacePlanRepository;
+
+    @Autowired
     private SubscriptionService subscriptionService;
+
+    @Autowired
+    private WorkspaceSubscriptionService workspaceSubscriptionService;
 
     @Value("${payos.client-id}")
     private String clientId;
@@ -72,33 +81,63 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     @CircuitBreaker(name = "payosCircuitBreaker", fallbackMethod = "createPaymentLinkFallback")
     @Retry(name = "payosRetry", fallbackMethod = "createPaymentLinkFallback")
-    public CheckoutResponseData createPaymentLink(String userEmail, Long planId) {
+    public CheckoutResponseData createPaymentLink(String userEmail, Long planId, String planType) {
         try {
+            boolean isWorkspace = planType != null && planType.equalsIgnoreCase("WORKSPACE");
             User user = userRepository.findByEmail(userEmail)
                     .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + userEmail));
 
-            Plan plan = planRepository.findById(planId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Plan not found with id: " + planId));
-
-            Long amount = plan.getPromotionalPrice() != null ? plan.getPromotionalPrice().longValue() : plan.getPrice().longValue();
-
             Long orderCode = System.currentTimeMillis() / 1000;
-            String originalName = plan.getName();
-            // PayOS không nhận các ký tự đặc biệt, dễ làm sai lệch signature khi check
-            String safeName = originalName.replaceAll("[^a-zA-Z0-9 ]", ""); 
-            String description = "WillA AI Plan";
+            Long amount;
+            String description;
+            Payment payment;
 
-            // Lưu lịch sử thanh toán vào database với trạng thái PENDING
-            Payment payment = Payment.builder()
-                    .orderCode(orderCode)
-                    .amount(amount)
-                    .description(description)
-                    .status(PaymentStatus.PENDING)
-                    .user(user)
-                    .plan(plan)
-                    .createdAt(LocalDateTime.now())
-                    .updatedAt(LocalDateTime.now())
-                    .build();
+            if (isWorkspace) {
+                WorkspacePlan workspacePlan = workspacePlanRepository.findById(planId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Workspace plan not found with id: " + planId));
+
+                if (!Boolean.TRUE.equals(workspacePlan.getIsActive())) {
+                    throw new IllegalArgumentException("Cannot purchase an inactive workspace plan");
+                }
+
+                validateStudentWorkspacePlan(user, workspacePlan);
+
+                amount = workspacePlan.getPromotionalPrice() != null
+                        ? workspacePlan.getPromotionalPrice().longValue()
+                        : workspacePlan.getPrice().longValue();
+                description = "WillA Workspace Plan";
+                payment = Payment.builder()
+                        .orderCode(orderCode)
+                        .amount(amount)
+                        .description(description)
+                        .status(PaymentStatus.PENDING)
+                        .user(user)
+                        .workspacePlan(workspacePlan)
+                        .createdAt(LocalDateTime.now())
+                        .updatedAt(LocalDateTime.now())
+                        .build();
+            } else {
+                Plan plan = planRepository.findById(planId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Plan not found with id: " + planId));
+
+                if (plan.getName().toLowerCase().contains("student") && !Boolean.TRUE.equals(user.getIsStudent())) {
+                    throw new IllegalArgumentException("Chỉ tài khoản đã xác thực sinh viên mới được đăng ký gói Student.");
+                }
+
+                amount = plan.getPromotionalPrice() != null ? plan.getPromotionalPrice().longValue() : plan.getPrice().longValue();
+                description = "WillA AI Plan";
+                payment = Payment.builder()
+                        .orderCode(orderCode)
+                        .amount(amount)
+                        .description(description)
+                        .status(PaymentStatus.PENDING)
+                        .user(user)
+                        .plan(plan)
+                        .createdAt(LocalDateTime.now())
+                        .updatedAt(LocalDateTime.now())
+                        .build();
+            }
+
             paymentRepository.save(payment);
 
             String returnUrl = baseReturnUrl + "?orderCode=" + orderCode;
@@ -162,9 +201,18 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    public CheckoutResponseData createPaymentLinkFallback(String userEmail, Long planId, Throwable t) {
+    public CheckoutResponseData createPaymentLinkFallback(String userEmail, Long planId, String planType, Throwable t) {
         System.err.println("PayOS API encountered an error. Resilience4j fallback triggered: " + t.getMessage());
         throw new RuntimeException("Cổng thanh toán PayOS đang gặp sự cố hoặc quá tải. Vui lòng thử lại sau.", t);
+    }
+
+    private void validateStudentWorkspacePlan(User user, WorkspacePlan plan) {
+        String code = plan.getCode() != null ? plan.getCode().toLowerCase() : "";
+        String name = plan.getName() != null ? plan.getName().toLowerCase() : "";
+        if ((code.contains("student") || name.contains("student"))
+                && !Boolean.TRUE.equals(user.getIsStudent())) {
+            throw new IllegalArgumentException("Chỉ tài khoản đã xác thực sinh viên mới được đăng ký gói Student.");
+        }
     }
 
     @Override
@@ -187,9 +235,15 @@ public class PaymentServiceImpl implements PaymentService {
                         payment.setTransactionId(data.getReference());
                         paymentRepository.save(payment);
 
-                        // Kích hoạt subscription tháng/năm hoặc nạp token (ONE_TIME)
-                        subscriptionService.createOrUpdateSubscription(payment.getUser().getEmail(), payment.getPlan().getId());
-                        System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã cộng token/subscription.");
+                        if (payment.getWorkspacePlan() != null) {
+                            workspaceSubscriptionService.createOrUpdateSubscription(
+                                    payment.getUser().getEmail(), payment.getWorkspacePlan().getId());
+                            System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã kích hoạt gói workspace.");
+                        } else if (payment.getPlan() != null) {
+                            subscriptionService.createOrUpdateSubscription(
+                                    payment.getUser().getEmail(), payment.getPlan().getId());
+                            System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã cộng token/subscription.");
+                        }
                     }
                 }
             } else if ("01".equals(data.getCode()) || "01".equals(webhookData.getCode()) || "11".equals(data.getCode()) || "11".equals(webhookData.getCode())) {
