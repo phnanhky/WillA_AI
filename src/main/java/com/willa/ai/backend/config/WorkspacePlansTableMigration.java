@@ -5,6 +5,7 @@ import jakarta.persistence.PersistenceContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ public class WorkspacePlansTableMigration {
     private EntityManager entityManager;
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(2)
     @Transactional
     public void migrate() {
         try {
@@ -45,6 +47,7 @@ public class WorkspacePlansTableMigration {
             } else if (countWorkspacePlans() == 0) {
                 seedDefaultPlans();
             }
+            ensureProWorkspaceHasPrice();
             if (!columnExists("users", "workspace_plan_id")) {
                 entityManager.createNativeQuery("""
                         ALTER TABLE users ADD COLUMN workspace_plan_id BIGINT REFERENCES workspace_plans(id)
@@ -73,7 +76,23 @@ public class WorkspacePlansTableMigration {
         insertPlan("STUDENT_WORKSPACE", "Student Workspace",
                 "3 workspace · tối đa 5 thành viên", 0, 3, 5, true, false, 1);
         insertPlan("PRO_WORKSPACE", "Pro Workspace",
-                "Không giới hạn workspace và thành viên", 0, null, null, true, false, 2);
+                "Không giới hạn workspace và thành viên", 199_000, null, null, true, false, 2);
+    }
+
+    /** Gói Pro cần giá > 0 để PayOS checkout (giống gói Feedback Pro). */
+    private void ensureProWorkspaceHasPrice() {
+        if (!tableExists("workspace_plans")) {
+            return;
+        }
+        entityManager.createNativeQuery("""
+                UPDATE workspace_plans
+                SET price = 199000,
+                    promotional_price = COALESCE(promotional_price, 199000),
+                    updated_at = NOW()
+                WHERE code = 'PRO_WORKSPACE'
+                  AND price = 0
+                  AND (promotional_price IS NULL OR promotional_price = 0)
+                """).executeUpdate();
     }
 
     private void insertPlan(String code, String name, String description, double price,

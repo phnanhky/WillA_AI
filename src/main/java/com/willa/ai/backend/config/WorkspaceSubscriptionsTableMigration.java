@@ -5,6 +5,7 @@ import jakarta.persistence.PersistenceContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,9 +18,15 @@ public class WorkspaceSubscriptionsTableMigration {
     private EntityManager entityManager;
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(3)
     @Transactional
     public void migrate() {
         try {
+            if (!tableExists("workspace_plans")) {
+                log.warn("workspace_plans missing — skip workspace_subscriptions migration until plans exist");
+                return;
+            }
+
             if (!tableExists("workspace_subscriptions")) {
                 entityManager.createNativeQuery("""
                         CREATE TABLE workspace_subscriptions (
@@ -45,19 +52,40 @@ public class WorkspaceSubscriptionsTableMigration {
                 log.info("Created workspace_subscriptions table");
             }
 
-            if (!columnExists("payments", "workspace_plan_id")) {
-                entityManager.createNativeQuery("""
-                        ALTER TABLE payments ADD COLUMN workspace_plan_id BIGINT REFERENCES workspace_plans(id)
-                        """).executeUpdate();
-                entityManager.createNativeQuery("""
-                        ALTER TABLE payments ALTER COLUMN plan_id DROP NOT NULL
-                        """).executeUpdate();
-                log.info("Extended payments table with workspace_plan_id");
-            }
+            ensurePaymentsWorkspacePlanColumn();
+            ensurePaymentsPlanIdNullable();
 
             backfillExistingUsers();
         } catch (Exception e) {
             log.warn("Workspace subscriptions migration skipped: {}", e.getMessage());
+        }
+    }
+
+    private void ensurePaymentsWorkspacePlanColumn() {
+        if (!tableExists("payments")) {
+            return;
+        }
+        if (!columnExists("payments", "workspace_plan_id")) {
+            entityManager.createNativeQuery("""
+                    ALTER TABLE payments ADD COLUMN workspace_plan_id BIGINT REFERENCES workspace_plans(id)
+                    """).executeUpdate();
+            log.info("Extended payments table with workspace_plan_id");
+        }
+    }
+
+    private void ensurePaymentsPlanIdNullable() {
+        if (!tableExists("payments") || !columnExists("payments", "plan_id")) {
+            return;
+        }
+        Object nullable = entityManager.createNativeQuery("""
+                SELECT is_nullable FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'payments' AND column_name = 'plan_id'
+                """).getSingleResult();
+        if ("NO".equalsIgnoreCase(String.valueOf(nullable))) {
+            entityManager.createNativeQuery("""
+                    ALTER TABLE payments ALTER COLUMN plan_id DROP NOT NULL
+                    """).executeUpdate();
+            log.info("payments.plan_id is now nullable (required for WORKSPACE checkout)");
         }
     }
 

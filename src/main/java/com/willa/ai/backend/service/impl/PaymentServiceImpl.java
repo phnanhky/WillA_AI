@@ -30,6 +30,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -102,9 +103,8 @@ public class PaymentServiceImpl implements PaymentService {
 
                 validateStudentWorkspacePlan(user, workspacePlan);
 
-                amount = workspacePlan.getPromotionalPrice() != null
-                        ? workspacePlan.getPromotionalPrice().longValue()
-                        : workspacePlan.getPrice().longValue();
+                amount = resolvePaymentAmount(workspacePlan.getPrice(), workspacePlan.getPromotionalPrice());
+                validatePayableAmount(amount, workspacePlan.getName());
                 description = "WillA Workspace Plan";
                 payment = Payment.builder()
                         .orderCode(orderCode)
@@ -124,7 +124,8 @@ public class PaymentServiceImpl implements PaymentService {
                     throw new IllegalArgumentException("Chỉ tài khoản đã xác thực sinh viên mới được đăng ký gói Student.");
                 }
 
-                amount = plan.getPromotionalPrice() != null ? plan.getPromotionalPrice().longValue() : plan.getPrice().longValue();
+                amount = resolvePaymentAmount(plan.getPrice(), plan.getPromotionalPrice());
+                validatePayableAmount(amount, plan.getName());
                 description = "WillA AI Plan";
                 payment = Payment.builder()
                         .orderCode(orderCode)
@@ -212,6 +213,24 @@ public class PaymentServiceImpl implements PaymentService {
         if ((code.contains("student") || name.contains("student"))
                 && !Boolean.TRUE.equals(user.getIsStudent())) {
             throw new IllegalArgumentException("Chỉ tài khoản đã xác thực sinh viên mới được đăng ký gói Student.");
+        }
+    }
+
+    /** Khớp FE `effectivePlanPrice`: ưu tiên promotionalPrice nếu có. */
+    private long resolvePaymentAmount(BigDecimal price, BigDecimal promotionalPrice) {
+        BigDecimal base = price != null ? price : BigDecimal.ZERO;
+        BigDecimal effective = promotionalPrice != null ? promotionalPrice : base;
+        return effective.longValue();
+    }
+
+    private void validatePayableAmount(long amount, String planName) {
+        if (amount <= 0) {
+            throw new IllegalArgumentException(
+                    "Gói \"" + planName + "\" miễn phí hoặc chưa có giá. Không thể tạo link PayOS.");
+        }
+        if (amount < 1000) {
+            throw new IllegalArgumentException(
+                    "Số tiền thanh toán tối thiểu là 1.000 VND (gói: " + planName + ").");
         }
     }
 

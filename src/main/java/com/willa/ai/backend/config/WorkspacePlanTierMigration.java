@@ -5,6 +5,7 @@ import jakarta.persistence.PersistenceContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ public class WorkspacePlanTierMigration {
     private EntityManager entityManager;
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(1)
     @Transactional
     public void migrate() {
         try {
