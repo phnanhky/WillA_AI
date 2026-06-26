@@ -752,7 +752,7 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     @Transactional(readOnly = true)
-    public Object prepareRegen(String email, Long sessionId, String errorIndices, Integer imageIndex) {
+    public Object prepareRegen(String email, Long sessionId, String errorIndices, Integer imageIndex, String replyLang) {
         User user = getUserByEmail(email);
         return workflowUsageService.track(user, WorkflowType.PREPARE_REGEN, sessionId, () -> {
             getSessionEntity(email, sessionId);
@@ -761,13 +761,16 @@ public class ChatServiceImpl implements ChatService {
             if (errorIndices != null) {
                 body.add("error_indices", errorIndices);
             }
+            if (replyLang != null) {
+                body.add("replyLang", replyLang);
+            }
             return callPrepareRegenWithAnalysisRecovery(email, sessionId, body);
         });
     }
 
     @Override
     @Transactional
-    public Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt, Integer imageIndex) {
+    public Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt, Integer imageIndex, String replyLang) {
         User user = getUserByEmail(email);
         String planName = getPlanNameForUser(user.getId());
         generationLimitChecker.checkLimit(user, planName);
@@ -780,6 +783,9 @@ public class ChatServiceImpl implements ChatService {
             }
             if (finalPrompt != null) {
                 body.add("final_prompt", finalPrompt);
+            }
+            if (replyLang != null) {
+                body.add("replyLang", replyLang);
             }
             JsonNode resultNode = callRegenImageWithAnalysisRecovery(email, sessionId, body);
             String rawJson = resultNode.toString();

@@ -219,9 +219,10 @@ public class ChatController {
             Authentication authentication,
             @RequestParam("sessionId") Long sessionId,
             @RequestParam(value = "errorIndices", required = false) String errorIndices,
-            @RequestParam(value = "imageIndex", required = false) Integer imageIndex) {
+            @RequestParam(value = "imageIndex", required = false) Integer imageIndex,
+            @RequestParam(value = "replyLang", required = false) String replyLang) {
         try {
-            Object result = chatService.prepareRegen(authentication.getName(), sessionId, errorIndices, imageIndex);
+            Object result = chatService.prepareRegen(authentication.getName(), sessionId, errorIndices, imageIndex, replyLang);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Prepare regen successful")
@@ -241,9 +242,10 @@ public class ChatController {
             @RequestParam("sessionId") Long sessionId,
             @RequestParam(value = "errorIndices", required = false) String errorIndices,
             @RequestParam(value = "finalPrompt", required = false) String finalPrompt,
-            @RequestParam(value = "imageIndex", required = false) Integer imageIndex) {
+            @RequestParam(value = "imageIndex", required = false) Integer imageIndex,
+            @RequestParam(value = "replyLang", required = false) String replyLang) {
         try {
-            Object result = chatService.regenImage(authentication.getName(), sessionId, errorIndices, finalPrompt, imageIndex);
+            Object result = chatService.regenImage(authentication.getName(), sessionId, errorIndices, finalPrompt, imageIndex, replyLang);
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Regen image successful")

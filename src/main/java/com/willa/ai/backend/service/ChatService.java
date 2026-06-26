@@ -30,9 +30,9 @@ public interface ChatService {
     ChatMessageResponse generateImage(String email, Long sessionId, String prompt, List<MultipartFile> files);
 
     // AI Inpaint Integration
-    Object prepareRegen(String email, Long sessionId, String errorIndices, Integer imageIndex);
+    Object prepareRegen(String email, Long sessionId, String errorIndices, Integer imageIndex, String replyLang);
 
-    Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt, Integer imageIndex);
+    Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt, Integer imageIndex, String replyLang);
 
     Object suggestStyle(String email, MultipartFile file, String box2d, String suggestType);
 
