@@ -18,7 +18,6 @@ import com.willa.ai.backend.repository.WorkspaceChannelRepository;
 import com.willa.ai.backend.repository.WorkspaceMemberRepository;
 import com.willa.ai.backend.repository.WorkspaceProjectRepository;
 import com.willa.ai.backend.repository.WorkspaceRepository;
-import com.willa.ai.backend.service.WorkspaceChannelService;
 import com.willa.ai.backend.service.WorkspaceDataPurger;
 import com.willa.ai.backend.service.WorkspaceProjectService;
 import com.willa.ai.backend.service.WorkspaceRealtimeService;
@@ -35,7 +34,6 @@ public class WorkspaceProjectServiceImpl implements WorkspaceProjectService {
     private final WorkspaceChannelRepository channelRepository;
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
-    private final WorkspaceChannelService workspaceChannelService;
     private final WorkspaceDataPurger workspaceDataPurger;
     private final WorkspaceRealtimeService workspaceRealtimeService;
 
@@ -65,9 +63,7 @@ public class WorkspaceProjectServiceImpl implements WorkspaceProjectService {
                 .name(name)
                 .position(nextPos)
                 .build());
-        WorkspaceChannel channel = workspaceChannelService.ensureProjectChannel(workspace, name);
-        WorkspaceProjectResponse response = mapProject(project, channel.getId(), 0);
-        workspaceRealtimeService.publishChannelChanged(workspaceId, "CHANNEL_CREATED", channel.getId());
+        WorkspaceProjectResponse response = mapProject(project, null, 0);
         workspaceRealtimeService.publishWorkspaceChanged(workspaceId);
         return response;
     }

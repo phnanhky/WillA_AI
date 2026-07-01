@@ -39,6 +39,14 @@ public class WorkspaceExpert {
     @Builder.Default
     private Boolean isActive = true;
 
+    /** Giá review ấn phẩm (VND). Null = chưa mở dịch vụ review. */
+    @Column(name = "review_price")
+    private Long reviewPrice;
+
+    /** Giá trao đổi theo giờ (VND/giờ). Null = chưa mở dịch vụ theo giờ. */
+    @Column(name = "hourly_rate")
+    private Long hourlyRate;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

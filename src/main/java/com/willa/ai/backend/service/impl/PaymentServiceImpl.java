@@ -4,8 +4,10 @@ import com.willa.ai.backend.entity.Payment;
 import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.WorkspacePlan;
+import com.willa.ai.backend.entity.enums.ExpertBookingStatus;
 import com.willa.ai.backend.entity.enums.PaymentStatus;
 import com.willa.ai.backend.exception.ResourceNotFoundException;
+import com.willa.ai.backend.repository.ExpertBookingRepository;
 import com.willa.ai.backend.repository.PaymentRepository;
 import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.UserRepository;
@@ -62,6 +64,9 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Autowired
     private WorkspaceSubscriptionService workspaceSubscriptionService;
+
+    @Autowired
+    private ExpertBookingRepository expertBookingRepository;
 
     @Value("${payos.client-id}")
     private String clientId;
@@ -141,17 +146,32 @@ public class PaymentServiceImpl implements PaymentService {
 
             paymentRepository.save(payment);
 
+            return createCheckoutForPayment(payment);
+
+        } catch (Exception e) {
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    @Override
+    @CircuitBreaker(name = "payosCircuitBreaker", fallbackMethod = "createCheckoutForPaymentFallback")
+    @Retry(name = "payosRetry", fallbackMethod = "createCheckoutForPaymentFallback")
+    public CheckoutResponseData createCheckoutForPayment(Payment payment) {
+        try {
+            Long orderCode = payment.getOrderCode();
+            Long amount = payment.getAmount();
+            String description = payment.getDescription() != null ? payment.getDescription() : "WillA Payment";
+
             String returnUrl = baseReturnUrl + "?orderCode=" + orderCode;
             String cancelUrl = baseCancelUrl + "?orderCode=" + orderCode;
 
-            // Xử lý trực tiếp với API PayOS để bỏ qua lỗi SDK (Signature mismatch do expiredAt)
             String dataStr = "amount=" + amount + "&cancelUrl=" + cancelUrl + "&description=" + description + "&orderCode=" + orderCode + "&returnUrl=" + returnUrl;
-            
+
             Mac hmacSHA256 = Mac.getInstance("HmacSHA256");
             SecretKeySpec secretKeySpec = new SecretKeySpec(checksumKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             hmacSHA256.init(secretKeySpec);
             byte[] hashBytes = hmacSHA256.doFinal(dataStr.getBytes(StandardCharsets.UTF_8));
-            
+
             StringBuilder hexString = new StringBuilder();
             for (byte b : hashBytes) {
                 String hex = Integer.toHexString(0xff & b);
@@ -176,14 +196,14 @@ public class PaymentServiceImpl implements PaymentService {
 
             ObjectMapper mapper = new ObjectMapper();
             JsonNode rootNode = mapper.readTree(res.body());
-            
+
             if (!"00".equals(rootNode.get("code").asText())) {
                 throw new RuntimeException("PayOS API Error: " + rootNode.get("desc").asText());
             }
 
             JsonNode dataNode = rootNode.get("data");
 
-            return vn.payos.type.CheckoutResponseData.builder()
+            return CheckoutResponseData.builder()
                     .bin(dataNode.has("bin") && !dataNode.get("bin").isNull() ? dataNode.get("bin").asText() : "N/A")
                     .accountNumber(dataNode.has("accountNumber") && !dataNode.get("accountNumber").isNull() ? dataNode.get("accountNumber").asText() : "N/A")
                     .accountName(dataNode.has("accountName") && !dataNode.get("accountName").isNull() ? dataNode.get("accountName").asText() : "N/A")
@@ -200,6 +220,11 @@ public class PaymentServiceImpl implements PaymentService {
         } catch (Exception e) {
             throw new RuntimeException(e.getMessage());
         }
+    }
+
+    public CheckoutResponseData createCheckoutForPaymentFallback(Payment payment, Throwable t) {
+        System.err.println("PayOS API encountered an error. Resilience4j fallback triggered: " + t.getMessage());
+        throw new RuntimeException("Cổng thanh toán PayOS đang gặp sự cố hoặc quá tải. Vui lòng thử lại sau.", t);
     }
 
     public CheckoutResponseData createPaymentLinkFallback(String userEmail, Long planId, String planType, Throwable t) {
@@ -262,6 +287,20 @@ public class PaymentServiceImpl implements PaymentService {
                             subscriptionService.createOrUpdateSubscription(
                                     payment.getUser().getEmail(), payment.getPlan().getId());
                             System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã cộng token/subscription.");
+                        } else {
+                            expertBookingRepository.findByPaymentId(payment.getId()).ifPresent(booking -> {
+                                if (booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT) {
+                                    booking.setMeetingRoomUrl(
+                                            ExpertBookingServiceImpl.buildMeetingRoomUrl(booking.getId()));
+                                    if (booking.getBookingType() == com.willa.ai.backend.entity.enums.ExpertBookingType.HOURLY) {
+                                        booking.setStatus(ExpertBookingStatus.IN_PROGRESS);
+                                    } else {
+                                        booking.setStatus(ExpertBookingStatus.AWAITING_EXPERT);
+                                    }
+                                    expertBookingRepository.save(booking);
+                                    System.out.println("Thanh toán thành công expert booking: " + booking.getId());
+                                }
+                            });
                         }
                     }
                 }
@@ -276,6 +315,12 @@ public class PaymentServiceImpl implements PaymentService {
                     if (payment.getStatus() == PaymentStatus.PENDING) {
                         payment.setStatus(PaymentStatus.CANCELLED);
                         paymentRepository.save(payment);
+                        expertBookingRepository.findByPaymentId(payment.getId()).ifPresent(booking -> {
+                            if (booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT) {
+                                booking.setStatus(ExpertBookingStatus.CANCELLED);
+                                expertBookingRepository.save(booking);
+                            }
+                        });
                         System.out.println("Thanh toán bị HỦY đơn hàng: " + orderCode);
                     }
                 }

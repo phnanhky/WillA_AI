@@ -99,6 +99,8 @@ public class ExpertServiceImpl implements ExpertService {
                     .expertise(trimOrNull(request.getExpertise()))
                     .bio(trimOrNull(request.getBio()))
                     .isActive(request.getIsActive() != null ? request.getIsActive() : true)
+                    .reviewPrice(normalizePrice(request.getReviewPrice()))
+                    .hourlyRate(normalizePrice(request.getHourlyRate()))
                     .build());
             log.info("Admin assigned platform expert userId={}", user.getId());
             return mapToResponse(expert);
@@ -139,6 +141,12 @@ public class ExpertServiceImpl implements ExpertService {
         if (request.getIsActive() != null) {
             expert.setIsActive(request.getIsActive());
         }
+        if (request.getReviewPrice() != null) {
+            expert.setReviewPrice(normalizePrice(request.getReviewPrice()));
+        }
+        if (request.getHourlyRate() != null) {
+            expert.setHourlyRate(normalizePrice(request.getHourlyRate()));
+        }
 
         return mapToResponse(expertRepository.save(expert));
     }
@@ -174,6 +182,10 @@ public class ExpertServiceImpl implements ExpertService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private Long normalizePrice(Long value) {
+        return value != null && value > 0 ? value : null;
+    }
+
     private WorkspaceExpertResponse mapToResponse(WorkspaceExpert expert) {
         User user = expert.getUser();
         Workspace workspace = expert.getWorkspace();
@@ -190,6 +202,8 @@ public class ExpertServiceImpl implements ExpertService {
                 .expertise(expert.getExpertise())
                 .bio(expert.getBio())
                 .isActive(expert.getIsActive())
+                .reviewPrice(expert.getReviewPrice())
+                .hourlyRate(expert.getHourlyRate())
                 .createdAt(expert.getCreatedAt())
                 .build();
     }

@@ -29,6 +29,8 @@ public class WorkspaceExpertsMigration {
                           expertise VARCHAR(500),
                           bio TEXT,
                           is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                          review_price BIGINT,
+                          hourly_rate BIGINT,
                           created_at TIMESTAMP NOT NULL DEFAULT NOW()
                         )
                         """).executeUpdate();
@@ -75,7 +77,36 @@ public class WorkspaceExpertsMigration {
                     ON workspace_experts (user_id) WHERE workspace_id IS NULL
                     """).executeUpdate();
         }
+        if (!columnExists("workspace_experts", "review_price")) {
+            entityManager.createNativeQuery("""
+                    ALTER TABLE workspace_experts ADD COLUMN review_price BIGINT
+                    """).executeUpdate();
+        } else {
+            relaxReviewPriceColumn();
+        }
+        if (!columnExists("workspace_experts", "hourly_rate")) {
+            entityManager.createNativeQuery("""
+                    ALTER TABLE workspace_experts ADD COLUMN hourly_rate BIGINT
+                    """).executeUpdate();
+        }
         log.info("Upgraded workspace_experts for platform experts");
+    }
+
+    private void relaxReviewPriceColumn() {
+        try {
+            entityManager.createNativeQuery("""
+                    ALTER TABLE workspace_experts ALTER COLUMN review_price DROP DEFAULT
+                    """).executeUpdate();
+        } catch (Exception ignored) {
+            /* no default */
+        }
+        try {
+            entityManager.createNativeQuery("""
+                    ALTER TABLE workspace_experts ALTER COLUMN review_price DROP NOT NULL
+                    """).executeUpdate();
+        } catch (Exception ignored) {
+            /* already nullable */
+        }
     }
 
     private boolean tableExists(String tableName) {

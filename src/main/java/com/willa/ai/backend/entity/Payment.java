@@ -48,6 +48,9 @@ public class Payment {
     @JoinColumn(name = "workspace_plan_id")
     private WorkspacePlan workspacePlan;
 
+    @OneToOne(mappedBy = "payment", fetch = FetchType.LAZY)
+    private ExpertBooking expertBooking;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

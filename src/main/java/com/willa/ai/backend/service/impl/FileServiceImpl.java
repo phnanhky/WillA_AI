@@ -52,6 +52,32 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override
+    public String uploadDocument(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Cannot upload empty file");
+        }
+        try {
+            uploadSizeValidator.validateByType(file.getSize(), file.getOriginalFilename());
+            String original = file.getOriginalFilename();
+            String ext = "";
+            if (original != null) {
+                int dot = original.lastIndexOf('.');
+                if (dot >= 0 && dot < original.length() - 1) {
+                    ext = original.substring(dot).toLowerCase().replaceAll("[^a-z0-9.]", "");
+                }
+            }
+            String objectKey = "expert-bookings/" + UUID.randomUUID() + ext;
+            String contentType = file.getContentType();
+            if (contentType == null || contentType.isBlank()) {
+                contentType = "application/octet-stream";
+            }
+            return uploadRawBytes(file.getBytes(), objectKey, contentType);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read file input stream", e);
+        }
+    }
+
+    @Override
     public String uploadBytes(byte[] data, String originalFilename, String contentType) {
         if (data == null || data.length == 0) {
             throw new IllegalArgumentException("Cannot upload empty file");

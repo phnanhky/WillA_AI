@@ -14,4 +14,7 @@ public interface FileService {
     byte[] downloadFile(String fileName);
 
     String buildDownloadUrl(String objectKey);
+
+    /** Upload tài liệu/ảnh gốc lên R2 — không nén, giữ nguyên file (expert booking, PDF, PSD…). */
+    String uploadDocument(MultipartFile file);
 }

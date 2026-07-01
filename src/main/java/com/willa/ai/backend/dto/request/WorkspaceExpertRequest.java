@@ -25,4 +25,10 @@ public class WorkspaceExpertRequest {
     private String bio;
 
     private Boolean isActive;
+
+    /** Giá review ấn phẩm (VND). */
+    private Long reviewPrice;
+
+    /** Giá theo giờ (VND/giờ). */
+    private Long hourlyRate;
 }

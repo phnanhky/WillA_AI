@@ -27,4 +27,8 @@ public class WorkspaceExpertResponse {
     private String bio;
     private Boolean isActive;
     private LocalDateTime createdAt;
+    /** Giá review ấn phẩm (VND). Mặc định 49.000. */
+    private Long reviewPrice;
+    /** Giá trao đổi theo giờ (VND/giờ). */
+    private Long hourlyRate;
 }

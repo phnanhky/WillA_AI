@@ -189,17 +189,18 @@ public class WorkspaceMemberStatsServiceImpl implements WorkspaceMemberStatsServ
         }
     }
 
-    /** Hoàn thành sau dueDate hoặc chưa xong mà đã quá hạn. */
+    /** Hoàn thành sau hết ngày hạn hoặc chưa xong mà đã quá hạn (cuối ngày due). */
     private static boolean isLate(
             LocalDateTime dueDate,
             boolean completed,
             LocalDateTime completedAt,
             LocalDateTime now) {
+        LocalDateTime dueEnd = dueDate.toLocalDate().atTime(23, 59, 59);
         if (completed) {
             LocalDateTime finishedAt = completedAt != null ? completedAt : now;
-            return finishedAt.isAfter(dueDate);
+            return finishedAt.isAfter(dueEnd);
         }
-        return now.isAfter(dueDate);
+        return now.isAfter(dueEnd);
     }
 
     private static double round2(double value) {
