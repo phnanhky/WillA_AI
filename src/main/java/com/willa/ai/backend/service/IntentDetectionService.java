@@ -37,9 +37,9 @@ public class IntentDetectionService {
     );
 
     private static final List<Pattern> CREATE_TASK_PATTERNS = List.of(
-        Pattern.compile("tạo task|thêm task|create task|làm task mới", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("tạo (cho tôi )?(một )?task", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("thêm (cho tôi )?(một )?task", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("tạo task|thêm task|create task|làm task mới|tạo công việc|tạo việc|tạo tast", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("tạo (cho tôi )?(một )?(task|công việc|việc)", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("thêm (cho tôi )?(một )?(task|công việc|việc)", Pattern.CASE_INSENSITIVE)
     );
 
     public String detectIntent(String question) {

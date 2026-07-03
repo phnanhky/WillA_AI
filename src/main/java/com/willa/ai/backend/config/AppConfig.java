@@ -14,7 +14,7 @@ public class AppConfig {
     public RestTemplate restTemplate(RestTemplateBuilder builder) {
         return builder
                 .connectTimeout(Duration.ofSeconds(15))
-                .readTimeout(Duration.ofMinutes(5))
+                .readTimeout(Duration.ofMinutes(30))
                 .build();
     }
 }
