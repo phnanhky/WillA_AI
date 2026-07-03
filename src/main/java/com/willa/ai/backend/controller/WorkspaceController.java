@@ -193,6 +193,16 @@ public class WorkspaceController {
         }
     }
 
+    @GetMapping("/invites/preview")
+    @Operation(summary = "Xem trước lời mời workspace (public)")
+    public ResponseEntity<ApiResponse> previewInvite(@RequestParam String token) {
+        return ResponseEntity.ok(ApiResponse.builder()
+                .status(true)
+                .message("Invite preview")
+                .data(workspaceService.getInvitePreview(token))
+                .build());
+    }
+
     @GetMapping("/{workspaceId}/member-stats")
     @Operation(summary = "Thống kê hiệu suất thành viên trong workspace")
     public ResponseEntity<ApiResponse> getMemberStats(Authentication auth, @PathVariable Long workspaceId) {
@@ -229,6 +239,17 @@ public class WorkspaceController {
                 .message("Members retrieved successfully")
                 .data(workspaceService.getWorkspaceMembers(auth.getName(), workspaceId))
                 .build());
+    }
+
+    @PostMapping("/{workspaceId}/activity")
+    @Operation(summary = "Ghi nhận hoạt động thành viên trong workspace")
+    public ResponseEntity<ApiResponse> recordActivity(Authentication auth, @PathVariable Long workspaceId) {
+        try {
+            workspaceService.recordMemberActivity(auth.getName(), workspaceId);
+            return ResponseEntity.ok(ApiResponse.builder().status(true).message("Activity recorded").build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
     }
 
     @DeleteMapping("/{workspaceId}/members/{memberId}")
@@ -284,7 +305,7 @@ public class WorkspaceController {
     }
 
     @GetMapping("/{workspaceId}/experts")
-    @Operation(summary = "Danh sách expert trong workspace")
+    @Operation(summary = "Danh sách expert (toàn app — không phụ thuộc workspace)")
     public ResponseEntity<ApiResponse> getWorkspaceExperts(
             Authentication auth,
             @PathVariable Long workspaceId) {
@@ -292,7 +313,7 @@ public class WorkspaceController {
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Experts retrieved successfully")
-                    .data(expertService.listWorkspaceExperts(auth.getName(), workspaceId))
+                    .data(expertService.listActiveExperts())
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

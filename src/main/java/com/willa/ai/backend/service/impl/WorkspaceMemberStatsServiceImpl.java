@@ -91,19 +91,24 @@ public class WorkspaceMemberStatsServiceImpl implements WorkspaceMemberStatsServ
 
         List<TaskChecklistItem> checklistItems = taskChecklistItemRepository.findByWorkspaceId(workspaceId);
         for (TaskChecklistItem item : checklistItems) {
-            User assignee = item.getAssignee();
-            if (assignee == null) {
-                continue;
+            Set<User> itemAssignees = item.getAssignees();
+            if (itemAssignees == null || itemAssignees.isEmpty()) {
+                if (item.getAssignee() == null) {
+                    continue;
+                }
+                itemAssignees = Set.of(item.getAssignee());
             }
-            StatsAccumulator acc = statsByUser.get(assignee.getId());
-            if (acc == null) {
-                continue;
+            for (User assignee : itemAssignees) {
+                StatsAccumulator acc = statsByUser.get(assignee.getId());
+                if (acc == null) {
+                    continue;
+                }
+                acc.addWorkUnit(
+                        Boolean.TRUE.equals(item.getCompleted()),
+                        item.getCompletedAt(),
+                        item.getDueDate(),
+                        now);
             }
-            acc.addWorkUnit(
-                    Boolean.TRUE.equals(item.getCompleted()),
-                    item.getCompletedAt(),
-                    item.getDueDate(),
-                    now);
         }
 
         List<MemberPerformanceResponse> members = statsByUser.values().stream()

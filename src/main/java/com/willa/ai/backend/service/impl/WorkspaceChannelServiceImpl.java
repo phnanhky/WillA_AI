@@ -11,6 +11,7 @@ import com.willa.ai.backend.dto.request.WorkspaceChatMessageRequest;
 import com.willa.ai.backend.dto.response.WorkspaceChannelResponse;
 import com.willa.ai.backend.dto.response.WorkspaceChatMessageResponse;
 import com.willa.ai.backend.entity.ChannelMessage;
+import com.willa.ai.backend.entity.enums.ChannelMessageKind;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.Workspace;
 import com.willa.ai.backend.entity.WorkspaceChannel;
@@ -162,7 +163,18 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
         User user = requireUser(email);
         assertIsMember(user, workspaceId);
         getChannelOrThrow(channelId, workspaceId);
-        return channelMessageRepository.findByChannelIdOrderByCreatedAtAscIdAsc(channelId).stream()
+        return channelMessageRepository.findTopLevelByChannelId(channelId).stream()
+                .map(this::mapChannelMessage)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkspaceChatMessageResponse> listChannelThreadReplies(String email, Long workspaceId, Long channelId) {
+        User user = requireUser(email);
+        assertIsMember(user, workspaceId);
+        getChannelOrThrow(channelId, workspaceId);
+        return channelMessageRepository.findThreadRepliesByChannelId(channelId).stream()
                 .map(this::mapChannelMessage)
                 .collect(Collectors.toList());
     }
@@ -174,17 +186,49 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
         User user = requireUser(email);
         assertIsMember(user, workspaceId);
         WorkspaceChannel channel = getChannelOrThrow(channelId, workspaceId);
-        String content = request.getContent().trim();
-        if (content.isEmpty()) {
+
+        ChannelMessageKind kind = request.getKind() != null ? request.getKind() : ChannelMessageKind.USER;
+        String content = request.getContent() != null ? request.getContent().trim() : "";
+        boolean hasImage = request.getImageUrl() != null && !request.getImageUrl().isBlank();
+        boolean hasTool = request.getToolResultJson() != null && !request.getToolResultJson().isBlank();
+
+        if (content.isEmpty() && !hasImage && !hasTool) {
             throw new RuntimeException("Nội dung tin nhắn trống");
         }
+
+        ChannelMessage parent = null;
+        if (request.getParentMessageId() != null) {
+            parent = channelMessageRepository.findById(request.getParentMessageId())
+                    .orElseThrow(() -> new RuntimeException("Tin nhắn gốc không tồn tại"));
+            if (!parent.getChannel().getId().equals(channelId)) {
+                throw new RuntimeException("Tin nhắn gốc không thuộc kênh này");
+            }
+            if (parent.getParentMessage() != null) {
+                throw new RuntimeException("Chỉ trả lời được tin nhắn gốc trên kênh");
+            }
+        } else if (content.isEmpty() && !hasImage) {
+            throw new RuntimeException("Nội dung tin nhắn trống");
+        }
+
+        if (kind == ChannelMessageKind.WILLA && parent == null) {
+            throw new RuntimeException("Phản hồi WillA phải nằm trong thread");
+        }
+
         ChannelMessage message = channelMessageRepository.save(ChannelMessage.builder()
                 .channel(channel)
-                .user(user)
-                .content(content)
+                .user(kind == ChannelMessageKind.WILLA ? null : user)
+                .parentMessage(parent)
+                .messageKind(kind)
+                .content(content.isEmpty() ? (hasTool ? " " : "📎") : content)
+                .imageUrl(request.getImageUrl())
+                .toolResultJson(request.getToolResultJson())
                 .build());
         WorkspaceChatMessageResponse response = mapChannelMessage(message);
-        workspaceRealtimeService.publishChannelMessage(workspaceId, channelId, response);
+        if (parent != null) {
+            workspaceRealtimeService.publishChannelThreadReply(workspaceId, channelId, parent.getId(), response);
+        } else {
+            workspaceRealtimeService.publishChannelMessage(workspaceId, channelId, response);
+        }
         return response;
     }
 
@@ -213,7 +257,7 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
         if (user.getId().equals(peerUserId)) {
             throw new RuntimeException("Không thể chat với chính mình");
         }
-        String content = request.getContent().trim();
+        String content = request.getContent() != null ? request.getContent().trim() : "";
         if (content.isEmpty()) {
             throw new RuntimeException("Nội dung tin nhắn trống");
         }
@@ -304,13 +348,23 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
 
     private WorkspaceChatMessageResponse mapChannelMessage(ChannelMessage message) {
         User author = message.getUser();
+        ChannelMessageKind kind = message.getMessageKind() != null
+                ? message.getMessageKind()
+                : ChannelMessageKind.USER;
+        Long parentId = message.getParentMessage() != null ? message.getParentMessage().getId() : null;
         return WorkspaceChatMessageResponse.builder()
                 .id(message.getId())
                 .channelId(message.getChannel().getId())
-                .userId(author.getId())
-                .userName(displayName(author))
-                .userAvatarUrl(author.getAvatarUrl())
+                .parentMessageId(parentId)
+                .kind(kind)
+                .userId(author != null ? author.getId() : null)
+                .userName(kind == ChannelMessageKind.WILLA
+                        ? "WillA"
+                        : author != null ? displayName(author) : null)
+                .userAvatarUrl(author != null ? author.getAvatarUrl() : null)
                 .content(message.getContent())
+                .imageUrl(message.getImageUrl())
+                .toolResultJson(message.getToolResultJson())
                 .createdAt(message.getCreatedAt())
                 .build();
     }

@@ -38,6 +38,17 @@ public class WorkspaceRealtimeService {
         publish(workspaceId, payload);
     }
 
+    public void publishChannelThreadReply(Long workspaceId, Long channelId, Long parentMessageId,
+            WorkspaceChatMessageResponse message) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", "CHANNEL_THREAD_REPLY_CREATED");
+        payload.put("workspaceId", workspaceId);
+        payload.put("channelId", channelId);
+        payload.put("parentMessageId", parentMessageId);
+        payload.put("message", message);
+        publish(workspaceId, payload);
+    }
+
     public void publishDmMessage(Long workspaceId, Long conversationId, Long peerUserId,
             WorkspaceChatMessageResponse message) {
         Map<String, Object> payload = new HashMap<>();

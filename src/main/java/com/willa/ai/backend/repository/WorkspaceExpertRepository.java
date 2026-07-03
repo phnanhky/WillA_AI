@@ -14,7 +14,9 @@ public interface WorkspaceExpertRepository extends JpaRepository<WorkspaceExpert
 
     List<WorkspaceExpert> findByWorkspaceIdAndIsActiveTrueOrderByCreatedAtDesc(Long workspaceId);
 
-    List<WorkspaceExpert> findByWorkspaceIsNullAndIsActiveTrueOrderByCreatedAtDesc();
+    List<WorkspaceExpert> findByIsActiveTrueOrderByCreatedAtDesc();
+
+    boolean existsByUserId(Long userId);
 
     Optional<WorkspaceExpert> findByWorkspaceIdAndUserId(Long workspaceId, Long userId);
 

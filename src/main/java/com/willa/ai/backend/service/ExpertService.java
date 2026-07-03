@@ -10,6 +10,8 @@ public interface ExpertService {
 
     List<WorkspaceExpertResponse> listAllExperts();
 
+    List<WorkspaceExpertResponse> listActiveExperts();
+
     List<WorkspaceExpertResponse> listPlatformExperts();
 
     List<WorkspaceExpertResponse> listWorkspaceExperts(String currentEmail, Long workspaceId);

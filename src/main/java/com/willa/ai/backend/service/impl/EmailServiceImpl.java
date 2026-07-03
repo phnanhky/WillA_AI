@@ -76,13 +76,23 @@ public class EmailServiceImpl implements EmailService {
         String htmlContent = "<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;color:#333;'>"
                 + "<div style='max-width:560px;margin:0 auto;padding:24px;'>"
                 + "<h2>Bạn được mời vào workspace</h2>"
-                + "<p><strong>" + inviterName + "</strong> đã mời bạn tham gia workspace <strong>"
-                + workspaceName + "</strong> với quyền <strong>" + role + "</strong>.</p>"
+                + "<p><strong>" + escapeHtml(inviterName) + "</strong> đã mời bạn tham gia workspace <strong>"
+                + escapeHtml(workspaceName) + "</strong> với quyền <strong>" + escapeHtml(role) + "</strong>.</p>"
                 + "<p><a href='" + inviteLink + "' style='display:inline-block;background:#8b3dff;color:#fff;"
-                + "padding:12px 20px;text-decoration:none;border-radius:6px;'>Chấp nhận lời mời</a></p>"
+                + "padding:12px 20px;text-decoration:none;border-radius:6px;font-weight:600;'>Tham gia workspace</a></p>"
+                + "<p style='color:#444;font-size:14px;line-height:1.5;'>"
+                + "Chưa có tài khoản Willa AI? Bấm nút trên để <strong>tạo tài khoản miễn phí</strong> "
+                + "bằng đúng email <strong>" + escapeHtml(to) + "</strong>, xác minh email, rồi tự động vào workspace.</p>"
+                + "<p style='color:#444;font-size:14px;'>Đã có tài khoản? Đăng nhập bằng email được mời để tham gia.</p>"
                 + "<p style='color:#666;font-size:13px;'>Hoặc copy link: " + inviteLink + "</p>"
+                + "<p style='color:#999;font-size:12px;'>Link hết hạn sau 7 ngày.</p>"
                 + "</div></body></html>";
         sendHtmlEmail(to, subject, htmlContent);
+    }
+
+    private static String escapeHtml(String raw) {
+        if (raw == null) return "";
+        return raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     private String buildVerificationEmailTemplate(String verificationLink) {

@@ -12,23 +12,29 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/experts")
 @RequiredArgsConstructor
-@Tag(name = "Experts", description = "Expert hướng dẫn (platform + workspace)")
+@Tag(name = "Experts", description = "Expert hỗ trợ toàn app Willa")
 @SecurityRequirement(name = "bearerAuth")
 public class ExpertController {
 
     private final ExpertService expertService;
 
-    @GetMapping("/platform")
-    @Operation(summary = "Expert platform — hỗ trợ user không dùng workspace")
-    public ResponseEntity<ApiResponse> listPlatformExperts() {
+    @GetMapping
+    @Operation(summary = "Danh sách expert đang hoạt động (toàn app)")
+    public ResponseEntity<ApiResponse> listExperts() {
         try {
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
-                    .message("Platform experts retrieved")
-                    .data(expertService.listPlatformExperts())
+                    .message("Experts retrieved")
+                    .data(expertService.listActiveExperts())
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
         }
+    }
+
+    @GetMapping("/platform")
+    @Operation(summary = "Alias — danh sách expert toàn app")
+    public ResponseEntity<ApiResponse> listPlatformExperts() {
+        return listExperts();
     }
 }

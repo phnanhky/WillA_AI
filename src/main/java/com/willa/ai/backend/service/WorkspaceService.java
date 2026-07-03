@@ -9,6 +9,7 @@ import com.willa.ai.backend.dto.request.UpdateMemberImportantRequest;
 import com.willa.ai.backend.dto.request.UpdateMemberRoleRequest;
 import com.willa.ai.backend.dto.request.WorkspaceRequest;
 import com.willa.ai.backend.dto.response.InviteMemberResultResponse;
+import com.willa.ai.backend.dto.response.WorkspaceInvitePreviewResponse;
 import com.willa.ai.backend.dto.response.WorkspaceInviteResponse;
 import com.willa.ai.backend.dto.response.WorkspaceMemberResponse;
 import com.willa.ai.backend.dto.response.WorkspaceResponse;
@@ -37,11 +38,15 @@ public interface WorkspaceService {
 
     WorkspaceMemberResponse acceptInvite(String email, AcceptInviteRequest request);
 
+    WorkspaceInvitePreviewResponse getInvitePreview(String token);
+
     void removeMember(String email, Long workspaceId, Long memberId);
 
     WorkspaceMemberResponse updateMemberRole(String email, Long workspaceId, Long memberId, UpdateMemberRoleRequest request);
 
     List<WorkspaceMemberResponse> getWorkspaceMembers(String email, Long workspaceId);
+
+    void recordMemberActivity(String email, Long workspaceId);
 
     com.willa.ai.backend.dto.response.WorkspaceChatExtractResponse extractTaskFromChat(String email, Long workspaceId, com.willa.ai.backend.dto.request.WorkspaceChatExtractRequest request);
 }

@@ -1,5 +1,6 @@
 package com.willa.ai.backend.service.impl;
 
+import com.willa.ai.backend.entity.Coupon;
 import com.willa.ai.backend.entity.Payment;
 import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.User;
@@ -12,6 +13,7 @@ import com.willa.ai.backend.repository.PaymentRepository;
 import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WorkspacePlanRepository;
+import com.willa.ai.backend.service.CouponService;
 import com.willa.ai.backend.service.PaymentService;
 import com.willa.ai.backend.service.SubscriptionService;
 import com.willa.ai.backend.service.WorkspaceSubscriptionService;
@@ -68,6 +70,9 @@ public class PaymentServiceImpl implements PaymentService {
     @Autowired
     private ExpertBookingRepository expertBookingRepository;
 
+    @Autowired
+    private CouponService couponService;
+
     @Value("${payos.client-id}")
     private String clientId;
 
@@ -87,15 +92,17 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     @CircuitBreaker(name = "payosCircuitBreaker", fallbackMethod = "createPaymentLinkFallback")
     @Retry(name = "payosRetry", fallbackMethod = "createPaymentLinkFallback")
-    public CheckoutResponseData createPaymentLink(String userEmail, Long planId, String planType) {
+    public CheckoutResponseData createPaymentLink(String userEmail, Long planId, String planType, String couponCode) {
         try {
             boolean isWorkspace = planType != null && planType.equalsIgnoreCase("WORKSPACE");
             User user = userRepository.findByEmail(userEmail)
                     .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + userEmail));
 
             Long orderCode = System.currentTimeMillis() / 1000;
-            Long amount;
+            BigDecimal priceBd;
+            BigDecimal promotionalPriceBd;
             String description;
+            String planName;
             Payment payment;
 
             if (isWorkspace) {
@@ -108,12 +115,12 @@ public class PaymentServiceImpl implements PaymentService {
 
                 validateStudentWorkspacePlan(user, workspacePlan);
 
-                amount = resolvePaymentAmount(workspacePlan.getPrice(), workspacePlan.getPromotionalPrice());
-                validatePayableAmount(amount, workspacePlan.getName());
+                priceBd = workspacePlan.getPrice();
+                promotionalPriceBd = workspacePlan.getPromotionalPrice();
+                planName = workspacePlan.getName();
                 description = "WillA Workspace Plan";
                 payment = Payment.builder()
                         .orderCode(orderCode)
-                        .amount(amount)
                         .description(description)
                         .status(PaymentStatus.PENDING)
                         .user(user)
@@ -129,12 +136,12 @@ public class PaymentServiceImpl implements PaymentService {
                     throw new IllegalArgumentException("Chỉ tài khoản đã xác thực sinh viên mới được đăng ký gói Student.");
                 }
 
-                amount = resolvePaymentAmount(plan.getPrice(), plan.getPromotionalPrice());
-                validatePayableAmount(amount, plan.getName());
+                priceBd = plan.getPrice();
+                promotionalPriceBd = plan.getPromotionalPrice();
+                planName = plan.getName();
                 description = "WillA AI Plan";
                 payment = Payment.builder()
                         .orderCode(orderCode)
-                        .amount(amount)
                         .description(description)
                         .status(PaymentStatus.PENDING)
                         .user(user)
@@ -144,6 +151,43 @@ public class PaymentServiceImpl implements PaymentService {
                         .build();
             }
 
+            long listPrice = resolveListPrice(priceBd);
+            long adminPrice = resolvePaymentAmount(priceBd, promotionalPriceBd);
+            boolean hasCoupon = couponCode != null && !couponCode.isBlank();
+
+            Coupon coupon = null;
+            long amount;
+            if (hasCoupon) {
+                coupon = couponService.lockForPayment(couponCode, planId, planType, listPrice);
+                amount = couponService.applyDiscount(coupon, listPrice);
+                payment.setCoupon(coupon);
+                payment.setOriginalAmount(listPrice);
+                payment.setDiscountAmount(Math.max(0, listPrice - amount));
+            } else {
+                amount = adminPrice;
+                validatePayableAmount(amount, planName);
+            }
+
+            payment.setAmount(amount);
+
+            if (amount == 0) {
+                payment.setStatus(PaymentStatus.PAID);
+                payment.setTransactionId("COUPON_FREE");
+                paymentRepository.save(payment);
+                if (coupon != null) {
+                    couponService.markRedeemed(coupon, payment, user);
+                }
+                activateEntitlement(payment);
+                return CheckoutResponseData.builder()
+                        .orderCode(orderCode)
+                        .amount(0)
+                        .description(description)
+                        .currency("VND")
+                        .checkoutUrl(baseReturnUrl + "?orderCode=" + orderCode)
+                        .build();
+            }
+
+            validatePayableAmount(amount, planName);
             paymentRepository.save(payment);
 
             return createCheckoutForPayment(payment);
@@ -227,7 +271,8 @@ public class PaymentServiceImpl implements PaymentService {
         throw new RuntimeException("Cổng thanh toán PayOS đang gặp sự cố hoặc quá tải. Vui lòng thử lại sau.", t);
     }
 
-    public CheckoutResponseData createPaymentLinkFallback(String userEmail, Long planId, String planType, Throwable t) {
+    public CheckoutResponseData createPaymentLinkFallback(
+            String userEmail, Long planId, String planType, String couponCode, Throwable t) {
         System.err.println("PayOS API encountered an error. Resilience4j fallback triggered: " + t.getMessage());
         throw new RuntimeException("Cổng thanh toán PayOS đang gặp sự cố hoặc quá tải. Vui lòng thử lại sau.", t);
     }
@@ -241,7 +286,12 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    /** Khớp FE `effectivePlanPrice`: ưu tiên promotionalPrice nếu có. */
+    /** Giá gốc (list price) — cơ sở tính coupon, không gồm giảm admin. */
+    private long resolveListPrice(BigDecimal price) {
+        return price != null ? price.longValue() : 0L;
+    }
+
+    /** Giá thanh toán khi không dùng coupon — khớp FE `effectivePlanPrice`. */
     private long resolvePaymentAmount(BigDecimal price, BigDecimal promotionalPrice) {
         BigDecimal base = price != null ? price : BigDecimal.ZERO;
         BigDecimal effective = promotionalPrice != null ? promotionalPrice : base;
@@ -249,13 +299,42 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     private void validatePayableAmount(long amount, String planName) {
-        if (amount <= 0) {
-            throw new IllegalArgumentException(
-                    "Gói \"" + planName + "\" miễn phí hoặc chưa có giá. Không thể tạo link PayOS.");
+        if (amount < 0) {
+            throw new IllegalArgumentException("Số tiền thanh toán không hợp lệ (gói: " + planName + ").");
+        }
+        if (amount == 0) {
+            return;
         }
         if (amount < 1000) {
             throw new IllegalArgumentException(
                     "Số tiền thanh toán tối thiểu là 1.000 VND (gói: " + planName + ").");
+        }
+    }
+
+    private void activateEntitlement(Payment payment) {
+        Long orderCode = payment.getOrderCode();
+        if (payment.getWorkspacePlan() != null) {
+            workspaceSubscriptionService.createOrUpdateSubscription(
+                    payment.getUser().getEmail(), payment.getWorkspacePlan().getId());
+            System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã kích hoạt gói workspace.");
+        } else if (payment.getPlan() != null) {
+            subscriptionService.createOrUpdateSubscription(
+                    payment.getUser().getEmail(), payment.getPlan().getId());
+            System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã cộng token/subscription.");
+        } else {
+            expertBookingRepository.findByPaymentId(payment.getId()).ifPresent(booking -> {
+                if (booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT) {
+                    booking.setMeetingRoomUrl(
+                            ExpertBookingServiceImpl.buildMeetingRoomUrl(booking.getId()));
+                    if (booking.getBookingType() == com.willa.ai.backend.entity.enums.ExpertBookingType.HOURLY) {
+                        booking.setStatus(ExpertBookingStatus.IN_PROGRESS);
+                    } else {
+                        booking.setStatus(ExpertBookingStatus.AWAITING_EXPERT);
+                    }
+                    expertBookingRepository.save(booking);
+                    System.out.println("Thanh toán thành công expert booking: " + booking.getId());
+                }
+            });
         }
     }
 
@@ -279,29 +358,11 @@ public class PaymentServiceImpl implements PaymentService {
                         payment.setTransactionId(data.getReference());
                         paymentRepository.save(payment);
 
-                        if (payment.getWorkspacePlan() != null) {
-                            workspaceSubscriptionService.createOrUpdateSubscription(
-                                    payment.getUser().getEmail(), payment.getWorkspacePlan().getId());
-                            System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã kích hoạt gói workspace.");
-                        } else if (payment.getPlan() != null) {
-                            subscriptionService.createOrUpdateSubscription(
-                                    payment.getUser().getEmail(), payment.getPlan().getId());
-                            System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã cộng token/subscription.");
-                        } else {
-                            expertBookingRepository.findByPaymentId(payment.getId()).ifPresent(booking -> {
-                                if (booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT) {
-                                    booking.setMeetingRoomUrl(
-                                            ExpertBookingServiceImpl.buildMeetingRoomUrl(booking.getId()));
-                                    if (booking.getBookingType() == com.willa.ai.backend.entity.enums.ExpertBookingType.HOURLY) {
-                                        booking.setStatus(ExpertBookingStatus.IN_PROGRESS);
-                                    } else {
-                                        booking.setStatus(ExpertBookingStatus.AWAITING_EXPERT);
-                                    }
-                                    expertBookingRepository.save(booking);
-                                    System.out.println("Thanh toán thành công expert booking: " + booking.getId());
-                                }
-                            });
+                        if (payment.getCoupon() != null) {
+                            couponService.markRedeemed(payment.getCoupon(), payment, payment.getUser());
                         }
+
+                        activateEntitlement(payment);
                     }
                 }
             } else if ("01".equals(data.getCode()) || "01".equals(webhookData.getCode()) || "11".equals(data.getCode()) || "11".equals(webhookData.getCode())) {

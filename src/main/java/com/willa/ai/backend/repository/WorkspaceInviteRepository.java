@@ -15,6 +15,14 @@ import java.util.Optional;
 public interface WorkspaceInviteRepository extends JpaRepository<WorkspaceInvite, Long> {
     List<WorkspaceInvite> findByWorkspaceIdAndStatus(Long workspaceId, InviteStatus status);
     Optional<WorkspaceInvite> findByToken(String token);
+
+    @Query("""
+            SELECT i FROM WorkspaceInvite i
+            JOIN FETCH i.workspace
+            JOIN FETCH i.invitedBy
+            WHERE i.token = :token
+            """)
+    Optional<WorkspaceInvite> findByTokenWithDetails(@Param("token") String token);
     Optional<WorkspaceInvite> findByTokenAndStatus(String token, InviteStatus status);
     Optional<WorkspaceInvite> findByWorkspaceIdAndEmailAndStatus(Long workspaceId, String email, InviteStatus status);
 

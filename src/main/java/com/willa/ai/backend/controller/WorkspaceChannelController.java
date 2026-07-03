@@ -98,7 +98,7 @@ public class WorkspaceChannelController {
     }
 
     @GetMapping("/{channelId}/messages")
-    @Operation(summary = "Lịch sử tin nhắn kênh")
+    @Operation(summary = "Lịch sử tin nhắn kênh (chỉ tin gốc)")
     public ResponseEntity<ApiResponse> listChannelMessages(
             Authentication auth,
             @PathVariable Long workspaceId,
@@ -108,6 +108,23 @@ public class WorkspaceChannelController {
                     .status(true)
                     .message("Messages retrieved")
                     .data(workspaceChannelService.listChannelMessages(auth.getName(), workspaceId, channelId))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/{channelId}/threads")
+    @Operation(summary = "Tất cả reply trong thread của kênh (gồm WillA)")
+    public ResponseEntity<ApiResponse> listChannelThreads(
+            Authentication auth,
+            @PathVariable Long workspaceId,
+            @PathVariable Long channelId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Thread replies retrieved")
+                    .data(workspaceChannelService.listChannelThreadReplies(auth.getName(), workspaceId, channelId))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

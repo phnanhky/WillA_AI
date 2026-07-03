@@ -13,6 +13,15 @@ import java.util.Optional;
 public interface TaskChecklistItemRepository extends JpaRepository<TaskChecklistItem, Long> {
     List<TaskChecklistItem> findByChecklistIdOrderByPositionAscIdAsc(Long checklistId);
 
+    @Query("""
+            SELECT DISTINCT i FROM TaskChecklistItem i
+            LEFT JOIN FETCH i.assignee
+            LEFT JOIN FETCH i.assignees
+            WHERE i.checklist.id = :checklistId
+            ORDER BY i.position ASC, i.id ASC
+            """)
+    List<TaskChecklistItem> findByChecklistIdWithAssignees(@Param("checklistId") Long checklistId);
+
     Optional<TaskChecklistItem> findByIdAndChecklistId(Long id, Long checklistId);
 
     @Query("""
@@ -20,6 +29,7 @@ public interface TaskChecklistItemRepository extends JpaRepository<TaskChecklist
             JOIN FETCH i.checklist c
             JOIN FETCH c.task t
             LEFT JOIN FETCH i.assignee
+            LEFT JOIN FETCH i.assignees
             WHERE t.workspace.id = :workspaceId
             """)
     List<TaskChecklistItem> findByWorkspaceId(@Param("workspaceId") Long workspaceId);

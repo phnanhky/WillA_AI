@@ -7,4 +7,7 @@ import lombok.Data;
 public class JoinWorkspaceByCodeRequest {
     @NotBlank
     private String inviteCode;
+
+    /** CODE hoặc QR — mặc định CODE */
+    private String joinSource;
 }

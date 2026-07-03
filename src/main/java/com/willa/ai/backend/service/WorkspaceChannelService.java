@@ -30,6 +30,8 @@ public interface WorkspaceChannelService {
 
     List<WorkspaceChatMessageResponse> listChannelMessages(String email, Long workspaceId, Long channelId);
 
+    List<WorkspaceChatMessageResponse> listChannelThreadReplies(String email, Long workspaceId, Long channelId);
+
     WorkspaceChatMessageResponse sendChannelMessage(String email, Long workspaceId, Long channelId,
             WorkspaceChatMessageRequest request);
 

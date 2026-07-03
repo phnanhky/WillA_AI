@@ -89,7 +89,43 @@ public class WorkspaceExpertsMigration {
                     ALTER TABLE workspace_experts ADD COLUMN hourly_rate BIGINT
                     """).executeUpdate();
         }
-        log.info("Upgraded workspace_experts for platform experts");
+        migrateToAppWideExperts();
+        log.info("Upgraded workspace_experts for app-wide experts");
+    }
+
+    /** Expert hỗ trợ toàn app — bỏ gắn workspace, gộp trùng user. */
+    private void migrateToAppWideExperts() {
+        // 1) User đã có bản app-wide (workspace_id NULL) → xóa bản gắn workspace
+        entityManager.createNativeQuery("""
+                DELETE FROM workspace_experts w
+                WHERE w.workspace_id IS NOT NULL
+                  AND EXISTS (
+                    SELECT 1 FROM workspace_experts p
+                    WHERE p.user_id = w.user_id AND p.workspace_id IS NULL
+                  )
+                """).executeUpdate();
+        // 2) User chỉ có nhiều bản workspace → giữ bản id nhỏ nhất
+        entityManager.createNativeQuery("""
+                DELETE FROM workspace_experts w
+                WHERE w.workspace_id IS NOT NULL
+                  AND w.id NOT IN (
+                    SELECT MIN(w2.id) FROM workspace_experts w2
+                    WHERE w2.workspace_id IS NOT NULL
+                    GROUP BY w2.user_id
+                  )
+                """).executeUpdate();
+        // 3) Chuyển bản workspace còn lại thành app-wide
+        entityManager.createNativeQuery("""
+                UPDATE workspace_experts SET workspace_id = NULL WHERE workspace_id IS NOT NULL
+                """).executeUpdate();
+        // 4) Gộp trùng (an toàn)
+        entityManager.createNativeQuery("""
+                DELETE FROM workspace_experts w
+                WHERE w.id NOT IN (
+                  SELECT MIN(w2.id) FROM workspace_experts w2 GROUP BY w2.user_id
+                )
+                """).executeUpdate();
+        log.info("Migrated experts to app-wide scope");
     }
 
     private void relaxReviewPriceColumn() {

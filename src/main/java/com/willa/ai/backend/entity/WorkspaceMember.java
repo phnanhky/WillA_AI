@@ -1,6 +1,7 @@
 package com.willa.ai.backend.entity;
 
 import com.willa.ai.backend.entity.converter.WorkspaceRoleConverter;
+import com.willa.ai.backend.entity.enums.WorkspaceJoinSource;
 import com.willa.ai.backend.entity.enums.WorkspaceRole;
 import jakarta.persistence.*;
 import lombok.*;
@@ -39,6 +40,16 @@ public class WorkspaceMember {
     @Column(name = "is_important", nullable = false)
     @Builder.Default
     private Boolean isImportant = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "join_source", length = 20)
+    private WorkspaceJoinSource joinSource;
+
+    @Column(name = "first_active_at")
+    private LocalDateTime firstActiveAt;
+
+    @Column(name = "last_active_at")
+    private LocalDateTime lastActiveAt;
 
     @CreationTimestamp
     private LocalDateTime joinedAt;

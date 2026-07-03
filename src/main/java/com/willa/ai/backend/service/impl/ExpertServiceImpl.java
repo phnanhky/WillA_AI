@@ -6,11 +6,8 @@ import com.willa.ai.backend.dto.response.WorkspaceExpertResponse;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.Workspace;
 import com.willa.ai.backend.entity.WorkspaceExpert;
-import com.willa.ai.backend.entity.WorkspaceMember;
-import com.willa.ai.backend.entity.enums.WorkspaceRole;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WorkspaceExpertRepository;
-import com.willa.ai.backend.repository.WorkspaceMemberRepository;
 import com.willa.ai.backend.repository.WorkspaceRepository;
 import com.willa.ai.backend.service.ExpertService;
 import lombok.RequiredArgsConstructor;
@@ -18,11 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -33,7 +27,6 @@ public class ExpertServiceImpl implements ExpertService {
     private final WorkspaceExpertRepository expertRepository;
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
-    private final WorkspaceMemberRepository workspaceMemberRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -45,27 +38,22 @@ public class ExpertServiceImpl implements ExpertService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<WorkspaceExpertResponse> listPlatformExperts() {
-        return expertRepository.findByWorkspaceIsNullAndIsActiveTrueOrderByCreatedAtDesc().stream()
+    public List<WorkspaceExpertResponse> listActiveExperts() {
+        return expertRepository.findByIsActiveTrueOrderByCreatedAtDesc().stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<WorkspaceExpertResponse> listWorkspaceExperts(String currentEmail, Long workspaceId) {
-        User currentUser = userRepository.findByEmail(currentEmail)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        assertWorkspaceMember(workspaceId, currentUser.getId());
+    public List<WorkspaceExpertResponse> listPlatformExperts() {
+        return listActiveExperts();
+    }
 
-        Map<Long, WorkspaceExpertResponse> merged = new LinkedHashMap<>();
-        for (WorkspaceExpert expert : expertRepository.findByWorkspaceIsNullAndIsActiveTrueOrderByCreatedAtDesc()) {
-            merged.put(expert.getId(), mapToResponse(expert));
-        }
-        for (WorkspaceExpert expert : expertRepository.findByWorkspaceIdAndIsActiveTrueOrderByCreatedAtDesc(workspaceId)) {
-            merged.put(expert.getId(), mapToResponse(expert));
-        }
-        return new ArrayList<>(merged.values());
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkspaceExpertResponse> listWorkspaceExperts(String currentEmail, Long workspaceId) {
+        return listActiveExperts();
     }
 
     @Override
@@ -88,42 +76,20 @@ public class ExpertServiceImpl implements ExpertService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với email: " + email));
 
-        Long workspaceId = request.getWorkspaceId();
-        if (workspaceId == null) {
-            if (expertRepository.existsByWorkspaceIsNullAndUserId(user.getId())) {
-                throw new RuntimeException("Người dùng đã có phạm vi Platform. Có thể thêm workspace khác bằng cùng email.");
-            }
-            WorkspaceExpert expert = expertRepository.save(WorkspaceExpert.builder()
-                    .workspace(null)
-                    .user(user)
-                    .expertise(trimOrNull(request.getExpertise()))
-                    .bio(trimOrNull(request.getBio()))
-                    .isActive(request.getIsActive() != null ? request.getIsActive() : true)
-                    .reviewPrice(normalizePrice(request.getReviewPrice()))
-                    .hourlyRate(normalizePrice(request.getHourlyRate()))
-                    .build());
-            log.info("Admin assigned platform expert userId={}", user.getId());
-            return mapToResponse(expert);
+        if (expertRepository.existsByUserId(user.getId())) {
+            throw new RuntimeException("Người dùng đã là expert trên Willa");
         }
-
-        Workspace workspace = workspaceRepository.findById(workspaceId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy workspace"));
-
-        if (expertRepository.existsByWorkspaceIdAndUserId(workspace.getId(), user.getId())) {
-            throw new RuntimeException("Người dùng đã là expert trong workspace này. Chọn workspace khác hoặc Platform.");
-        }
-
-        ensureWorkspaceMember(workspace, user);
 
         WorkspaceExpert expert = expertRepository.save(WorkspaceExpert.builder()
-                .workspace(workspace)
+                .workspace(null)
                 .user(user)
                 .expertise(trimOrNull(request.getExpertise()))
                 .bio(trimOrNull(request.getBio()))
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
+                .reviewPrice(normalizePrice(request.getReviewPrice()))
+                .hourlyRate(normalizePrice(request.getHourlyRate()))
                 .build());
-
-        log.info("Admin assigned expert userId={} to workspaceId={}", user.getId(), workspace.getId());
+        log.info("Admin assigned app-wide expert userId={}", user.getId());
         return mapToResponse(expert);
     }
 
@@ -159,23 +125,6 @@ public class ExpertServiceImpl implements ExpertService {
         expertRepository.deleteById(expertId);
     }
 
-    private void ensureWorkspaceMember(Workspace workspace, User user) {
-        if (workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), user.getId()).isPresent()) {
-            return;
-        }
-        workspaceMemberRepository.save(WorkspaceMember.builder()
-                .workspace(workspace)
-                .user(user)
-                .role(WorkspaceRole.MEMBER)
-                .build());
-        log.info("Auto-added userId={} as workspace member for expert assignment", user.getId());
-    }
-
-    private void assertWorkspaceMember(Long workspaceId, Long userId) {
-        workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new RuntimeException("You are not a member of this workspace"));
-    }
-
     private String trimOrNull(String value) {
         if (value == null) return null;
         String trimmed = value.trim();
@@ -188,17 +137,15 @@ public class ExpertServiceImpl implements ExpertService {
 
     private WorkspaceExpertResponse mapToResponse(WorkspaceExpert expert) {
         User user = expert.getUser();
-        Workspace workspace = expert.getWorkspace();
-        boolean platform = workspace == null;
         return WorkspaceExpertResponse.builder()
                 .id(expert.getId())
                 .userId(user.getId())
                 .userEmail(user.getEmail())
                 .userFullName(user.getFullName())
                 .userAvatarUrl(user.getAvatarUrl())
-                .workspaceId(platform ? null : workspace.getId())
-                .workspaceTitle(platform ? null : workspace.getTitle())
-                .platformExpert(platform)
+                .workspaceId(null)
+                .workspaceTitle(null)
+                .platformExpert(true)
                 .expertise(expert.getExpertise())
                 .bio(expert.getBio())
                 .isActive(expert.getIsActive())

@@ -420,9 +420,9 @@ public class TaskServiceImpl implements TaskService {
                 .completed(false)
                 .position(position)
                 .dueDate(request.getDueDate())
-                .assignee(resolveOptionalAssignee(workspaceId, request.getAssigneeUserId()))
                 .priority(request.getPriority() != null ? request.getPriority() : ChecklistPriority.NONE)
                 .build();
+        applyChecklistAssignees(item, workspaceId, request);
 
         TaskChecklistItemResponse response = mapChecklistItem(taskChecklistItemRepository.save(item));
         notifyWorkspaceChanged(workspaceId);
@@ -464,10 +464,11 @@ public class TaskServiceImpl implements TaskService {
         } else if (request.getDueDate() != null) {
             item.setDueDate(request.getDueDate());
         }
-        if (Boolean.TRUE.equals(request.getClearAssignee())) {
-            item.setAssignee(null);
-        } else if (request.getAssigneeUserId() != null) {
-            item.setAssignee(resolveOptionalAssignee(workspaceId, request.getAssigneeUserId()));
+        if (Boolean.TRUE.equals(request.getClearAssignees())
+                || Boolean.TRUE.equals(request.getClearAssignee())
+                || request.getAssigneeUserIds() != null
+                || request.getAssigneeUserId() != null) {
+            applyChecklistAssignees(item, workspaceId, request);
         }
         if (request.getPriority() != null) {
             item.setPriority(request.getPriority());
@@ -513,7 +514,7 @@ public class TaskServiceImpl implements TaskService {
 
     private TaskChecklistResponse mapChecklist(TaskChecklist checklist) {
         List<TaskChecklistItemResponse> items = taskChecklistItemRepository
-                .findByChecklistIdOrderByPositionAscIdAsc(checklist.getId()).stream()
+                .findByChecklistIdWithAssignees(checklist.getId()).stream()
                 .map(this::mapChecklistItem)
                 .collect(Collectors.toList());
         return TaskChecklistResponse.builder()
@@ -525,8 +526,47 @@ public class TaskServiceImpl implements TaskService {
                 .build();
     }
 
+    private void applyChecklistAssignees(TaskChecklistItem item, Long workspaceId, TaskChecklistItemRequest request) {
+        if (Boolean.TRUE.equals(request.getClearAssignees()) || Boolean.TRUE.equals(request.getClearAssignee())) {
+            item.getAssignees().clear();
+            item.setAssignee(null);
+            return;
+        }
+        if (request.getAssigneeUserIds() != null) {
+            item.setAssignees(resolveAssignees(workspaceId, request.getAssigneeUserIds()));
+            item.setAssignee(item.getAssignees().isEmpty() ? null : item.getAssignees().iterator().next());
+            return;
+        }
+        if (request.getAssigneeUserId() != null) {
+            User user = resolveOptionalAssignee(workspaceId, request.getAssigneeUserId());
+            item.setAssignee(user);
+            item.getAssignees().clear();
+            if (user != null) {
+                item.getAssignees().add(user);
+            }
+        }
+    }
+
+    private Set<User> resolveItemAssignees(TaskChecklistItem item) {
+        if (item.getAssignees() != null && !item.getAssignees().isEmpty()) {
+            return item.getAssignees();
+        }
+        if (item.getAssignee() != null) {
+            return Set.of(item.getAssignee());
+        }
+        return Set.of();
+    }
+
     private TaskChecklistItemResponse mapChecklistItem(TaskChecklistItem item) {
-        User assignee = item.getAssignee();
+        Set<User> users = resolveItemAssignees(item);
+        List<TaskAssigneeResponse> assigneeList = users.stream()
+                .map(u -> TaskAssigneeResponse.builder()
+                        .userId(u.getId())
+                        .userName(u.getFullName())
+                        .email(u.getEmail())
+                        .build())
+                .collect(Collectors.toList());
+        User first = users.isEmpty() ? null : users.iterator().next();
         return TaskChecklistItemResponse.builder()
                 .id(item.getId())
                 .checklistId(item.getChecklist().getId())
@@ -535,8 +575,9 @@ public class TaskServiceImpl implements TaskService {
                 .completedAt(item.getCompletedAt())
                 .position(item.getPosition())
                 .dueDate(item.getDueDate())
-                .assigneeUserId(assignee != null ? assignee.getId() : null)
-                .assigneeName(assignee != null ? assignee.getFullName() : null)
+                .assigneeUserId(first != null ? first.getId() : null)
+                .assigneeName(first != null ? first.getFullName() : null)
+                .assignees(assigneeList)
                 .priority(item.getPriority())
                 .build();
     }

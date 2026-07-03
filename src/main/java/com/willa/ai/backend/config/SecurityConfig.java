@@ -55,6 +55,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers(HttpMethod.GET, "/api/v1/plans", "/api/v1/plans/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/workspace-plans", "/api/v1/workspace-plans/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/workspaces/invites/preview").permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/api/files/download/**",

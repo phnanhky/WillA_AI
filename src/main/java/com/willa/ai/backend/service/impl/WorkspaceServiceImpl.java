@@ -20,6 +20,7 @@ import com.willa.ai.backend.dto.request.UpdateMemberImportantRequest;
 import com.willa.ai.backend.dto.request.UpdateMemberRoleRequest;
 import com.willa.ai.backend.dto.request.WorkspaceRequest;
 import com.willa.ai.backend.dto.response.InviteMemberResultResponse;
+import com.willa.ai.backend.dto.response.WorkspaceInvitePreviewResponse;
 import com.willa.ai.backend.dto.response.WorkspaceInviteResponse;
 import com.willa.ai.backend.dto.response.WorkspaceMemberResponse;
 import com.willa.ai.backend.dto.response.WorkspaceResponse;
@@ -29,6 +30,7 @@ import com.willa.ai.backend.entity.Workspace;
 import com.willa.ai.backend.entity.WorkspaceInvite;
 import com.willa.ai.backend.entity.WorkspaceMember;
 import com.willa.ai.backend.entity.enums.InviteStatus;
+import com.willa.ai.backend.entity.enums.WorkspaceJoinSource;
 import com.willa.ai.backend.entity.enums.WorkspaceRole;
 import com.willa.ai.backend.entity.enums.WorkflowType;
 import com.willa.ai.backend.repository.UserRepository;
@@ -81,7 +83,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         assertWorkspaceCreateAllowed(user);
 
         String inviteCode = generateUniqueInviteCode();
-        String inviteLink = buildJoinLink(inviteCode);
+        String inviteLink = buildQrJoinLink(inviteCode);
         String qrCodeUrl = uploadInviteQrCode(inviteLink, inviteCode);
 
         Workspace workspace = workspaceRepository.save(Workspace.builder()
@@ -97,6 +99,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .user(user)
                 .role(WorkspaceRole.OWNER)
                 .isImportant(false)
+                .joinSource(WorkspaceJoinSource.OWNER)
                 .build());
 
         workspaceChannelService.ensureDefaultChannels(workspace);
@@ -179,16 +182,22 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .orElseThrow(() -> new RuntimeException("Mã mời không hợp lệ"));
 
         if (workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), user.getId()).isPresent()) {
-            throw new RuntimeException("Bạn đã là thành viên của workspace này");
+            return mapToMemberResponse(
+                    workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), user.getId()).get());
         }
 
         assertMemberLimitNotExceeded(workspace);
 
+        WorkspaceJoinSource source = parseJoinSource(request.getJoinSource());
+        LocalDateTime now = LocalDateTime.now();
         WorkspaceMember member = workspaceMemberRepository.save(WorkspaceMember.builder()
                 .workspace(workspace)
                 .user(user)
                 .role(WorkspaceRole.MEMBER)
                 .isImportant(false)
+                .joinSource(source)
+                .firstActiveAt(now)
+                .lastActiveAt(now)
                 .build());
         workspaceRealtimeService.publishWorkspaceChanged(workspace.getId());
         return mapToMemberResponse(member);
@@ -233,29 +242,36 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             if (workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, invitee.getId()).isPresent()) {
                 throw new RuntimeException("Người dùng đã là thành viên của workspace");
             }
-            WorkspaceMember newMember = workspaceMemberRepository.save(WorkspaceMember.builder()
-                    .workspace(workspace)
-                    .user(invitee)
-                    .role(WorkspaceRole.MEMBER)
-                    .build());
-            workspaceRealtimeService.publishWorkspaceChanged(workspaceId);
-            return InviteMemberResultResponse.builder()
-                    .resultType("MEMBER_ADDED")
-                    .message("Đã thêm thành viên vào workspace")
-                    .member(mapToMemberResponse(newMember))
-                    .build();
         }
 
-        workspaceInviteRepository.findByWorkspaceIdAndEmailAndStatus(workspaceId, inviteEmail, InviteStatus.PENDING)
-                .ifPresent(inv -> {
-                    throw new RuntimeException("Đã có lời mời đang chờ cho email này");
-                });
+        var pendingOpt = workspaceInviteRepository.findByWorkspaceIdAndEmailAndStatus(
+                workspaceId, inviteEmail, InviteStatus.PENDING);
+        if (pendingOpt.isPresent()) {
+            WorkspaceInvite existing = pendingOpt.get();
+            if (existing.getExpiresAt() != null && existing.getExpiresAt().isBefore(LocalDateTime.now())) {
+                existing.setStatus(InviteStatus.EXPIRED);
+                workspaceInviteRepository.save(existing);
+            } else {
+                String inviteLink = buildEmailInviteLink(existing.getToken());
+                emailService.sendWorkspaceInviteEmail(
+                        inviteEmail,
+                        workspace.getTitle(),
+                        currentUser.getFullName(),
+                        inviteLink,
+                        role.name());
+                return InviteMemberResultResponse.builder()
+                        .resultType("INVITE_SENT")
+                        .message("Đã gửi lại lời mời qua email.")
+                        .invite(mapToInviteResponse(existing))
+                        .build();
+            }
+        }
 
         String token = UUID.randomUUID().toString().replace("-", "");
         WorkspaceInvite invite = workspaceInviteRepository.save(WorkspaceInvite.builder()
                 .workspace(workspace)
                 .email(inviteEmail)
-                .role(WorkspaceRole.MEMBER)
+                .role(role)
                 .token(token)
                 .status(InviteStatus.PENDING)
                 .invitedBy(currentUser)
@@ -268,7 +284,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 workspace.getTitle(),
                 currentUser.getFullName(),
                 inviteLink,
-                WorkspaceRole.MEMBER.name());
+                role.name());
 
         return InviteMemberResultResponse.builder()
                 .resultType("INVITE_SENT")
@@ -368,6 +384,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .workspace(workspace)
                 .user(user)
                 .role(WorkspaceRole.MEMBER)
+                .joinSource(WorkspaceJoinSource.EMAIL)
                 .build());
         invite.setStatus(InviteStatus.ACCEPTED);
         workspaceInviteRepository.save(invite);
@@ -421,6 +438,27 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         return workspaceMemberRepository.findByWorkspaceId(workspaceId).stream()
             .map(this::mapToMemberResponse)
             .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public void recordMemberActivity(String email, Long workspaceId) {
+        try {
+            User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
+            WorkspaceMember member = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, user.getId())
+                    .orElse(null);
+            if (member == null) {
+                return;
+            }
+            LocalDateTime now = LocalDateTime.now();
+            if (member.getFirstActiveAt() == null) {
+                member.setFirstActiveAt(now);
+            }
+            member.setLastActiveAt(now);
+            workspaceMemberRepository.save(member);
+        } catch (Exception e) {
+            log.warn("recordMemberActivity skipped workspaceId={}: {}", workspaceId, e.getMessage());
+        }
     }
 
     private Workspace getWorkspaceOrThrow(Long workspaceId) {
@@ -490,6 +528,21 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         return frontendUrl.replaceAll("/$", "") + "/projects?code=" + inviteCode;
     }
 
+    private String buildQrJoinLink(String inviteCode) {
+        return buildJoinLink(inviteCode) + "&src=qr";
+    }
+
+    private WorkspaceJoinSource parseJoinSource(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return WorkspaceJoinSource.CODE;
+        }
+        try {
+            return WorkspaceJoinSource.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return WorkspaceJoinSource.CODE;
+        }
+    }
+
     private String uploadInviteQrCode(String inviteLink, String inviteCode) {
         if (inviteCode == null || inviteCode.isBlank()) {
             throw new IllegalArgumentException("inviteCode is required");
@@ -520,14 +573,50 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         if (isStoredQrImageUrl(workspace.getQrCodeUrl())) {
             return workspace;
         }
-        String inviteLink = buildJoinLink(workspace.getInviteCode());
+        String inviteLink = buildQrJoinLink(workspace.getInviteCode());
         String qrUrl = uploadInviteQrCode(inviteLink, workspace.getInviteCode());
         workspace.setQrCodeUrl(qrUrl);
         return workspaceRepository.save(workspace);
     }
 
     private String buildEmailInviteLink(String token) {
-        return frontendUrl.replaceAll("/$", "") + "/projects?inviteToken=" + token;
+        return frontendUrl.replaceAll("/$", "") + "/join-workspace?token=" + token;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public WorkspaceInvitePreviewResponse getInvitePreview(String token) {
+        if (token == null || token.isBlank()) {
+            return WorkspaceInvitePreviewResponse.builder()
+                    .valid(false)
+                    .message("Token không hợp lệ")
+                    .build();
+        }
+        return workspaceInviteRepository.findByTokenWithDetails(token.trim())
+                .map(invite -> {
+                    boolean expired = invite.getExpiresAt() != null
+                            && invite.getExpiresAt().isBefore(LocalDateTime.now());
+                    boolean pending = invite.getStatus() == InviteStatus.PENDING;
+                    boolean valid = pending && !expired;
+                    String message = valid
+                            ? null
+                            : expired
+                                    ? "Lời mời đã hết hạn"
+                                    : "Lời mời không còn hiệu lực";
+                    return WorkspaceInvitePreviewResponse.builder()
+                            .valid(valid)
+                            .expired(expired)
+                            .workspaceId(invite.getWorkspace().getId())
+                            .workspaceName(invite.getWorkspace().getTitle())
+                            .inviterName(invite.getInvitedBy().getFullName())
+                            .inviteEmail(invite.getEmail())
+                            .message(message)
+                            .build();
+                })
+                .orElse(WorkspaceInvitePreviewResponse.builder()
+                        .valid(false)
+                        .message("Lời mời không hợp lệ")
+                        .build());
     }
 
     private WorkspaceResponse mapToResponse(Workspace workspace, User viewer) {
@@ -560,6 +649,10 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .role(member.getRole())
                 .isImportant(member.getIsImportant())
                 .joinedAt(member.getJoinedAt())
+                .joinSource(member.getJoinSource())
+                .firstActiveAt(member.getFirstActiveAt())
+                .lastActiveAt(member.getLastActiveAt())
+                .activated(member.getFirstActiveAt() != null)
                 .build();
     }
 

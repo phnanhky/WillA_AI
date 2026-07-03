@@ -48,6 +48,16 @@ public class Payment {
     @JoinColumn(name = "workspace_plan_id")
     private WorkspacePlan workspacePlan;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "coupon_id")
+    private Coupon coupon;
+
+    @Column(name = "original_amount")
+    private Long originalAmount;
+
+    @Column(name = "discount_amount")
+    private Long discountAmount;
+
     @OneToOne(mappedBy = "payment", fetch = FetchType.LAZY)
     private ExpertBooking expertBooking;
 

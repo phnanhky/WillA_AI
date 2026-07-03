@@ -4,6 +4,7 @@ import com.willa.ai.backend.entity.enums.ChecklistPriority;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class TaskChecklistItemRequest {
@@ -13,5 +14,7 @@ public class TaskChecklistItemRequest {
     private Boolean clearDueDate;
     private Long assigneeUserId;
     private Boolean clearAssignee;
+    private List<Long> assigneeUserIds;
+    private Boolean clearAssignees;
     private ChecklistPriority priority;
 }
