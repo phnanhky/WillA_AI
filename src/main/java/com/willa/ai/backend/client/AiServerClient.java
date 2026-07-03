@@ -71,6 +71,14 @@ public class AiServerClient {
         return postJson(aiServer.chatGenerateUrl(), body);
     }
 
+    public JsonNode workspaceChat(List<Map<String, String>> messages) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("messages", messages);
+        // Using chatGenerateUrl and replacing the path
+        String url = aiServer.chatGenerateUrl().replace("chat-generate", "workspace-chat");
+        return postJson(url, body);
+    }
+
     /** Download raw bytes of an external image URL (e.g. xAI), null on failure. */
     public byte[] downloadBytes(String url) {
         try {
