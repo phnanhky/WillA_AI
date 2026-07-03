@@ -1,6 +1,8 @@
 package com.willa.ai.backend.config;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,11 +21,19 @@ public class RedisConfig {
 
     /**
      * Spring Boot's ObjectMapper already registers {@code JavaTimeModule} for {@code LocalDateTime}, etc.
-     * The default {@link GenericJackson2JsonRedisSerializer} constructor uses a bare mapper and fails on cache writes.
+     * A copied mapper without default typing deserializes cached DTOs as {@code LinkedHashMap},
+     * which breaks {@code @Cacheable} return types (e.g. {@code PlanResponse}).
      */
     @Bean
     public GenericJackson2JsonRedisSerializer redisJsonSerializer(ObjectMapper objectMapper) {
-        return new GenericJackson2JsonRedisSerializer(objectMapper.copy());
+        ObjectMapper redisMapper = objectMapper.copy();
+        redisMapper.activateDefaultTyping(
+                BasicPolymorphicTypeValidator.builder()
+                        .allowIfSubType("com.willa.ai.backend")
+                        .build(),
+                ObjectMapper.DefaultTyping.NON_FINAL,
+                JsonTypeInfo.As.PROPERTY);
+        return new GenericJackson2JsonRedisSerializer(redisMapper);
     }
 
     @Bean

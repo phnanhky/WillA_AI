@@ -26,7 +26,7 @@ public class PlanServiceImpl implements PlanService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "plans", allEntries = true)
+    @CacheEvict(value = "plan", allEntries = true)
     public PlanResponse createPlan(PlanRequest request) {
         BigDecimal base = request.getPrice();
         BigDecimal promo = calculatePromo(base, request.getDiscountPercentage());
