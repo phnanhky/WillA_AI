@@ -1,5 +1,6 @@
 package com.willa.ai.backend.service.impl;
 
+import java.util.Base64;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -24,13 +25,16 @@ import com.willa.ai.backend.repository.WorkspaceDmConversationRepository;
 import com.willa.ai.backend.repository.WorkspaceDmMessageRepository;
 import com.willa.ai.backend.repository.WorkspaceMemberRepository;
 import com.willa.ai.backend.repository.WorkspaceRepository;
+import com.willa.ai.backend.service.FileService;
 import com.willa.ai.backend.service.WorkspaceChannelService;
 import com.willa.ai.backend.service.WorkspaceRealtimeService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
 
     private final WorkspaceRepository workspaceRepository;
@@ -41,6 +45,7 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
     private final WorkspaceDmMessageRepository dmMessageRepository;
     private final UserRepository userRepository;
     private final WorkspaceRealtimeService workspaceRealtimeService;
+    private final FileService fileService;
 
     @Override
     @Transactional
@@ -220,7 +225,7 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
                 .parentMessage(parent)
                 .messageKind(kind)
                 .content(content.isEmpty() ? (hasTool ? " " : "📎") : content)
-                .imageUrl(request.getImageUrl())
+                .imageUrl(normalizeChannelImageUrl(request.getImageUrl()))
                 .toolResultJson(request.getToolResultJson())
                 .build());
         WorkspaceChatMessageResponse response = mapChannelMessage(message);
@@ -380,6 +385,48 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
                 .content(message.getContent())
                 .createdAt(message.getCreatedAt())
                 .build();
+    }
+
+    /** Data URL / URL dài từ WillA upload — tránh VARCHAR(1024) overflow. */
+    private String normalizeChannelImageUrl(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.startsWith("data:")) {
+            return storeImageFromDataUrl(trimmed);
+        }
+        return trimmed;
+    }
+
+    private String storeImageFromDataUrl(String dataUrl) {
+        byte[] bytes = decodeDataUrl(dataUrl);
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        try {
+            return fileService.uploadBytes(
+                    bytes, "channel-" + System.currentTimeMillis() + ".png", "image/png");
+        } catch (Exception e) {
+            log.warn("Failed to upload channel image from data URL: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static byte[] decodeDataUrl(String dataUrl) {
+        if (dataUrl == null || dataUrl.isBlank()) {
+            return null;
+        }
+        String base64 = dataUrl.trim();
+        int comma = base64.indexOf(',');
+        if (comma >= 0) {
+            base64 = base64.substring(comma + 1);
+        }
+        try {
+            return Base64.getDecoder().decode(base64);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private String displayName(User user) {

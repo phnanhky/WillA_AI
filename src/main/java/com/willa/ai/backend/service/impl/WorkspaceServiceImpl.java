@@ -242,6 +242,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             if (workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, invitee.getId()).isPresent()) {
                 throw new RuntimeException("Người dùng đã là thành viên của workspace");
             }
+            // Luôn gửi email mời — không add thẳng vào workspace dù email đã có tài khoản.
         }
 
         var pendingOpt = workspaceInviteRepository.findByWorkspaceIdAndEmailAndStatus(
@@ -261,7 +262,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                         role.name());
                 return InviteMemberResultResponse.builder()
                         .resultType("INVITE_SENT")
-                        .message("Đã gửi lại lời mời qua email.")
+                        .message("Đã gửi lại lời mời qua email tới " + inviteEmail + ".")
                         .invite(mapToInviteResponse(existing))
                         .build();
             }
@@ -288,7 +289,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
         return InviteMemberResultResponse.builder()
                 .resultType("INVITE_SENT")
-                .message("Đã gửi lời mời qua email.")
+                .message("Đã gửi lời mời qua email tới " + inviteEmail + ".")
                 .invite(mapToInviteResponse(invite))
                 .build();
     }

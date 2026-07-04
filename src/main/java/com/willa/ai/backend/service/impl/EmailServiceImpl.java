@@ -87,7 +87,23 @@ public class EmailServiceImpl implements EmailService {
                 + "<p style='color:#666;font-size:13px;'>Hoặc copy link: " + inviteLink + "</p>"
                 + "<p style='color:#999;font-size:12px;'>Link hết hạn sau 7 ngày.</p>"
                 + "</div></body></html>";
-        sendHtmlEmail(to, subject, htmlContent);
+        sendHtmlEmailOrThrow(to, subject, htmlContent);
+    }
+
+    private void sendHtmlEmailOrThrow(String to, String subject, String htmlContent) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom("noreply@willa.ai");
+            helper.setTo(to);
+            helper.setSubject(subject);
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+            log.info("HTML email sent to: {}", to);
+        } catch (MessagingException e) {
+            log.error("Error sending HTML email to {}: {}", to, e.getMessage(), e);
+            throw new RuntimeException("Không gửi được email tới " + to, e);
+        }
     }
 
     private static String escapeHtml(String raw) {

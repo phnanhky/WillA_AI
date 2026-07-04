@@ -68,7 +68,8 @@ public class WorkspaceChannelSchemaMigration {
                     UPDATE channel_messages SET message_kind = 'USER' WHERE message_kind IS NULL
                     """).executeUpdate();
         }
-        addColumnIfMissing("channel_messages", "image_url", "VARCHAR(1024)");
+        addColumnIfMissing("channel_messages", "image_url", "TEXT");
+        upgradeColumnToText("channel_messages", "image_url");
         addColumnIfMissing("channel_messages", "tool_result_json", "TEXT");
         try {
             entityManager.createNativeQuery("""
@@ -105,6 +106,20 @@ public class WorkspaceChannelSchemaMigration {
                     "ALTER TABLE " + table + " ADD COLUMN " + column + " " + sqlType
             ).executeUpdate();
             log.info("Added column {}.{}", table, column);
+        }
+    }
+
+    private void upgradeColumnToText(String table, String column) {
+        if (!columnExists(table, column)) {
+            return;
+        }
+        try {
+            entityManager.createNativeQuery(
+                    "ALTER TABLE " + table + " ALTER COLUMN " + column + " TYPE TEXT"
+            ).executeUpdate();
+            log.info("Upgraded {}.{} to TEXT", table, column);
+        } catch (Exception e) {
+            log.debug("{}.{} already TEXT: {}", table, column, e.getMessage());
         }
     }
 

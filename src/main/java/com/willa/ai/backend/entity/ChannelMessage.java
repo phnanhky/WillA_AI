@@ -36,7 +36,7 @@ public class ChannelMessage {
     @Builder.Default
     private ChannelMessageKind messageKind = ChannelMessageKind.USER;
 
-    @Column(name = "image_url", length = 1024)
+    @Column(name = "image_url", columnDefinition = "TEXT")
     private String imageUrl;
 
     @Column(name = "tool_result_json", columnDefinition = "TEXT")
