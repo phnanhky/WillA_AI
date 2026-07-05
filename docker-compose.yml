@@ -76,7 +76,7 @@ services:
   # Python AI Server (Qwen)
   ai-server:
     build:
-      context: ../qwenv3x2
+      context: ../qwenv3vagenAI-main
       dockerfile: Dockerfile
     container_name: willa-ai-server
     env_file:

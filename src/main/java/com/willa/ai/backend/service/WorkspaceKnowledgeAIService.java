@@ -100,8 +100,20 @@ public class WorkspaceKnowledgeAIService {
         // 2. Query DB
         List<Task> tasks = queryHandlerService.getWorkspaceTasks(workspaceId);
 
-        // 3. Build Context
-        String context = contextBuilderService.buildContext(tasks);
+        // 3. Build Context locally for Knowledge AI
+        StringBuilder contextBuilder = new StringBuilder();
+        contextBuilder.append("Dưới đây là thông tin về các task trong workspace:\n");
+        for (Task task : tasks) {
+            String assignees = task.getAssignees() != null && !task.getAssignees().isEmpty()
+                    ? task.getAssignees().stream().map(com.willa.ai.backend.entity.User::getFullName).collect(java.util.stream.Collectors.joining(", "))
+                    : "Chưa có người phụ trách";
+            String statusStr = (task.getCompleted() != null && task.getCompleted()) || "DONE".equalsIgnoreCase(String.valueOf(task.getStatus()))
+                    ? "DONE (Đã hoàn thành)"
+                    : String.valueOf(task.getStatus());
+            contextBuilder.append(String.format("- Task '%s': Trạng thái %s, Hạn chót %s, Người phụ trách: %s\n", 
+                task.getTitle(), statusStr, task.getDueDate(), assignees));
+        }
+        String context = contextBuilder.toString();
 
         // 4. Model Routing (Tạm dùng grok-build-0.1 qua Python AI Server)
         String systemPrompt = "You are Workspace Knowledge AI. The current date is " + currentDate + ". Use the provided context to answer user questions accurately. IMPORTANT: You are a READ-ONLY assistant. You CANNOT update or delete tasks. If the user asks you to modify a task, you MUST explicitly decline and state that you can only read information. CRITICAL: When users ask about tasks for a specific person, you MUST strictly match their exact name as requested. Do NOT assume that abbreviated names or similar names (e.g., 'Vuong NM' vs 'Ngo Minh Vuong') are the same person unless explicitly told so. Only return tasks that exactly match the requested person's name. Context: \n" + context;
