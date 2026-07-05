@@ -20,9 +20,9 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: ${SPRING_JPA_SHOW_SQL}
-        show_sql: ${SPRING_JPA_SHOW_SQL}
-    show-sql: ${SPRING_JPA_SHOW_SQL}
+        format_sql: ${SPRING_JPA_SHOW_SQL:false}
+        show_sql: ${SPRING_JPA_SHOW_SQL:false}
+    show-sql: ${SPRING_JPA_SHOW_SQL:false}
   mail:
     host: smtp.gmail.com
     port: 587
@@ -65,6 +65,12 @@ app:
     from: ${MAIL_FROM}
   baseUrl: ${APP_BASE_URL}
   frontendUrl: ${APP_FRONTEND_URL:${APP_BASE_URL}}
+  cors:
+    allowed-origin-patterns:
+      - http://localhost:*
+      - http://127.0.0.1:*
+      - https://willaai.tech
+      - https://www.willaai.tech
   upload:
     # Mỗi ảnh tối đa 20MB (gửi AI giữ nguyên chất lượng trong giới hạn này)
     max-image-bytes: ${UPLOAD_MAX_IMAGE_BYTES:20971520}

@@ -43,7 +43,7 @@ public class ExpertBooking {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     @Builder.Default
-    private ExpertBookingStatus status = ExpertBookingStatus.PENDING_EXPERT;
+    private ExpertBookingStatus status = ExpertBookingStatus.PENDING_PAYMENT;
 
     /** Mô tả yêu cầu / câu hỏi của người dùng. */
     @Column(columnDefinition = "TEXT")

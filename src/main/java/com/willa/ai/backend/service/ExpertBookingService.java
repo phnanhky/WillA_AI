@@ -16,10 +16,6 @@ public interface ExpertBookingService {
 
     ExpertBookingCheckoutResponse getCheckoutForClient(String clientEmail, Long bookingId);
 
-    ExpertBookingResponse acceptByExpert(String expertUserEmail, Long bookingId);
-
-    ExpertBookingResponse rejectByExpert(String expertUserEmail, Long bookingId, String reason);
-
     List<ExpertBookingResponse> listMyBookings(String clientEmail);
 
     List<ExpertBookingResponse> listAssignedBookings(String expertUserEmail);

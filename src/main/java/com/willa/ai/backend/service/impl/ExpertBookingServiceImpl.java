@@ -26,6 +26,7 @@ import com.willa.ai.backend.repository.ExpertBookingRepository;
 import com.willa.ai.backend.repository.PaymentRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WorkspaceExpertRepository;
+import com.willa.ai.backend.service.ExpertBookingRealtimeService;
 import com.willa.ai.backend.service.ExpertBookingService;
 import com.willa.ai.backend.service.PaymentService;
 import lombok.RequiredArgsConstructor;
@@ -56,6 +57,7 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
     private final PaymentService paymentService;
+    private final ExpertBookingRealtimeService expertBookingRealtimeService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -68,7 +70,7 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
                 .client(client)
                 .expert(expert)
                 .bookingType(amount.type())
-                .status(ExpertBookingStatus.PENDING_EXPERT)
+                .status(ExpertBookingStatus.PENDING_PAYMENT)
                 .brief(amount.brief())
                 .publications(amount.publications())
                 .driveLinks(serializeDriveLinks(amount.driveLinks()))
@@ -79,9 +81,16 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
         booking = bookingRepository.save(booking);
         saveAttachments(booking, request.getAttachments());
 
+        Payment payment = createPaymentForBooking(booking);
+        booking.setPayment(payment);
+        booking = bookingRepository.save(booking);
+
+        CheckoutResponseData checkout = paymentService.createCheckoutForPayment(payment);
+        ExpertBookingResponse response = mapToResponse(booking);
+        expertBookingRealtimeService.publishBookingUpdated(booking, response);
         return ExpertBookingCheckoutResponse.builder()
-                .booking(mapToResponse(booking))
-                .checkout(null)
+                .booking(response)
+                .checkout(checkout)
                 .build();
     }
 
@@ -112,34 +121,6 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
     }
 
     @Override
-    public ExpertBookingResponse acceptByExpert(String expertUserEmail, Long bookingId) {
-        ExpertBooking booking = loadBookingForExpert(expertUserEmail, bookingId);
-        if (booking.getStatus() != ExpertBookingStatus.PENDING_EXPERT) {
-            throw new IllegalArgumentException("Booking không chờ xác nhận");
-        }
-
-        Payment payment = createPaymentForBooking(booking);
-        booking.setPayment(payment);
-        booking.setStatus(ExpertBookingStatus.PENDING_PAYMENT);
-        booking.setRejectReason(null);
-
-        return mapToResponse(bookingRepository.save(booking));
-    }
-
-    @Override
-    public ExpertBookingResponse rejectByExpert(String expertUserEmail, Long bookingId, String reason) {
-        ExpertBooking booking = loadBookingForExpert(expertUserEmail, bookingId);
-        if (booking.getStatus() != ExpertBookingStatus.PENDING_EXPERT) {
-            throw new IllegalArgumentException("Booking không chờ xác nhận");
-        }
-
-        booking.setStatus(ExpertBookingStatus.REJECTED);
-        booking.setRejectReason(trimOrNull(reason));
-
-        return mapToResponse(bookingRepository.save(booking));
-    }
-
-    @Override
     public ExpertBookingResponse addMaterials(
             String clientEmail, Long bookingId, AddExpertBookingMaterialsRequest request) {
         User client = userRepository.findByEmail(clientEmail)
@@ -163,7 +144,9 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
         }
         saveAttachments(booking, request.getAttachments());
 
-        return mapToResponse(bookingRepository.save(booking));
+        ExpertBooking saved = bookingRepository.save(booking);
+        expertBookingRealtimeService.publishBookingUpdated(saved, mapToResponse(saved));
+        return mapToResponse(saved);
     }
 
     @Override
@@ -192,8 +175,7 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
     public ExpertBookingResponse updateByExpert(
             String expertUserEmail, Long bookingId, ExpertBookingFeedbackRequest request) {
         ExpertBooking booking = loadBookingForExpert(expertUserEmail, bookingId);
-        if (booking.getStatus() == ExpertBookingStatus.PENDING_EXPERT
-                || booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT
+        if (booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT
                 || booking.getStatus() == ExpertBookingStatus.CANCELLED
                 || booking.getStatus() == ExpertBookingStatus.REJECTED) {
             throw new IllegalArgumentException("Booking chưa sẵn sàng để cập nhật");
@@ -219,7 +201,11 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
             booking.setStatus(ExpertBookingStatus.IN_PROGRESS);
         }
 
-        return mapToResponse(bookingRepository.save(booking));
+        ensureMeetingRoomUrlPersisted(booking);
+        ExpertBooking saved = bookingRepository.save(booking);
+        ExpertBookingResponse response = mapToResponse(saved);
+        expertBookingRealtimeService.publishBookingUpdated(saved, response);
+        return response;
     }
 
     @Override
@@ -252,7 +238,9 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
                 .content(content)
                 .build();
         message = messageRepository.save(message);
-        return mapMessage(message);
+        ExpertBookingMessageResponse response = mapMessage(message);
+        expertBookingRealtimeService.publishMessageCreated(booking.getId(), response);
+        return response;
     }
 
     private ExpertBooking loadBookingForExpert(String expertUserEmail, Long bookingId) {
@@ -281,8 +269,7 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
 
     private void assertChatReadable(ExpertBooking booking) {
         ExpertBookingStatus status = booking.getStatus();
-        if (status == ExpertBookingStatus.PENDING_EXPERT
-                || status == ExpertBookingStatus.CANCELLED
+        if (status == ExpertBookingStatus.CANCELLED
                 || status == ExpertBookingStatus.REJECTED) {
             throw new IllegalArgumentException("Chat chưa khả dụng cho booking này");
         }
@@ -504,11 +491,38 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
                 .clientName(client.getFullName())
                 .clientEmail(client.getEmail())
                 .orderCode(payment != null ? payment.getOrderCode() : null)
-                .meetingRoomUrl(booking.getMeetingRoomUrl())
+                .meetingRoomUrl(resolveMeetingRoomUrl(booking))
                 .rejectReason(booking.getRejectReason())
                 .createdAt(booking.getCreatedAt())
                 .completedAt(booking.getCompletedAt())
                 .build();
+    }
+
+    /** Trả link Jitsi cho booking đã thanh toán — backfill nếu webhook chưa ghi DB. */
+    private String resolveMeetingRoomUrl(ExpertBooking booking) {
+        String url = trimOrNull(booking.getMeetingRoomUrl());
+        if (url != null) {
+            return url;
+        }
+        ExpertBookingStatus status = booking.getStatus();
+        if (status == ExpertBookingStatus.AWAITING_EXPERT
+                || status == ExpertBookingStatus.IN_PROGRESS
+                || status == ExpertBookingStatus.COMPLETED) {
+            return buildMeetingRoomUrl(booking.getId());
+        }
+        return null;
+    }
+
+    private void ensureMeetingRoomUrlPersisted(ExpertBooking booking) {
+        if (trimOrNull(booking.getMeetingRoomUrl()) != null) {
+            return;
+        }
+        ExpertBookingStatus status = booking.getStatus();
+        if (status == ExpertBookingStatus.AWAITING_EXPERT
+                || status == ExpertBookingStatus.IN_PROGRESS
+                || status == ExpertBookingStatus.COMPLETED) {
+            booking.setMeetingRoomUrl(buildMeetingRoomUrl(booking.getId()));
+        }
     }
 
     private ExpertBookingAttachmentResponse mapAttachment(ExpertBookingAttachment att) {

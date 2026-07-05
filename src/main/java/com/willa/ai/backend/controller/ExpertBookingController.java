@@ -4,7 +4,6 @@ import com.willa.ai.backend.dto.request.AddExpertBookingMaterialsRequest;
 import com.willa.ai.backend.dto.request.CreateExpertBookingRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingFeedbackRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingMessageRequest;
-import com.willa.ai.backend.dto.request.ExpertBookingRejectRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.service.ExpertBookingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,7 +24,7 @@ public class ExpertBookingController {
     private final ExpertBookingService expertBookingService;
 
     @PostMapping
-    @Operation(summary = "Tạo yêu cầu booking — expert xem xét trước khi thanh toán")
+    @Operation(summary = "Tạo booking và lấy link thanh toán PayOS")
     public ResponseEntity<ApiResponse> createBooking(
             @RequestBody CreateExpertBookingRequest request,
             Authentication authentication) {
@@ -41,7 +40,7 @@ public class ExpertBookingController {
     }
 
     @PostMapping("/{bookingId}/checkout")
-    @Operation(summary = "Lấy link thanh toán PayOS (sau khi expert chấp nhận)")
+    @Operation(summary = "Lấy lại link thanh toán PayOS")
     public ResponseEntity<ApiResponse> getCheckout(
             @PathVariable Long bookingId,
             Authentication authentication) {
@@ -50,40 +49,6 @@ public class ExpertBookingController {
                     .status(true)
                     .message("Checkout retrieved")
                     .data(expertBookingService.getCheckoutForClient(authentication.getName(), bookingId))
-                    .build());
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
-        }
-    }
-
-    @PostMapping("/{bookingId}/accept")
-    @Operation(summary = "Expert chấp nhận yêu cầu booking")
-    public ResponseEntity<ApiResponse> acceptByExpert(
-            @PathVariable Long bookingId,
-            Authentication authentication) {
-        try {
-            return ResponseEntity.ok(ApiResponse.builder()
-                    .status(true)
-                    .message("Booking accepted")
-                    .data(expertBookingService.acceptByExpert(authentication.getName(), bookingId))
-                    .build());
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
-        }
-    }
-
-    @PostMapping("/{bookingId}/reject")
-    @Operation(summary = "Expert từ chối yêu cầu booking")
-    public ResponseEntity<ApiResponse> rejectByExpert(
-            @PathVariable Long bookingId,
-            @RequestBody(required = false) ExpertBookingRejectRequest request,
-            Authentication authentication) {
-        try {
-            String reason = request != null ? request.getReason() : null;
-            return ResponseEntity.ok(ApiResponse.builder()
-                    .status(true)
-                    .message("Booking rejected")
-                    .data(expertBookingService.rejectByExpert(authentication.getName(), bookingId, reason))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

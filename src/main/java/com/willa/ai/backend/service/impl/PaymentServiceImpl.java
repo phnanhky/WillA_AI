@@ -14,6 +14,7 @@ import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WorkspacePlanRepository;
 import com.willa.ai.backend.service.CouponService;
+import com.willa.ai.backend.service.ExpertBookingRealtimeService;
 import com.willa.ai.backend.service.PaymentService;
 import com.willa.ai.backend.service.SubscriptionService;
 import com.willa.ai.backend.service.WorkspaceSubscriptionService;
@@ -69,6 +70,9 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Autowired
     private ExpertBookingRepository expertBookingRepository;
+
+    @Autowired
+    private ExpertBookingRealtimeService expertBookingRealtimeService;
 
     @Autowired
     private CouponService couponService;
@@ -332,6 +336,7 @@ public class PaymentServiceImpl implements PaymentService {
                         booking.setStatus(ExpertBookingStatus.AWAITING_EXPERT);
                     }
                     expertBookingRepository.save(booking);
+                    expertBookingRealtimeService.notifyBookingsChanged(booking);
                     System.out.println("Thanh toán thành công expert booking: " + booking.getId());
                 }
             });
@@ -380,6 +385,7 @@ public class PaymentServiceImpl implements PaymentService {
                             if (booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT) {
                                 booking.setStatus(ExpertBookingStatus.CANCELLED);
                                 expertBookingRepository.save(booking);
+                                expertBookingRealtimeService.notifyBookingsChanged(booking);
                             }
                         });
                         System.out.println("Thanh toán bị HỦY đơn hàng: " + orderCode);
