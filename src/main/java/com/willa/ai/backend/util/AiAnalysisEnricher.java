@@ -166,6 +166,12 @@ public final class AiAnalysisEnricher {
             }
             item.put("s", severity);
             item.put("g", category);
+            
+            JsonNode reference = err.get("reference");
+            if (reference != null) {
+                item.set("reference", reference);
+            }
+            
             items.add(item);
         }
 
