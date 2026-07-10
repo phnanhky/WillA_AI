@@ -29,6 +29,7 @@ public class AiServerProperties {
     private String suggestStyle = "/api/suggest-style";
     private String extractLayers = "/extract-layers";
     private String chatGenerate = "/chat-generate";
+    private String brandCheck = "/brand-check";
     private String health = "/health";
 
     private String baseUrl;
@@ -83,6 +84,10 @@ public class AiServerProperties {
 
     public String chatGenerateUrl() {
         return endpoint(chatGenerate);
+    }
+
+    public String brandCheckUrl() {
+        return endpoint(brandCheck);
     }
 
     public String healthUrl() {

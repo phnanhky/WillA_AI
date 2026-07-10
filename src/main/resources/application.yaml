@@ -109,6 +109,7 @@ ai:
     suggest-style: /api/suggest-style
     extract-layers: /extract-layers
     chat-generate: /chat-generate
+    brand-check: /brand-check
     health: /health
   dashscope:
     api-key: ${DASHSCOPE_API_KEY:}

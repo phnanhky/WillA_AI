@@ -60,6 +60,10 @@ public class AiServerClient {
         return postMultipart(aiServer.suggestStyleUrl(), form);
     }
 
+    public JsonNode brandCheck(MultiValueMap<String, Object> form) {
+        return postMultipart(aiServer.brandCheckUrl(), form);
+    }
+
     public JsonNode extractLayers(Map<String, Object> body) {
         return postJson(aiServer.extractLayersUrl(), body);
     }

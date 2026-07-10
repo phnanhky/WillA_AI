@@ -18,5 +18,7 @@ public enum WorkflowType {
     PREPARE_REGEN,
     SUGGEST_STYLE,
     EXTRACT_LAYERS,
-    WORKSPACE
+    WORKSPACE,
+    /** Mini Brand Kit consistency check */
+    BRAND_CHECK
 }
