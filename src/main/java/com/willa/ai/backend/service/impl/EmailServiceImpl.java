@@ -1,5 +1,6 @@
 package com.willa.ai.backend.service.impl;
 
+import com.willa.ai.backend.entity.enums.TaskDeadlineNotificationType;
 import com.willa.ai.backend.service.EmailService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,6 +68,37 @@ public class EmailServiceImpl implements EmailService {
     public void sendWelcomeEmail(String to, String fullName) {
         String subject = "Welcome to WillaAI";
         String htmlContent = buildWelcomeEmailTemplate(fullName);
+        sendHtmlEmail(to, subject, htmlContent);
+    }
+
+    @Override
+    public void sendTaskDeadlineEmail(
+            String to,
+            String subjectVi,
+            String subjectEn,
+            String assigneeName,
+            String taskTitle,
+            String workspaceTitle,
+            String dueLabel,
+            TaskDeadlineNotificationType type,
+            String taskUrl) {
+        String greeting = assigneeName != null && !assigneeName.isBlank() ? escapeHtml(assigneeName) : "bạn";
+        String lead = type == TaskDeadlineNotificationType.ONE_DAY_BEFORE
+                ? "Task của bạn sẽ đến hạn sau <strong>1 ngày</strong>."
+                : "Task của bạn <strong>đã đến hạn</strong> ngay bây giờ.";
+        String subject = "WillaAI - " + subjectVi;
+        String htmlContent = "<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;color:#333;'>"
+                + "<div style='max-width:560px;margin:0 auto;padding:24px;'>"
+                + "<h2>" + escapeHtml(subjectVi) + "</h2>"
+                + "<p>Xin chào " + greeting + ",</p>"
+                + "<p>" + lead + "</p>"
+                + "<p><strong>Task:</strong> " + escapeHtml(taskTitle) + "<br/>"
+                + "<strong>Workspace:</strong> " + escapeHtml(workspaceTitle) + "<br/>"
+                + "<strong>Deadline:</strong> " + escapeHtml(dueLabel) + "</p>"
+                + "<p><a href='" + taskUrl + "' style='display:inline-block;background:#8b3dff;color:#fff;"
+                + "padding:12px 20px;text-decoration:none;border-radius:6px;font-weight:600;'>Mở task</a></p>"
+                + "<p style='color:#666;font-size:13px;'>Hoặc copy link: " + taskUrl + "</p>"
+                + "</div></body></html>";
         sendHtmlEmail(to, subject, htmlContent);
     }
 

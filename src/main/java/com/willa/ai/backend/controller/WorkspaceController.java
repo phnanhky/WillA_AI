@@ -9,6 +9,7 @@ import com.willa.ai.backend.dto.request.WorkspaceRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.service.WorkspaceService;
 import com.willa.ai.backend.service.WorkspaceMemberStatsService;
+import com.willa.ai.backend.service.WorkspaceChannelService;
 import com.willa.ai.backend.service.TaskService;
 import com.willa.ai.backend.service.ExpertService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.*;
 public class WorkspaceController {
     private final WorkspaceService workspaceService;
     private final WorkspaceMemberStatsService workspaceMemberStatsService;
+    private final WorkspaceChannelService workspaceChannelService;
     private final TaskService taskService;
     private final ExpertService expertService;
 
@@ -231,6 +233,20 @@ public class WorkspaceController {
         }
     }
 
+    @GetMapping("/{workspaceId}/hub/channel-messages")
+    @Operation(summary = "Tin nhắn kênh gần đây (cho @mention inbox)")
+    public ResponseEntity<ApiResponse> listHubChannelMessages(Authentication auth, @PathVariable Long workspaceId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Hub channel messages retrieved")
+                    .data(workspaceChannelService.listHubChannelMessages(auth.getName(), workspaceId))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
     @GetMapping("/{workspaceId}/members")
     @Operation(summary = "Danh sách thành viên")
     public ResponseEntity<ApiResponse> getMembers(Authentication auth, @PathVariable Long workspaceId) {
@@ -261,6 +277,20 @@ public class WorkspaceController {
         try {
             workspaceService.removeMember(auth.getName(), workspaceId, memberId);
             return ResponseEntity.ok(ApiResponse.builder().status(true).message("Member removed").build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/{workspaceId}/leave")
+    @Operation(summary = "Rời workspace (thành viên)")
+    public ResponseEntity<ApiResponse> leaveWorkspace(Authentication auth, @PathVariable Long workspaceId) {
+        try {
+            workspaceService.leaveWorkspace(auth.getName(), workspaceId);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Left workspace successfully")
+                    .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
         }

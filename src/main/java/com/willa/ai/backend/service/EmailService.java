@@ -13,4 +13,15 @@ public interface EmailService {
     void sendWelcomeEmail(String to, String fullName);
 
     void sendWorkspaceInviteEmail(String to, String workspaceName, String inviterName, String inviteLink, String role);
+
+    void sendTaskDeadlineEmail(
+            String to,
+            String subjectVi,
+            String subjectEn,
+            String assigneeName,
+            String taskTitle,
+            String workspaceTitle,
+            String dueLabel,
+            com.willa.ai.backend.entity.enums.TaskDeadlineNotificationType type,
+            String taskUrl);
 }

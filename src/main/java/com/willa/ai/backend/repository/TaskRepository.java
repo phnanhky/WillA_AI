@@ -46,4 +46,18 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     List<Task> findUpcomingDueTasks(
             @Param("from") java.time.LocalDateTime from,
             @Param("to") java.time.LocalDateTime to);
+
+    @Query("""
+            SELECT DISTINCT t FROM Task t
+            LEFT JOIN FETCH t.assignees
+            LEFT JOIN FETCH t.workspace
+            LEFT JOIN FETCH t.project
+            WHERE t.status <> com.willa.ai.backend.entity.enums.TaskStatus.DONE
+              AND t.dueDate IS NOT NULL
+              AND t.dueDate >= :from
+              AND t.dueDate < :to
+            """)
+    List<Task> findDueTasksInWindow(
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to);
 }

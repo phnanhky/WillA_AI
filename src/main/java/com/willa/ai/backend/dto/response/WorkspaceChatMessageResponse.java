@@ -20,5 +20,6 @@ public class WorkspaceChatMessageResponse {
     private String content;
     private String imageUrl;
     private String toolResultJson;
+    private String channelName;
     private LocalDateTime createdAt;
 }

@@ -26,4 +26,14 @@ public interface ChannelMessageRepository extends JpaRepository<ChannelMessage, 
     List<ChannelMessage> findThreadRepliesByChannelId(@Param("channelId") Long channelId);
 
     long countByChannelId(Long channelId);
+
+    @Query("""
+            SELECT DISTINCT m FROM ChannelMessage m
+            JOIN FETCH m.channel c
+            LEFT JOIN FETCH m.user u
+            WHERE c.workspace.id = :workspaceId
+              AND m.messageKind = com.willa.ai.backend.entity.enums.ChannelMessageKind.USER
+            ORDER BY m.createdAt DESC
+            """)
+    List<ChannelMessage> findHubActivity(@Param("workspaceId") Long workspaceId);
 }

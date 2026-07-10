@@ -221,7 +221,11 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         Workspace workspace = getWorkspaceOrThrow(workspaceId);
         assertCanManageWorkspace(currentUser, workspace);
 
-        String inviteEmail = request.getEmail().trim().toLowerCase();
+        String rawEmail = request.getEmail();
+        if (rawEmail == null || rawEmail.isBlank()) {
+            throw new RuntimeException("Vui lòng nhập email để gửi lời mời");
+        }
+        String inviteEmail = rawEmail.trim().toLowerCase();
         if (inviteEmail.equals(currentUser.getEmail().toLowerCase())) {
             throw new RuntimeException("Bạn không thể mời chính mình");
         }
@@ -242,8 +246,8 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             if (workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, invitee.getId()).isPresent()) {
                 throw new RuntimeException("Người dùng đã là thành viên của workspace");
             }
-            // Luôn gửi email mời — không add thẳng vào workspace dù email đã có tài khoản.
         }
+        // Luôn gửi email mời — kể cả email chưa có tài khoản trong hệ thống.
 
         var pendingOpt = workspaceInviteRepository.findByWorkspaceIdAndEmailAndStatus(
                 workspaceId, inviteEmail, InviteStatus.PENDING);
@@ -262,7 +266,8 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                         role.name());
                 return InviteMemberResultResponse.builder()
                         .resultType("INVITE_SENT")
-                        .message("Đã gửi lại lời mời qua email tới " + inviteEmail + ".")
+                        .message("Đã gửi lại email mời tới " + inviteEmail
+                                + " — người nhận có thể tạo tài khoản mới qua link nếu chưa có.")
                         .invite(mapToInviteResponse(existing))
                         .build();
             }
@@ -289,7 +294,8 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
         return InviteMemberResultResponse.builder()
                 .resultType("INVITE_SENT")
-                .message("Đã gửi lời mời qua email tới " + inviteEmail + ".")
+                .message("Đã gửi email mời tới " + inviteEmail
+                        + " — người nhận có thể tạo tài khoản mới qua link nếu chưa có.")
                 .invite(mapToInviteResponse(invite))
                 .build();
     }
@@ -408,6 +414,20 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         if (member.getUser().getId().equals(workspace.getOwner().getId())) {
             throw new RuntimeException("Không thể xóa chủ sở hữu");
         }
+        workspaceMemberRepository.delete(member);
+        workspaceRealtimeService.publishWorkspaceChanged(workspaceId);
+    }
+
+    @Override
+    @Transactional
+    public void leaveWorkspace(String email, Long workspaceId) {
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
+        Workspace workspace = getWorkspaceOrThrow(workspaceId);
+        if (workspace.getOwner().getId().equals(user.getId())) {
+            throw new RuntimeException("Chủ sở hữu không thể rời workspace. Hãy xóa workspace hoặc chuyển quyền.");
+        }
+        WorkspaceMember member = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, user.getId())
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của workspace này"));
         workspaceMemberRepository.delete(member);
         workspaceRealtimeService.publishWorkspaceChanged(workspaceId);
     }

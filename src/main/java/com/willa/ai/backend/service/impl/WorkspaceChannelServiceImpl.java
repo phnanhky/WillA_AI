@@ -175,6 +175,17 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<WorkspaceChatMessageResponse> listHubChannelMessages(String email, Long workspaceId) {
+        User user = requireUser(email);
+        assertIsMember(user, workspaceId);
+        return channelMessageRepository.findHubActivity(workspaceId).stream()
+                .limit(200)
+                .map(this::mapHubChannelMessage)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<WorkspaceChatMessageResponse> listChannelThreadReplies(String email, Long workspaceId, Long channelId) {
         User user = requireUser(email);
         assertIsMember(user, workspaceId);
@@ -372,6 +383,12 @@ public class WorkspaceChannelServiceImpl implements WorkspaceChannelService {
                 .toolResultJson(message.getToolResultJson())
                 .createdAt(message.getCreatedAt())
                 .build();
+    }
+
+    private WorkspaceChatMessageResponse mapHubChannelMessage(ChannelMessage message) {
+        WorkspaceChatMessageResponse response = mapChannelMessage(message);
+        response.setChannelName(message.getChannel().getName());
+        return response;
     }
 
     private WorkspaceChatMessageResponse mapDmMessage(WorkspaceDmMessage message) {

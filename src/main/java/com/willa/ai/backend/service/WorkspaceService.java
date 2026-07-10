@@ -42,6 +42,8 @@ public interface WorkspaceService {
 
     void removeMember(String email, Long workspaceId, Long memberId);
 
+    void leaveWorkspace(String email, Long workspaceId);
+
     WorkspaceMemberResponse updateMemberRole(String email, Long workspaceId, Long memberId, UpdateMemberRoleRequest request);
 
     List<WorkspaceMemberResponse> getWorkspaceMembers(String email, Long workspaceId);
