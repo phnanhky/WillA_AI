@@ -62,6 +62,18 @@ public class AnalyticsResponse {
         private Long durationMsToday;
         private Long durationMsThisWeek;
         private Long durationMsThisMonth;
+        /**
+         * Trung bình số ngày DISTINCT có dùng AI trong kỳ (trên các user AI của kỳ).
+         */
+        private Double avgActiveDaysInPeriod;
+        /**
+         * Trung bình số ngày không dùng AI kể từ lần cuối → hôm nay.
+         */
+        private Double avgDaysInactiveUntilNow;
+        /**
+         * Trung bình số ngày DISTINCT đã dùng trong kỳ, chỉ trên user đã ngừng (inactive ≥ 1 ngày).
+         */
+        private Double avgDaysUsedBeforeInactive;
         /** workflow name → stats */
         private Map<String, WorkflowTypeStats> byWorkflow;
         /** ngày → runs + duration */
@@ -124,6 +136,10 @@ public class AnalyticsResponse {
         private Long totalDurationMs;
         /** Tổng token AI trong kỳ. */
         private Long aiTokensUsed;
+        /** Số ngày DISTINCT có dùng AI trong kỳ. */
+        private Long activeDaysInPeriod;
+        /** Số ngày không dùng AI từ lần cuối → hôm nay. */
+        private Long daysInactiveUntilNow;
     }
     
     @Data

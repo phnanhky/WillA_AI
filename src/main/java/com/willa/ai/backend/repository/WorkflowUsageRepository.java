@@ -216,4 +216,40 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
     Long countFailedInRangeAll(
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to);
+
+    /**
+     * Engagement theo user đã dùng AI trong kỳ:
+     * [0] user_id
+     * [1] số ngày DISTINCT có dùng AI trong kỳ
+     * [2] first DATE dùng AI trong kỳ
+     * [3] last DATE dùng AI trong kỳ
+     * [4] last DATE dùng AI toàn thời gian
+     * [5] số ngày không dùng từ last → hôm nay (0 nếu còn dùng hôm nay)
+     */
+    @Query(value = """
+            SELECT period.user_id,
+                   period.active_days,
+                   period.first_day,
+                   period.last_day,
+                   ever.last_ever,
+                   GREATEST(0, (CURRENT_DATE - ever.last_ever)) AS days_inactive
+            FROM (
+                SELECT w.user_id,
+                       COUNT(DISTINCT DATE(w.started_at)) AS active_days,
+                       MIN(DATE(w.started_at)) AS first_day,
+                       MAX(DATE(w.started_at)) AS last_day
+                FROM workflow_usages w
+                WHERE w.started_at >= :from
+                  AND w.started_at <= :to
+                GROUP BY w.user_id
+            ) period
+            JOIN (
+                SELECT w.user_id, MAX(DATE(w.started_at)) AS last_ever
+                FROM workflow_usages w
+                GROUP BY w.user_id
+            ) ever ON ever.user_id = period.user_id
+            """, nativeQuery = true)
+    List<Object[]> userAiEngagementInRange(
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
 }

@@ -165,11 +165,38 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         Map<Long, String> highestPlanByUser = getHighestFeedbackPlanMap(startDt, endDt);
         Map<Long, Long> tokensByUser = getTokensByUserMap(startDt, endDt);
 
+        List<Object[]> engagementRows = workflowUsageRepository.userAiEngagementInRange(startDt, endDt);
+        Map<Long, long[]> engagementByUser = new HashMap<>();
+        double sumActiveDays = 0;
+        double sumInactiveDays = 0;
+        double sumActiveDaysBeforeInactive = 0;
+        long inactiveUserCount = 0;
+        for (Object[] row : engagementRows) {
+            Long userId = asLong(row[0]);
+            long activeDays = asLong(row[1]);
+            long daysInactive = asLong(row[5]);
+            engagementByUser.put(userId, new long[]{activeDays, daysInactive});
+            sumActiveDays += activeDays;
+            sumInactiveDays += daysInactive;
+            if (daysInactive > 0) {
+                sumActiveDaysBeforeInactive += activeDays;
+                inactiveUserCount++;
+            }
+        }
+        int engagementUserCount = engagementRows.size();
+        Double avgActiveDays = engagementUserCount > 0
+                ? round1(sumActiveDays / engagementUserCount) : 0.0;
+        Double avgInactiveDays = engagementUserCount > 0
+                ? round1(sumInactiveDays / engagementUserCount) : 0.0;
+        Double avgUsedBeforeInactive = inactiveUserCount > 0
+                ? round1(sumActiveDaysBeforeInactive / inactiveUserCount) : 0.0;
+
         List<WorkflowUserActivity> topUsers = workflowUsageRepository
                 .usersByWorkflowTimeInRange(startDt, endDt)
                 .stream()
                 .map(row -> {
                     Long userId = asLong(row[0]);
+                    long[] eng = engagementByUser.getOrDefault(userId, new long[]{0L, 0L});
                     return WorkflowUserActivity.builder()
                             .userId(userId)
                             .email((String) row[1])
@@ -177,6 +204,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                             .runCount(asLong(row[2]))
                             .totalDurationMs(asLong(row[3]))
                             .aiTokensUsed(tokensByUser.getOrDefault(userId, 0L))
+                            .activeDaysInPeriod(eng[0])
+                            .daysInactiveUntilNow(eng[1])
                             .build();
                 })
                 .collect(Collectors.toList());
@@ -205,6 +234,9 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .durationMsToday(today.durationMs())
                 .durationMsThisWeek(week.durationMs())
                 .durationMsThisMonth(month.durationMs())
+                .avgActiveDaysInPeriod(avgActiveDays)
+                .avgDaysInactiveUntilNow(avgInactiveDays)
+                .avgDaysUsedBeforeInactive(avgUsedBeforeInactive)
                 .byWorkflow(byWorkflow)
                 .dailyStats(dailyStats)
                 .topUsersByWorkflowTime(topUsers)
@@ -341,6 +373,10 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             return arr.length > 0 ? asDouble(arr[0]) : 0.0;
         }
         throw new IllegalArgumentException("Cannot convert to double: " + value.getClass().getName());
+    }
+
+    private static double round1(double value) {
+        return Math.round(value * 10.0) / 10.0;
     }
 
     /** Bổ sung regen / tách layer vào map feature cũ (ai_token_usages không có các loại này). */
