@@ -132,8 +132,12 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
             throw new IllegalArgumentException("Booking không thuộc về bạn");
         }
         if (booking.getStatus() == ExpertBookingStatus.CANCELLED
-                || booking.getStatus() == ExpertBookingStatus.REJECTED) {
-            throw new IllegalArgumentException("Booking đã hủy hoặc bị từ chối");
+                || booking.getStatus() == ExpertBookingStatus.REJECTED
+                || booking.getStatus() == ExpertBookingStatus.COMPLETED) {
+            throw new IllegalArgumentException(
+                    booking.getStatus() == ExpertBookingStatus.COMPLETED
+                            ? "Booking đã hoàn tất — không thể thêm tài liệu"
+                            : "Booking đã hủy hoặc bị từ chối");
         }
 
         List<String> newLinks = sanitizeDriveLinks(request.getDriveLinks());
@@ -188,7 +192,14 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
             }
             booking.setStatus(next);
             if (next == ExpertBookingStatus.COMPLETED) {
+                if (trimOrNull(request.getFeedback()) == null
+                        && trimOrNull(booking.getExpertFeedback()) == null) {
+                    throw new IllegalArgumentException(
+                            "Cần nhập phản hồi trước khi hoàn tất hỗ trợ");
+                }
                 booking.setCompletedAt(LocalDateTime.now());
+                // Khóa phòng họp sau khi hoàn tất
+                booking.setMeetingRoomUrl(null);
             }
         }
 
@@ -277,8 +288,8 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
 
     private void assertChatWritable(ExpertBooking booking) {
         ExpertBookingStatus status = booking.getStatus();
-        if (status != ExpertBookingStatus.PENDING_PAYMENT
-                && status != ExpertBookingStatus.AWAITING_EXPERT
+        // Chỉ chat khi đang hỗ trợ — sau COMPLETED khóa gửi tin
+        if (status != ExpertBookingStatus.AWAITING_EXPERT
                 && status != ExpertBookingStatus.IN_PROGRESS) {
             throw new IllegalArgumentException("Không thể gửi tin nhắn ở trạng thái hiện tại");
         }
@@ -498,19 +509,18 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
                 .build();
     }
 
-    /** Trả link Jitsi cho booking đã thanh toán — backfill nếu webhook chưa ghi DB. */
+    /** Link Jitsi chỉ khi đang hỗ trợ — sau COMPLETED không trả room (khóa video). */
     private String resolveMeetingRoomUrl(ExpertBooking booking) {
         String url = trimOrNull(booking.getMeetingRoomUrl());
+        ExpertBookingStatus status = booking.getStatus();
+        if (status != ExpertBookingStatus.AWAITING_EXPERT
+                && status != ExpertBookingStatus.IN_PROGRESS) {
+            return null;
+        }
         if (url != null) {
             return url;
         }
-        ExpertBookingStatus status = booking.getStatus();
-        if (status == ExpertBookingStatus.AWAITING_EXPERT
-                || status == ExpertBookingStatus.IN_PROGRESS
-                || status == ExpertBookingStatus.COMPLETED) {
-            return buildMeetingRoomUrl(booking.getId());
-        }
-        return null;
+        return buildMeetingRoomUrl(booking.getId());
     }
 
     private void ensureMeetingRoomUrlPersisted(ExpertBooking booking) {
@@ -519,8 +529,7 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
         }
         ExpertBookingStatus status = booking.getStatus();
         if (status == ExpertBookingStatus.AWAITING_EXPERT
-                || status == ExpertBookingStatus.IN_PROGRESS
-                || status == ExpertBookingStatus.COMPLETED) {
+                || status == ExpertBookingStatus.IN_PROGRESS) {
             booking.setMeetingRoomUrl(buildMeetingRoomUrl(booking.getId()));
         }
     }
