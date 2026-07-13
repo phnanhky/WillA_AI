@@ -27,7 +27,7 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                                        @Param("endDate") LocalDateTime endDate);
     
     /**
-     * Lấy top active users với số chat
+     * Tất cả user có chat trong kỳ (sắp xếp theo số tin nhắn giảm dần).
      */
     @Query(value = """
         SELECT cs.user_id, u.email, p.name as plan_name, COUNT(cm.id) as chat_count,
@@ -50,11 +50,9 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         GROUP BY cs.user_id, u.email, p.name
         HAVING COUNT(cm.id) > 0
         ORDER BY chat_count DESC
-        LIMIT :limit
         """, nativeQuery = true)
-    List<Object[]> getTopActiveUsers(@Param("startDate") LocalDateTime startDate,
-                                      @Param("endDate") LocalDateTime endDate,
-                                      @Param("limit") int limit);
+    List<Object[]> getActiveUsersInPeriod(@Param("startDate") LocalDateTime startDate,
+                                           @Param("endDate") LocalDateTime endDate);
     
     /**
      * Lấy số users active từ một ngày

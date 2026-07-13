@@ -12,7 +12,6 @@ import com.willa.ai.backend.repository.AnalyticsRepository;
 import com.willa.ai.backend.repository.WorkflowUsageRepository;
 import com.willa.ai.backend.service.AnalyticsService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -81,8 +80,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         // Daily chat counts
         Map<LocalDate, Long> dailyChatCounts = getDailyChatCounts(startDt, endDt);
         
-        // Top active users
-        List<UserActivityDTO> topActiveUsers = getTopActiveUsers(startDt, endDt, 10);
+        // Tất cả user có chat trong kỳ
+        List<UserActivityDTO> topActiveUsers = getActiveUsersInPeriod(startDt, endDt);
         
         // Feature usage
         Map<String, Long> featureUsageByActionType = getFeatureUsage(startDt, endDt);
@@ -157,7 +156,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                         LinkedHashMap::new));
 
         List<WorkflowUserActivity> topUsers = workflowUsageRepository
-                .topUsersByWorkflowTime(startDt, endDt, PageRequest.of(0, 10))
+                .usersByWorkflowTimeInRange(startDt, endDt)
                 .stream()
                 .map(row -> WorkflowUserActivity.builder()
                         .userId(asLong(row[0]))
@@ -364,8 +363,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             ));
     }
     
-    private List<UserActivityDTO> getTopActiveUsers(LocalDateTime startDt, LocalDateTime endDt, int limit) {
-        List<Object[]> results = analyticsRepository.getTopActiveUsers(startDt, endDt, limit);
+    private List<UserActivityDTO> getActiveUsersInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
+        List<Object[]> results = analyticsRepository.getActiveUsersInPeriod(startDt, endDt);
         
         return results.stream()
             .map(row -> UserActivityDTO.builder()

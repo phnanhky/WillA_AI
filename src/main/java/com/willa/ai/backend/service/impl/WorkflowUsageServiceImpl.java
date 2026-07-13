@@ -189,7 +189,7 @@ public class WorkflowUsageServiceImpl implements WorkflowUsageService {
                 .toList();
 
         List<UserWorkflowUsageSummary> byUser = workflowUsageRepository
-                .topUsersByWorkflowTime(from, to, PageRequest.of(0, 50))
+                .usersByWorkflowTimeInRange(from, to)
                 .stream()
                 .map(row -> UserWorkflowUsageSummary.builder()
                         .userId(((Number) row[0]).longValue())

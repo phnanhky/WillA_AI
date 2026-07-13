@@ -135,6 +135,19 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
             @Param("to") LocalDateTime to,
             Pageable pageable);
 
+    /** Tất cả user có gọi AI workflow trong kỳ. */
+    @Query("""
+            SELECT w.user.id, u.email, COUNT(w), COALESCE(SUM(w.durationMs), 0L)
+            FROM WorkflowUsage w
+            JOIN w.user u
+            WHERE w.startedAt >= :from AND w.startedAt <= :to
+            GROUP BY w.user.id, u.email
+            ORDER BY SUM(w.durationMs) DESC
+            """)
+    List<Object[]> usersByWorkflowTimeInRange(
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
+
     @Query("""
             SELECT w.workflow, COUNT(w)
             FROM WorkflowUsage w
