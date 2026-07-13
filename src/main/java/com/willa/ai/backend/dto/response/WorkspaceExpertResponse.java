@@ -31,4 +31,10 @@ public class WorkspaceExpertResponse {
     private Long reviewPrice;
     /** Giá trao đổi theo giờ (VND/giờ). */
     private Long hourlyRate;
+
+    /** true nếu vừa tạo User mới khi add expert. */
+    private Boolean accountCreated;
+
+    /** true nếu đã gửi email mời / credentials. */
+    private Boolean inviteEmailSent;
 }

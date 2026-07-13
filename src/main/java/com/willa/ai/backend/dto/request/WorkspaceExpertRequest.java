@@ -17,6 +17,12 @@ public class WorkspaceExpertRequest {
     @Email(message = "Email is invalid")
     private String email;
 
+    /** Tên hiển thị — bắt buộc khi tạo tài khoản mới. */
+    private String fullName;
+
+    /** Avatar URL (tùy chọn). */
+    private String avatarUrl;
+
     /** Bỏ trống = expert platform (hỗ trợ user không dùng workspace). */
     private Long workspaceId;
 
@@ -31,4 +37,15 @@ public class WorkspaceExpertRequest {
 
     /** Giá theo giờ (VND/giờ). */
     private Long hourlyRate;
+
+    /**
+     * true (mặc định): nếu email chưa có User thì tạo tài khoản.
+     * false: chỉ promote User đã tồn tại (hành vi cũ).
+     */
+    private Boolean createAccountIfMissing;
+
+    /**
+     * true (mặc định): gửi email mời / thông tin đăng nhập.
+     */
+    private Boolean sendInviteEmail;
 }

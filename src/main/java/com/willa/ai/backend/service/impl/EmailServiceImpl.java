@@ -103,6 +103,46 @@ public class EmailServiceImpl implements EmailService {
     }
 
     @Override
+    public void sendExpertInviteEmail(String to, String fullName, String plainPassword, String loginUrl) {
+        String name = fullName != null && !fullName.isBlank() ? fullName.trim() : "bạn";
+        String subject = "WillaAI - Tài khoản Expert của bạn";
+        String html = "<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;color:#333;'>"
+                + "<div style='max-width:560px;margin:0 auto;padding:24px;'>"
+                + "<h2>Chào mừng Expert Willa AI</h2>"
+                + "<p>Xin chào <strong>" + escapeHtml(name) + "</strong>,</p>"
+                + "<p>Bạn đã được thêm làm <strong>Expert</strong> trên Willa AI. "
+                + "Dùng thông tin sau để đăng nhập và nhận booking từ khách:</p>"
+                + "<div style='background:#f6f4ff;border-radius:8px;padding:16px;margin:16px 0;'>"
+                + "<p style='margin:0 0 8px;'><strong>Email:</strong> " + escapeHtml(to) + "</p>"
+                + "<p style='margin:0;'><strong>Mật khẩu tạm:</strong> "
+                + "<code style='font-size:15px;'>" + escapeHtml(plainPassword) + "</code></p>"
+                + "</div>"
+                + "<p><a href='" + loginUrl + "' style='display:inline-block;background:#8b3dff;color:#fff;"
+                + "padding:12px 20px;text-decoration:none;border-radius:6px;font-weight:600;'>Đăng nhập Willa</a></p>"
+                + "<p style='color:#666;font-size:13px;'>Sau khi đăng nhập, mở mục <strong>Experts → Orders</strong> "
+                + "để xem booking và chat/gọi video với khách.</p>"
+                + "<p style='color:#999;font-size:12px;'>Nên đổi mật khẩu sau lần đăng nhập đầu (Settings / Forgot password).</p>"
+                + "</div></body></html>";
+        sendHtmlEmailOrThrow(to, subject, html);
+    }
+
+    @Override
+    public void sendExpertAssignedEmail(String to, String fullName, String loginUrl) {
+        String name = fullName != null && !fullName.isBlank() ? fullName.trim() : "bạn";
+        String subject = "WillaAI - Bạn đã được thêm làm Expert";
+        String html = "<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;color:#333;'>"
+                + "<div style='max-width:560px;margin:0 auto;padding:24px;'>"
+                + "<h2>Expert Willa AI</h2>"
+                + "<p>Xin chào <strong>" + escapeHtml(name) + "</strong>,</p>"
+                + "<p>Tài khoản của bạn đã được gắn quyền <strong>Expert</strong> trên Willa AI.</p>"
+                + "<p>Đăng nhập bằng email/mật khẩu hiện tại, rồi vào <strong>Experts → Orders</strong> để nhận booking.</p>"
+                + "<p><a href='" + loginUrl + "' style='display:inline-block;background:#8b3dff;color:#fff;"
+                + "padding:12px 20px;text-decoration:none;border-radius:6px;font-weight:600;'>Đăng nhập Willa</a></p>"
+                + "</div></body></html>";
+        sendHtmlEmailOrThrow(to, subject, html);
+    }
+
+    @Override
     public void sendWorkspaceInviteEmail(String to, String workspaceName, String inviterName, String inviteLink, String role) {
         String subject = "WillaAI - Lời mời tham gia workspace \"" + workspaceName + "\"";
         String htmlContent = "<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;color:#333;'>"

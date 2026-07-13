@@ -14,6 +14,12 @@ public interface EmailService {
 
     void sendWorkspaceInviteEmail(String to, String workspaceName, String inviterName, String inviteLink, String role);
 
+    /** Mời expert mới — kèm mật khẩu tạm (chỉ khi vừa tạo account). */
+    void sendExpertInviteEmail(String to, String fullName, String plainPassword, String loginUrl);
+
+    /** Báo cho User đã có rằng đã được thêm làm Expert (không gửi mật khẩu). */
+    void sendExpertAssignedEmail(String to, String fullName, String loginUrl);
+
     void sendTaskDeadlineEmail(
             String to,
             String subjectVi,

@@ -21,6 +21,18 @@ public class AnalyticsResponse {
     private Long totalChatsThisMonth;
     /** Tổng chat trong khoảng báo cáo (start–end) */
     private Long totalChatsInPeriod;
+
+    /** Số user đăng ký mới trong kỳ (users.created_at). */
+    private Long newRegistrationsInPeriod;
+
+    /**
+     * Số user bắt đầu gói Feedback trong kỳ (subscription.start_date).
+     * Keys: Free, Student, Pro.
+     */
+    private Map<String, Long> feedbackPlanStartsInPeriod;
+
+    /** Tổng token AI (ai_token_usages) trong kỳ lọc. */
+    private Long totalAiTokensInPeriod;
     
     // Chi tiết người dùng
     private List<UserActivityDTO> topActiveUsers;
@@ -106,8 +118,12 @@ public class AnalyticsResponse {
     public static class WorkflowUserActivity {
         private Long userId;
         private String email;
+        /** Gói Feedback cao nhất trong kỳ (Free/Student/Pro). */
+        private String planName;
         private Long runCount;
         private Long totalDurationMs;
+        /** Tổng token AI trong kỳ. */
+        private Long aiTokensUsed;
     }
     
     @Data

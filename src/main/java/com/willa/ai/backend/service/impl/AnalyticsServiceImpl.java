@@ -92,6 +92,10 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         // Chats by plan
         Map<String, Long> chatsByPlan = getChatsByPlan(startDt, endDt);
 
+        Long newRegistrations = analyticsRepository.countNewRegistrations(startDt, endDt);
+        Map<String, Long> feedbackPlanStarts = getFeedbackPlanStartsInPeriod(startDt, endDt);
+        Long totalAiTokens = analyticsRepository.sumTokensInPeriod(startDt, endDt);
+
         WorkflowUsageAnalytics workflowUsage = buildWorkflowUsageAnalytics(startDt, endDt);
         featureUsageByActionType = enrichFeatureUsageWithWorkflows(featureUsageByActionType, workflowUsage);
         
@@ -101,6 +105,9 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .totalChatsThisWeek(totalChatsThisWeek != null ? totalChatsThisWeek : 0)
             .totalChatsThisMonth(totalChatsThisMonth != null ? totalChatsThisMonth : 0)
             .totalChatsInPeriod(totalChatsInPeriod != null ? totalChatsInPeriod : 0)
+            .newRegistrationsInPeriod(newRegistrations != null ? newRegistrations : 0)
+            .feedbackPlanStartsInPeriod(feedbackPlanStarts)
+            .totalAiTokensInPeriod(totalAiTokens != null ? totalAiTokens : 0)
             .dailyChatCounts(dailyChatCounts)
             .topActiveUsers(topActiveUsers)
             .featureUsageByActionType(featureUsageByActionType)
@@ -155,15 +162,23 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                         (a, b) -> a,
                         LinkedHashMap::new));
 
+        Map<Long, String> highestPlanByUser = getHighestFeedbackPlanMap(startDt, endDt);
+        Map<Long, Long> tokensByUser = getTokensByUserMap(startDt, endDt);
+
         List<WorkflowUserActivity> topUsers = workflowUsageRepository
                 .usersByWorkflowTimeInRange(startDt, endDt)
                 .stream()
-                .map(row -> WorkflowUserActivity.builder()
-                        .userId(asLong(row[0]))
-                        .email((String) row[1])
-                        .runCount(asLong(row[2]))
-                        .totalDurationMs(asLong(row[3]))
-                        .build())
+                .map(row -> {
+                    Long userId = asLong(row[0]);
+                    return WorkflowUserActivity.builder()
+                            .userId(userId)
+                            .email((String) row[1])
+                            .planName(highestPlanByUser.getOrDefault(userId, "Free"))
+                            .runCount(asLong(row[2]))
+                            .totalDurationMs(asLong(row[3]))
+                            .aiTokensUsed(tokensByUser.getOrDefault(userId, 0L))
+                            .build();
+                })
                 .collect(Collectors.toList());
 
         Map<String, Long> failedRunsByWorkflow = workflowUsageRepository
@@ -370,11 +385,41 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .map(row -> UserActivityDTO.builder()
                 .userId(asLong(row[0]))
                 .email((String) row[1])
-                .planName((String) row[2])
+                .planName(row[2] != null ? row[2].toString() : "Free")
                 .chatCount(asLong(row[3]))
                 .aiTokensUsed(asLong(row[4]))
                 .build())
             .collect(Collectors.toList());
+    }
+
+    private Map<String, Long> getFeedbackPlanStartsInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
+        Map<String, Long> starts = new LinkedHashMap<>();
+        starts.put("Free", 0L);
+        starts.put("Student", 0L);
+        starts.put("Pro", 0L);
+        for (Object[] row : analyticsRepository.countFeedbackPlanStartsInPeriod(startDt, endDt)) {
+            String tier = row[0] != null ? row[0].toString() : "Free";
+            starts.put(tier, asLong(row[1]));
+        }
+        return starts;
+    }
+
+    private Map<Long, String> getHighestFeedbackPlanMap(LocalDateTime startDt, LocalDateTime endDt) {
+        return analyticsRepository.getHighestFeedbackPlanByUserInPeriod(startDt, endDt).stream()
+                .collect(Collectors.toMap(
+                        row -> asLong(row[0]),
+                        row -> row[1] != null ? row[1].toString() : "Free",
+                        (a, b) -> a,
+                        LinkedHashMap::new));
+    }
+
+    private Map<Long, Long> getTokensByUserMap(LocalDateTime startDt, LocalDateTime endDt) {
+        return analyticsRepository.sumTokensByUserInPeriod(startDt, endDt).stream()
+                .collect(Collectors.toMap(
+                        row -> asLong(row[0]),
+                        row -> asLong(row[1]),
+                        Long::sum,
+                        LinkedHashMap::new));
     }
     
     private Map<String, Long> getFeatureUsage(LocalDateTime startDt, LocalDateTime endDt) {

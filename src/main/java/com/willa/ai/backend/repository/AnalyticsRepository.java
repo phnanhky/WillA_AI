@@ -27,27 +27,51 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                                        @Param("endDate") LocalDateTime endDate);
     
     /**
-     * Tất cả user có chat trong kỳ (sắp xếp theo số tin nhắn giảm dần).
+     * User có chat trong kỳ + gói Feedback cao nhất trong kỳ (Pro > Student > Free).
+     * Không có subscription Feedback overlapping kỳ → Free.
      */
     @Query(value = """
-        SELECT cs.user_id, u.email, p.name as plan_name, COUNT(cm.id) as chat_count,
+        SELECT cs.user_id,
+               u.email,
+               COALESCE((
+                   SELECT CASE
+                       WHEN MAX(CASE
+                           WHEN LOWER(pl.name) LIKE '%pro%' THEN 3
+                           WHEN LOWER(pl.name) LIKE '%student%' THEN 2
+                           WHEN LOWER(pl.name) LIKE '%free%' THEN 1
+                           ELSE 0
+                       END) = 3 THEN 'Pro'
+                       WHEN MAX(CASE
+                           WHEN LOWER(pl.name) LIKE '%pro%' THEN 3
+                           WHEN LOWER(pl.name) LIKE '%student%' THEN 2
+                           WHEN LOWER(pl.name) LIKE '%free%' THEN 1
+                           ELSE 0
+                       END) = 2 THEN 'Student'
+                       ELSE 'Free'
+                   END
+                   FROM subscriptions sub
+                   JOIN plans pl ON pl.id = sub.plan_id
+                   WHERE sub.user_id = cs.user_id
+                     AND pl.billing_cycle IN ('MONTHLY', 'YEARLY')
+                     AND sub.start_date <= :endDate
+                     AND sub.end_date >= :startDate
+               ), 'Free') AS plan_name,
+               COUNT(cm.id) AS chat_count,
                COALESCE((
                    SELECT SUM(atu.total_tokens)
                    FROM ai_token_usages atu
                    WHERE atu.user_id = cs.user_id
                      AND atu.created_at >= :startDate
                      AND atu.created_at <= :endDate
-               ), 0) as tokens_used
+               ), 0) AS tokens_used
         FROM chat_sessions cs
         LEFT JOIN chat_messages cm ON cs.id = cm.session_id
             AND cm.created_at >= :startDate
             AND cm.created_at <= :endDate
         LEFT JOIN users u ON cs.user_id = u.id
-        LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'ACTIVE'
-        LEFT JOIN plans p ON s.plan_id = p.id
         WHERE cs.created_at >= :startDate
           AND cs.created_at <= :endDate
-        GROUP BY cs.user_id, u.email, p.name
+        GROUP BY cs.user_id, u.email
         HAVING COUNT(cm.id) > 0
         ORDER BY chat_count DESC
         """, nativeQuery = true)
@@ -117,4 +141,96 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         """, nativeQuery = true)
     List<Object[]> getChatsByPlan(@Param("startDate") LocalDateTime startDate,
                                   @Param("endDate") LocalDateTime endDate);
+
+    /** Số tài khoản đăng ký mới trong kỳ. */
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM users u
+        WHERE u.created_at >= :startDate
+          AND u.created_at <= :endDate
+        """, nativeQuery = true)
+    Long countNewRegistrations(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    /**
+     * Số user bắt đầu gói Feedback (MONTHLY/YEARLY) trong kỳ — chuẩn hóa Free/Student/Pro.
+     * Mỗi user chỉ đếm 1 lần / tier (nếu mua nhiều lần cùng tier).
+     */
+    @Query(value = """
+        SELECT CASE
+                   WHEN LOWER(p.name) LIKE '%pro%' THEN 'Pro'
+                   WHEN LOWER(p.name) LIKE '%student%' THEN 'Student'
+                   ELSE 'Free'
+               END AS plan_tier,
+               COUNT(DISTINCT s.user_id)
+        FROM subscriptions s
+        JOIN plans p ON p.id = s.plan_id
+        WHERE s.start_date >= :startDate
+          AND s.start_date <= :endDate
+          AND p.billing_cycle IN ('MONTHLY', 'YEARLY')
+        GROUP BY CASE
+                   WHEN LOWER(p.name) LIKE '%pro%' THEN 'Pro'
+                   WHEN LOWER(p.name) LIKE '%student%' THEN 'Student'
+                   ELSE 'Free'
+                 END
+        """, nativeQuery = true)
+    List<Object[]> countFeedbackPlanStartsInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    /**
+     * Gói Feedback cao nhất của mỗi user trong kỳ (Pro > Student > Free).
+     * Không có sub overlapping → không trả row (caller mặc định Free).
+     */
+    @Query(value = """
+        SELECT s.user_id,
+               CASE
+                   WHEN MAX(CASE
+                       WHEN LOWER(p.name) LIKE '%pro%' THEN 3
+                       WHEN LOWER(p.name) LIKE '%student%' THEN 2
+                       WHEN LOWER(p.name) LIKE '%free%' THEN 1
+                       ELSE 0
+                   END) = 3 THEN 'Pro'
+                   WHEN MAX(CASE
+                       WHEN LOWER(p.name) LIKE '%pro%' THEN 3
+                       WHEN LOWER(p.name) LIKE '%student%' THEN 2
+                       WHEN LOWER(p.name) LIKE '%free%' THEN 1
+                       ELSE 0
+                   END) = 2 THEN 'Student'
+                   ELSE 'Free'
+               END AS plan_tier
+        FROM subscriptions s
+        JOIN plans p ON p.id = s.plan_id
+        WHERE p.billing_cycle IN ('MONTHLY', 'YEARLY')
+          AND s.start_date <= :endDate
+          AND s.end_date >= :startDate
+        GROUP BY s.user_id
+        """, nativeQuery = true)
+    List<Object[]> getHighestFeedbackPlanByUserInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    /** Tổng token AI trong kỳ. */
+    @Query(value = """
+        SELECT COALESCE(SUM(atu.total_tokens), 0)
+        FROM ai_token_usages atu
+        WHERE atu.created_at >= :startDate
+          AND atu.created_at <= :endDate
+        """, nativeQuery = true)
+    Long sumTokensInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    /** Token AI theo user trong kỳ. */
+    @Query(value = """
+        SELECT atu.user_id, COALESCE(SUM(atu.total_tokens), 0)
+        FROM ai_token_usages atu
+        WHERE atu.created_at >= :startDate
+          AND atu.created_at <= :endDate
+        GROUP BY atu.user_id
+        """, nativeQuery = true)
+    List<Object[]> sumTokensByUserInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
 }
