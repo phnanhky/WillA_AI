@@ -5,14 +5,20 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.willa.ai.backend.dto.request.AddExpertBookingMaterialsRequest;
 import com.willa.ai.backend.dto.request.CreateExpertBookingRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingAttachmentRequest;
+import com.willa.ai.backend.dto.request.ExpertBookingCallEventRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingFeedbackRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingMessageRequest;
 import com.willa.ai.backend.dto.response.ExpertBookingAttachmentResponse;
+import com.willa.ai.backend.dto.response.ExpertBookingCallEventResponse;
+import com.willa.ai.backend.dto.response.ExpertBookingCallHistoryResponse;
+import com.willa.ai.backend.dto.response.ExpertBookingCallSessionResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingCheckoutResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingMessageResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingResponse;
 import com.willa.ai.backend.entity.ExpertBooking;
 import com.willa.ai.backend.entity.ExpertBookingAttachment;
+import com.willa.ai.backend.entity.ExpertBookingCallEvent;
+import com.willa.ai.backend.entity.ExpertBookingCallSession;
 import com.willa.ai.backend.entity.ExpertBookingMessage;
 import com.willa.ai.backend.entity.Payment;
 import com.willa.ai.backend.entity.User;
@@ -21,6 +27,8 @@ import com.willa.ai.backend.entity.enums.ExpertBookingStatus;
 import com.willa.ai.backend.entity.enums.ExpertBookingType;
 import com.willa.ai.backend.entity.enums.PaymentStatus;
 import com.willa.ai.backend.repository.ExpertBookingAttachmentRepository;
+import com.willa.ai.backend.repository.ExpertBookingCallEventRepository;
+import com.willa.ai.backend.repository.ExpertBookingCallSessionRepository;
 import com.willa.ai.backend.repository.ExpertBookingMessageRepository;
 import com.willa.ai.backend.repository.ExpertBookingRepository;
 import com.willa.ai.backend.repository.PaymentRepository;
@@ -35,6 +43,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.payos.type.CheckoutResponseData;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -53,6 +62,8 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
     private final ExpertBookingRepository bookingRepository;
     private final ExpertBookingAttachmentRepository attachmentRepository;
     private final ExpertBookingMessageRepository messageRepository;
+    private final ExpertBookingCallEventRepository callEventRepository;
+    private final ExpertBookingCallSessionRepository callSessionRepository;
     private final WorkspaceExpertRepository expertRepository;
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
@@ -252,6 +263,162 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
         ExpertBookingMessageResponse response = mapMessage(message);
         expertBookingRealtimeService.publishMessageCreated(booking.getId(), response);
         return response;
+    }
+
+    @Override
+    public ExpertBookingCallEventResponse recordCallEvent(
+            String userEmail, Long bookingId, ExpertBookingCallEventRequest request) {
+        ExpertBooking booking = loadBookingForParticipant(userEmail, bookingId);
+        assertCallActive(booking);
+
+        String eventType = trimOrNull(request.getEventType());
+        if (eventType == null) {
+            throw new IllegalArgumentException("eventType is required");
+        }
+
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        String normalized = eventType.toLowerCase(Locale.ROOT);
+        boolean leaveLike = normalized.contains("videoconferenceleft")
+                || normalized.contains("readytoclose")
+                || normalized.contains("iframedisposed")
+                || "left".equals(normalized);
+        assertCallEventAllowed(booking, leaveLike);
+
+        String roomName = trimOrNull(request.getRoomName());
+        if (roomName == null) {
+            roomName = "WillaBooking" + booking.getId();
+        }
+        String clientSessionId = trimOrNull(request.getClientSessionId());
+        String payload = trimOrNull(request.getPayload());
+        if (payload != null && payload.length() > 8000) {
+            payload = payload.substring(0, 8000);
+        }
+
+        ExpertBookingCallEvent event = callEventRepository.save(ExpertBookingCallEvent.builder()
+                .booking(booking)
+                .user(user)
+                .eventType(eventType)
+                .roomName(roomName)
+                .clientSessionId(clientSessionId)
+                .payload(payload)
+                .build());
+
+        String normalizedType = eventType.toLowerCase(Locale.ROOT);
+        if (normalizedType.contains("videoconferencejoined") || "joined".equals(normalizedType)) {
+            openCallSession(booking, user, roomName, clientSessionId);
+        } else if (normalizedType.contains("videoconferenceleft")
+                || normalizedType.contains("readytoclose")
+                || normalizedType.contains("iframedisposed")
+                || "left".equals(normalizedType)) {
+            closeCallSession(booking.getId(), clientSessionId);
+        }
+
+        return mapCallEvent(event);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ExpertBookingCallHistoryResponse getCallHistory(String userEmail, Long bookingId) {
+        ExpertBooking booking = loadBookingForParticipant(userEmail, bookingId);
+        List<ExpertBookingCallSessionResponse> sessions = callSessionRepository
+                .findByBookingIdOrderByJoinedAtDesc(booking.getId())
+                .stream()
+                .map(this::mapCallSession)
+                .toList();
+        List<ExpertBookingCallEventResponse> events = callEventRepository
+                .findByBookingIdOrderByCreatedAtAsc(booking.getId())
+                .stream()
+                .map(this::mapCallEvent)
+                .toList();
+        return ExpertBookingCallHistoryResponse.builder()
+                .sessions(sessions)
+                .events(events)
+                .build();
+    }
+
+    private void assertCallEventAllowed(ExpertBooking booking, boolean leaveLike) {
+        ExpertBookingStatus status = booking.getStatus();
+        if (status == ExpertBookingStatus.AWAITING_EXPERT
+                || status == ExpertBookingStatus.IN_PROGRESS) {
+            return;
+        }
+        // Cho phép ghi leave sau khi đơn vừa hoàn tất (race hangup vs complete)
+        if (leaveLike && status == ExpertBookingStatus.COMPLETED) {
+            return;
+        }
+        throw new IllegalArgumentException("Video call không khả dụng ở trạng thái hiện tại");
+    }
+
+    private void assertCallActive(ExpertBooking booking) {
+        assertCallEventAllowed(booking, false);
+    }
+
+    private void openCallSession(ExpertBooking booking, User user, String roomName, String clientSessionId) {
+        if (clientSessionId != null
+                && callSessionRepository
+                .findFirstByBookingIdAndClientSessionIdAndLeftAtIsNullOrderByJoinedAtDesc(
+                        booking.getId(), clientSessionId)
+                .isPresent()) {
+            return;
+        }
+        callSessionRepository.save(ExpertBookingCallSession.builder()
+                .booking(booking)
+                .user(user)
+                .roomName(roomName)
+                .clientSessionId(clientSessionId)
+                .joinedAt(LocalDateTime.now())
+                .build());
+    }
+
+    private void closeCallSession(Long bookingId, String clientSessionId) {
+        if (clientSessionId == null) {
+            return;
+        }
+        callSessionRepository
+                .findFirstByBookingIdAndClientSessionIdAndLeftAtIsNullOrderByJoinedAtDesc(bookingId, clientSessionId)
+                .ifPresent(session -> {
+                    LocalDateTime leftAt = LocalDateTime.now();
+                    session.setLeftAt(leftAt);
+                    if (session.getJoinedAt() != null) {
+                        session.setDurationSeconds(
+                                Math.max(0, Duration.between(session.getJoinedAt(), leftAt).getSeconds()));
+                    }
+                    callSessionRepository.save(session);
+                });
+    }
+
+    private ExpertBookingCallEventResponse mapCallEvent(ExpertBookingCallEvent event) {
+        User u = event.getUser();
+        return ExpertBookingCallEventResponse.builder()
+                .id(event.getId())
+                .bookingId(event.getBooking().getId())
+                .userId(u.getId())
+                .userEmail(u.getEmail())
+                .userName(u.getFullName())
+                .eventType(event.getEventType())
+                .roomName(event.getRoomName())
+                .clientSessionId(event.getClientSessionId())
+                .payload(event.getPayload())
+                .createdAt(event.getCreatedAt())
+                .build();
+    }
+
+    private ExpertBookingCallSessionResponse mapCallSession(ExpertBookingCallSession session) {
+        User u = session.getUser();
+        return ExpertBookingCallSessionResponse.builder()
+                .id(session.getId())
+                .bookingId(session.getBooking().getId())
+                .userId(u.getId())
+                .userEmail(u.getEmail())
+                .userName(u.getFullName())
+                .roomName(session.getRoomName())
+                .clientSessionId(session.getClientSessionId())
+                .joinedAt(session.getJoinedAt())
+                .leftAt(session.getLeftAt())
+                .durationSeconds(session.getDurationSeconds())
+                .build();
     }
 
     private ExpertBooking loadBookingForExpert(String expertUserEmail, Long bookingId) {

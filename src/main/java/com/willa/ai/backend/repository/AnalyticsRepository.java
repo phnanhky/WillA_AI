@@ -233,4 +233,322 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
     List<Object[]> sumTokensByUserInPeriod(
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate);
+
+    // ── Expert analytics ──────────────────────────────────────────────
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM expert_bookings eb
+        WHERE eb.created_at >= :startDate
+          AND eb.created_at <= :endDate
+        """, nativeQuery = true)
+    Long countExpertBookingsInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM expert_bookings eb
+        WHERE eb.status = 'COMPLETED'
+          AND COALESCE(eb.completed_at, eb.updated_at) >= :startDate
+          AND COALESCE(eb.completed_at, eb.updated_at) <= :endDate
+        """, nativeQuery = true)
+    Long countExpertCompletedInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COALESCE(SUM(eb.amount_vnd), 0)
+        FROM expert_bookings eb
+        WHERE eb.created_at >= :startDate
+          AND eb.created_at <= :endDate
+          AND eb.status IN ('AWAITING_EXPERT', 'IN_PROGRESS', 'COMPLETED')
+        """, nativeQuery = true)
+    Long sumExpertPaidRevenueInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(DISTINCT eb.client_user_id)
+        FROM expert_bookings eb
+        WHERE eb.created_at >= :startDate
+          AND eb.created_at <= :endDate
+        """, nativeQuery = true)
+    Long countExpertUniqueClientsInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(DISTINCT eb.expert_id)
+        FROM expert_bookings eb
+        WHERE eb.created_at >= :startDate
+          AND eb.created_at <= :endDate
+        """, nativeQuery = true)
+    Long countExpertUniqueBookedInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM workspace_experts we
+        WHERE we.is_active = true
+        """, nativeQuery = true)
+    Long countActiveExperts();
+
+    @Query(value = """
+        SELECT eb.status, COUNT(*)
+        FROM expert_bookings eb
+        WHERE eb.created_at >= :startDate
+          AND eb.created_at <= :endDate
+        GROUP BY eb.status
+        """, nativeQuery = true)
+    List<Object[]> countExpertBookingsByStatus(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT eb.booking_type, COUNT(*)
+        FROM expert_bookings eb
+        WHERE eb.created_at >= :startDate
+          AND eb.created_at <= :endDate
+        GROUP BY eb.booking_type
+        """, nativeQuery = true)
+    List<Object[]> countExpertBookingsByType(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM expert_booking_messages m
+        WHERE m.created_at >= :startDate
+          AND m.created_at <= :endDate
+        """, nativeQuery = true)
+    Long countExpertMessagesInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(*), COALESCE(SUM(s.duration_seconds), 0)
+        FROM expert_booking_call_sessions s
+        WHERE s.created_at >= :startDate
+          AND s.created_at <= :endDate
+        """, nativeQuery = true)
+    List<Object[]> expertCallSessionStatsInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COALESCE(SUM(eb.amount_vnd), 0)
+        FROM expert_bookings eb
+        WHERE eb.status = 'COMPLETED'
+          AND COALESCE(eb.completed_at, eb.updated_at) >= :startDate
+          AND COALESCE(eb.completed_at, eb.updated_at) <= :endDate
+        """, nativeQuery = true)
+    Long sumExpertPayableGrossInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COALESCE(SUM(CASE
+                   WHEN eb.booking_type = 'HOURLY' THEN COALESCE(eb.hourly_hours, 0)
+                   ELSE 0 END), 0)
+        FROM expert_bookings eb
+        WHERE eb.status = 'COMPLETED'
+          AND COALESCE(eb.completed_at, eb.updated_at) >= :startDate
+          AND COALESCE(eb.completed_at, eb.updated_at) <= :endDate
+        """, nativeQuery = true)
+    Long sumExpertPayableHourlyHoursInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT we.id,
+               COALESCE(u.full_name, u.email) AS expert_name,
+               u.email,
+               COUNT(*) AS completed_count,
+               COALESCE(SUM(CASE WHEN eb.booking_type = 'REVIEW' THEN 1 ELSE 0 END), 0) AS review_count,
+               COALESCE(SUM(CASE WHEN eb.booking_type = 'REVIEW' THEN eb.amount_vnd ELSE 0 END), 0) AS review_gross,
+               COALESCE(SUM(CASE WHEN eb.booking_type = 'HOURLY' THEN 1 ELSE 0 END), 0) AS hourly_count,
+               COALESCE(SUM(CASE
+                   WHEN eb.booking_type = 'HOURLY' THEN COALESCE(eb.hourly_hours, 0)
+                   ELSE 0 END), 0) AS hourly_hours,
+               COALESCE(SUM(CASE WHEN eb.booking_type = 'HOURLY' THEN eb.amount_vnd ELSE 0 END), 0) AS hourly_gross,
+               COALESCE(SUM(eb.amount_vnd), 0) AS payable_gross,
+               COALESCE((
+                   SELECT SUM(s.duration_seconds)
+                   FROM expert_booking_call_sessions s
+                   JOIN expert_bookings eb2 ON eb2.id = s.booking_id
+                   WHERE eb2.expert_id = we.id
+                     AND eb2.status = 'COMPLETED'
+                     AND COALESCE(eb2.completed_at, eb2.updated_at) >= :startDate
+                     AND COALESCE(eb2.completed_at, eb2.updated_at) <= :endDate
+               ), 0) AS call_seconds
+        FROM expert_bookings eb
+        JOIN workspace_experts we ON we.id = eb.expert_id
+        JOIN users u ON u.id = we.user_id
+        WHERE eb.status = 'COMPLETED'
+          AND COALESCE(eb.completed_at, eb.updated_at) >= :startDate
+          AND COALESCE(eb.completed_at, eb.updated_at) <= :endDate
+        GROUP BY we.id, u.full_name, u.email
+        ORDER BY payable_gross DESC
+        """, nativeQuery = true)
+    List<Object[]> expertPayrollInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT eb.id,
+               we.id,
+               COALESCE(u.full_name, u.email),
+               u.email,
+               cu.email,
+               eb.booking_type,
+               eb.hourly_hours,
+               eb.amount_vnd,
+               COALESCE(eb.completed_at, eb.updated_at)
+        FROM expert_bookings eb
+        JOIN workspace_experts we ON we.id = eb.expert_id
+        JOIN users u ON u.id = we.user_id
+        JOIN users cu ON cu.id = eb.client_user_id
+        WHERE eb.status = 'COMPLETED'
+          AND COALESCE(eb.completed_at, eb.updated_at) >= :startDate
+          AND COALESCE(eb.completed_at, eb.updated_at) <= :endDate
+        ORDER BY COALESCE(eb.completed_at, eb.updated_at) DESC, eb.id DESC
+        LIMIT 500
+        """, nativeQuery = true)
+    List<Object[]> expertCompletedJobsInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT we.id,
+               COALESCE(u.full_name, u.email) AS expert_name,
+               u.email,
+               COUNT(*) AS booking_count,
+               COALESCE(SUM(CASE
+                   WHEN eb.status IN ('AWAITING_EXPERT', 'IN_PROGRESS', 'COMPLETED')
+                   THEN eb.amount_vnd ELSE 0 END), 0) AS paid_revenue,
+               COALESCE(SUM(CASE WHEN eb.status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS completed_count
+        FROM expert_bookings eb
+        JOIN workspace_experts we ON we.id = eb.expert_id
+        JOIN users u ON u.id = we.user_id
+        WHERE eb.created_at >= :startDate
+          AND eb.created_at <= :endDate
+        GROUP BY we.id, u.full_name, u.email
+        ORDER BY booking_count DESC
+        LIMIT 20
+        """, nativeQuery = true)
+    List<Object[]> topExpertsInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    // ── Workspace analytics ───────────────────────────────────────────
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM workspaces w
+        WHERE w.created_at >= :startDate
+          AND w.created_at <= :endDate
+        """, nativeQuery = true)
+    Long countWorkspacesCreatedInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(*) FROM workspaces
+        """, nativeQuery = true)
+    Long countTotalWorkspaces();
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM workspace_members wm
+        WHERE wm.joined_at >= :startDate
+          AND wm.joined_at <= :endDate
+        """, nativeQuery = true)
+    Long countMembersJoinedInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(*) FROM workspace_members
+        """, nativeQuery = true)
+    Long countTotalWorkspaceMembers();
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM channel_messages cm
+        WHERE cm.created_at >= :startDate
+          AND cm.created_at <= :endDate
+        """, nativeQuery = true)
+    Long countChannelMessagesInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM workspace_dm_messages dm
+        WHERE dm.created_at >= :startDate
+          AND dm.created_at <= :endDate
+        """, nativeQuery = true)
+    Long countDmMessagesInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM workspace_subscriptions ws
+        WHERE ws.status = 'ACTIVE'
+          AND ws.end_date >= NOW()
+        """, nativeQuery = true)
+    Long countActiveWorkspaceSubscriptions();
+
+    @Query(value = """
+        SELECT COUNT(DISTINCT ws.user_id)
+        FROM workspace_subscriptions ws
+        WHERE ws.start_date >= :startDate
+          AND ws.start_date <= :endDate
+        """, nativeQuery = true)
+    Long countWorkspacePlanStartsInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM workspace_projects wp
+        WHERE wp.created_at >= :startDate
+          AND wp.created_at <= :endDate
+        """, nativeQuery = true)
+    Long countProjectsCreatedInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = """
+        SELECT w.id,
+               w.title,
+               u.email,
+               (SELECT COUNT(*) FROM workspace_members wm WHERE wm.workspace_id = w.id) AS member_count,
+               COALESCE((
+                   SELECT COUNT(*)
+                   FROM channel_messages cm
+                   JOIN workspace_channels wc ON wc.id = cm.channel_id
+                   WHERE wc.workspace_id = w.id
+                     AND cm.created_at >= :startDate
+                     AND cm.created_at <= :endDate
+               ), 0) AS msg_count
+        FROM workspaces w
+        JOIN users u ON u.id = w.owner_id
+        WHERE (w.created_at >= :startDate AND w.created_at <= :endDate)
+           OR EXISTS (
+               SELECT 1 FROM channel_messages cm2
+               JOIN workspace_channels wc2 ON wc2.id = cm2.channel_id
+               WHERE wc2.workspace_id = w.id
+                 AND cm2.created_at >= :startDate
+                 AND cm2.created_at <= :endDate
+           )
+        ORDER BY msg_count DESC, member_count DESC
+        LIMIT 20
+        """, nativeQuery = true)
+    List<Object[]> topWorkspacesInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
 }

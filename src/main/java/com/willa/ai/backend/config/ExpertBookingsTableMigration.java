@@ -93,8 +93,56 @@ public class ExpertBookingsTableMigration {
                         """).executeUpdate();
                 log.info("Created expert_booking_attachments table");
             }
+
+            ensureCallTrackingTables();
         } catch (Exception e) {
             log.warn("Expert bookings migration skipped: {}", e.getMessage());
+        }
+    }
+
+    private void ensureCallTrackingTables() {
+        if (!tableExists("expert_booking_call_events")) {
+            entityManager.createNativeQuery("""
+                    CREATE TABLE expert_booking_call_events (
+                      id BIGSERIAL PRIMARY KEY,
+                      booking_id BIGINT NOT NULL REFERENCES expert_bookings(id) ON DELETE CASCADE,
+                      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                      event_type VARCHAR(100) NOT NULL,
+                      room_name VARCHAR(200),
+                      client_session_id VARCHAR(100),
+                      payload TEXT,
+                      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """).executeUpdate();
+            entityManager.createNativeQuery("""
+                    CREATE INDEX idx_expert_call_evt_booking ON expert_booking_call_events(booking_id)
+                    """).executeUpdate();
+            entityManager.createNativeQuery("""
+                    CREATE INDEX idx_expert_call_evt_created ON expert_booking_call_events(created_at)
+                    """).executeUpdate();
+            log.info("Created expert_booking_call_events table");
+        }
+        if (!tableExists("expert_booking_call_sessions")) {
+            entityManager.createNativeQuery("""
+                    CREATE TABLE expert_booking_call_sessions (
+                      id BIGSERIAL PRIMARY KEY,
+                      booking_id BIGINT NOT NULL REFERENCES expert_bookings(id) ON DELETE CASCADE,
+                      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                      room_name VARCHAR(200),
+                      client_session_id VARCHAR(100),
+                      joined_at TIMESTAMP,
+                      left_at TIMESTAMP,
+                      duration_seconds BIGINT,
+                      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """).executeUpdate();
+            entityManager.createNativeQuery("""
+                    CREATE INDEX idx_expert_call_sess_booking ON expert_booking_call_sessions(booking_id)
+                    """).executeUpdate();
+            entityManager.createNativeQuery("""
+                    CREATE INDEX idx_expert_call_sess_client ON expert_booking_call_sessions(client_session_id)
+                    """).executeUpdate();
+            log.info("Created expert_booking_call_sessions table");
         }
     }
 

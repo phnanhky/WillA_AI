@@ -2,11 +2,17 @@ package com.willa.ai.backend.service.impl;
 
 import com.willa.ai.backend.dto.response.AnalyticsResponse;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.DailyWorkflowStats;
+import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertAnalytics;
+import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertCompletedJobRow;
+import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertLeaderboardRow;
+import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertPayrollRow;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.UserActivityDTO;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.WorkflowToolStats;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.WorkflowTypeStats;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.WorkflowUsageAnalytics;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.WorkflowUserActivity;
+import com.willa.ai.backend.dto.response.AnalyticsResponse.WorkspaceActivityRow;
+import com.willa.ai.backend.dto.response.AnalyticsResponse.WorkspaceAnalytics;
 import com.willa.ai.backend.entity.enums.WorkflowType;
 import com.willa.ai.backend.repository.AnalyticsRepository;
 import com.willa.ai.backend.repository.WorkflowUsageRepository;
@@ -98,6 +104,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
         WorkflowUsageAnalytics workflowUsage = buildWorkflowUsageAnalytics(startDt, endDt);
         featureUsageByActionType = enrichFeatureUsageWithWorkflows(featureUsageByActionType, workflowUsage);
+        ExpertAnalytics expertAnalytics = buildExpertAnalytics(startDt, endDt);
+        WorkspaceAnalytics workspaceAnalytics = buildWorkspaceAnalytics(startDt, endDt);
         
         return AnalyticsResponse.builder()
             .totalActiveUsers(totalActiveUsers != null ? totalActiveUsers : 0)
@@ -114,7 +122,150 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .usersByPlan(usersByPlan)
             .chatsByPlan(chatsByPlan)
             .workflowUsage(workflowUsage)
+            .expertAnalytics(expertAnalytics)
+            .workspaceAnalytics(workspaceAnalytics)
             .build();
+    }
+
+    private ExpertAnalytics buildExpertAnalytics(LocalDateTime startDt, LocalDateTime endDt) {
+        Long bookings = nz(analyticsRepository.countExpertBookingsInPeriod(startDt, endDt));
+        Long completed = nz(analyticsRepository.countExpertCompletedInPeriod(startDt, endDt));
+        Long revenue = nz(analyticsRepository.sumExpertPaidRevenueInPeriod(startDt, endDt));
+        Long payableGross = nz(analyticsRepository.sumExpertPayableGrossInPeriod(startDt, endDt));
+        Long payableHours = nz(analyticsRepository.sumExpertPayableHourlyHoursInPeriod(startDt, endDt));
+        Long clients = nz(analyticsRepository.countExpertUniqueClientsInPeriod(startDt, endDt));
+        Long expertsBooked = nz(analyticsRepository.countExpertUniqueBookedInPeriod(startDt, endDt));
+        Long activeExperts = nz(analyticsRepository.countActiveExperts());
+        Long messages = nz(analyticsRepository.countExpertMessagesInPeriod(startDt, endDt));
+
+        long callSessions = 0;
+        long callSeconds = 0;
+        List<Object[]> callRows = analyticsRepository.expertCallSessionStatsInPeriod(startDt, endDt);
+        if (callRows != null && !callRows.isEmpty() && callRows.get(0) != null) {
+            Object[] row = callRows.get(0);
+            callSessions = asLong(row[0]);
+            callSeconds = asLong(row[1]);
+        }
+
+        Map<String, Long> byStatus = toStringLongMap(
+                analyticsRepository.countExpertBookingsByStatus(startDt, endDt));
+        Map<String, Long> byType = toStringLongMap(
+                analyticsRepository.countExpertBookingsByType(startDt, endDt));
+
+        List<ExpertPayrollRow> payroll = analyticsRepository.expertPayrollInPeriod(startDt, endDt)
+                .stream()
+                .map(row -> ExpertPayrollRow.builder()
+                        .expertId(asLong(row[0]))
+                        .expertName((String) row[1])
+                        .email((String) row[2])
+                        .completedCount(asLong(row[3]))
+                        .reviewCount(asLong(row[4]))
+                        .reviewGrossVnd(asLong(row[5]))
+                        .hourlyCount(asLong(row[6]))
+                        .hourlyHours(asLong(row[7]))
+                        .hourlyGrossVnd(asLong(row[8]))
+                        .payableGrossVnd(asLong(row[9]))
+                        .callDurationSeconds(asLong(row[10]))
+                        .build())
+                .collect(Collectors.toList());
+
+        List<ExpertCompletedJobRow> jobs = analyticsRepository.expertCompletedJobsInPeriod(startDt, endDt)
+                .stream()
+                .map(row -> ExpertCompletedJobRow.builder()
+                        .bookingId(asLong(row[0]))
+                        .expertId(asLong(row[1]))
+                        .expertName((String) row[2])
+                        .expertEmail((String) row[3])
+                        .clientEmail((String) row[4])
+                        .bookingType(row[5] != null ? row[5].toString() : null)
+                        .hourlyHours(row[6] != null ? ((Number) row[6]).intValue() : null)
+                        .amountVnd(asLong(row[7]))
+                        .completedAt(formatDateTime(row[8]))
+                        .build())
+                .collect(Collectors.toList());
+
+        List<ExpertLeaderboardRow> topExperts = payroll.stream()
+                .map(p -> ExpertLeaderboardRow.builder()
+                        .expertId(p.getExpertId())
+                        .expertName(p.getExpertName())
+                        .email(p.getEmail())
+                        .bookingCount(p.getCompletedCount())
+                        .paidRevenueVnd(p.getPayableGrossVnd())
+                        .completedCount(p.getCompletedCount())
+                        .build())
+                .limit(20)
+                .collect(Collectors.toList());
+
+        return ExpertAnalytics.builder()
+                .bookingsInPeriod(bookings)
+                .completedInPeriod(completed)
+                .paidRevenueVnd(revenue)
+                .payableGrossVnd(payableGross)
+                .payableHourlyHours(payableHours)
+                .uniqueClients(clients)
+                .uniqueExpertsBooked(expertsBooked)
+                .activeExpertsTotal(activeExperts)
+                .messagesInPeriod(messages)
+                .callSessionsInPeriod(callSessions)
+                .callDurationSecondsInPeriod(callSeconds)
+                .bookingsByStatus(byStatus)
+                .bookingsByType(byType)
+                .payrollByExpert(payroll)
+                .completedJobs(jobs)
+                .topExperts(topExperts)
+                .build();
+    }
+
+    private static String formatDateTime(Object value) {
+        if (value == null) return null;
+        if (value instanceof LocalDateTime ldt) {
+            return ldt.toString();
+        }
+        if (value instanceof java.sql.Timestamp ts) {
+            return ts.toLocalDateTime().toString();
+        }
+        return value.toString();
+    }
+
+    private WorkspaceAnalytics buildWorkspaceAnalytics(LocalDateTime startDt, LocalDateTime endDt) {
+        List<WorkspaceActivityRow> top = analyticsRepository.topWorkspacesInPeriod(startDt, endDt)
+                .stream()
+                .map(row -> WorkspaceActivityRow.builder()
+                        .workspaceId(asLong(row[0]))
+                        .title((String) row[1])
+                        .ownerEmail((String) row[2])
+                        .memberCount(asLong(row[3]))
+                        .channelMessagesInPeriod(asLong(row[4]))
+                        .build())
+                .collect(Collectors.toList());
+
+        return WorkspaceAnalytics.builder()
+                .workspacesCreatedInPeriod(nz(analyticsRepository.countWorkspacesCreatedInPeriod(startDt, endDt)))
+                .totalWorkspaces(nz(analyticsRepository.countTotalWorkspaces()))
+                .membersJoinedInPeriod(nz(analyticsRepository.countMembersJoinedInPeriod(startDt, endDt)))
+                .totalMembers(nz(analyticsRepository.countTotalWorkspaceMembers()))
+                .channelMessagesInPeriod(nz(analyticsRepository.countChannelMessagesInPeriod(startDt, endDt)))
+                .dmMessagesInPeriod(nz(analyticsRepository.countDmMessagesInPeriod(startDt, endDt)))
+                .activeSubscriptions(nz(analyticsRepository.countActiveWorkspaceSubscriptions()))
+                .planStartsInPeriod(nz(analyticsRepository.countWorkspacePlanStartsInPeriod(startDt, endDt)))
+                .projectsCreatedInPeriod(nz(analyticsRepository.countProjectsCreatedInPeriod(startDt, endDt)))
+                .topWorkspaces(top)
+                .build();
+    }
+
+    private static long nz(Long v) {
+        return v != null ? v : 0L;
+    }
+
+    private static Map<String, Long> toStringLongMap(List<Object[]> rows) {
+        if (rows == null || rows.isEmpty()) return new LinkedHashMap<>();
+        return rows.stream()
+                .filter(r -> r != null && r.length >= 2 && r[0] != null)
+                .collect(Collectors.toMap(
+                        r -> r[0].toString(),
+                        r -> asLong(r[1]),
+                        (a, b) -> a,
+                        LinkedHashMap::new));
     }
 
     private WorkflowUsageAnalytics buildWorkflowUsageAnalytics(LocalDateTime startDt, LocalDateTime endDt) {

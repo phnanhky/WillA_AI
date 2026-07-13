@@ -2,6 +2,7 @@ package com.willa.ai.backend.controller;
 
 import com.willa.ai.backend.dto.request.AddExpertBookingMaterialsRequest;
 import com.willa.ai.backend.dto.request.CreateExpertBookingRequest;
+import com.willa.ai.backend.dto.request.ExpertBookingCallEventRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingFeedbackRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingMessageRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
@@ -144,6 +145,39 @@ public class ExpertBookingController {
                     .status(true)
                     .message("Message sent")
                     .data(expertBookingService.sendMessage(authentication.getName(), bookingId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/{bookingId}/call-events")
+    @Operation(summary = "Ghi event Jitsi (join/leave/mute/…)")
+    public ResponseEntity<ApiResponse> recordCallEvent(
+            @PathVariable Long bookingId,
+            @RequestBody ExpertBookingCallEventRequest request,
+            Authentication authentication) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Call event recorded")
+                    .data(expertBookingService.recordCallEvent(authentication.getName(), bookingId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/{bookingId}/call-history")
+    @Operation(summary = "Lịch sử phiên gọi + event Jitsi")
+    public ResponseEntity<ApiResponse> callHistory(
+            @PathVariable Long bookingId,
+            Authentication authentication) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Call history retrieved")
+                    .data(expertBookingService.getCallHistory(authentication.getName(), bookingId))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
