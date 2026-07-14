@@ -12,6 +12,13 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ExpertBookingCallHistoryResponse {
+    /** Tổng thời lượng các phiên đã kết thúc (seconds). */
+    private Long totalDurationSeconds;
+    private Integer sessionCount;
     private List<ExpertBookingCallSessionResponse> sessions;
+    /**
+     * Event chi tiết Jitsi — chỉ trả về cho admin.
+     * Participant API luôn để rỗng / null.
+     */
     private List<ExpertBookingCallEventResponse> events;
 }

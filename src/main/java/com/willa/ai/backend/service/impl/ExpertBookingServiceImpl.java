@@ -49,6 +49,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -322,20 +323,50 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
     @Transactional(readOnly = true)
     public ExpertBookingCallHistoryResponse getCallHistory(String userEmail, Long bookingId) {
         ExpertBooking booking = loadBookingForParticipant(userEmail, bookingId);
+        // Participant: chỉ phiên + tổng thời gian — không lộ event chi tiết Jitsi
+        return buildCallHistory(booking.getId(), false);
+    }
+
+    @Transactional(readOnly = true)
+    public ExpertBookingCallHistoryResponse getCallHistoryForAdmin(Long bookingId) {
+        if (!bookingRepository.existsById(bookingId)) {
+            throw new IllegalArgumentException("Booking không tồn tại");
+        }
+        return buildCallHistory(bookingId, true);
+    }
+
+    private ExpertBookingCallHistoryResponse buildCallHistory(Long bookingId, boolean includeEvents) {
         List<ExpertBookingCallSessionResponse> sessions = callSessionRepository
-                .findByBookingIdOrderByJoinedAtDesc(booking.getId())
+                .findByBookingIdOrderByJoinedAtDesc(bookingId)
                 .stream()
                 .map(this::mapCallSession)
                 .toList();
-        List<ExpertBookingCallEventResponse> events = callEventRepository
-                .findByBookingIdOrderByCreatedAtAsc(booking.getId())
-                .stream()
-                .map(this::mapCallEvent)
-                .toList();
+        long totalDuration = sessions.stream()
+                .map(ExpertBookingCallSessionResponse::getDurationSeconds)
+                .filter(Objects::nonNull)
+                .mapToLong(Long::longValue)
+                .sum();
+        List<ExpertBookingCallEventResponse> events = includeEvents
+                ? callEventRepository.findByBookingIdOrderByCreatedAtAsc(bookingId).stream()
+                        .map(this::mapCallEvent)
+                        .toList()
+                : List.of();
         return ExpertBookingCallHistoryResponse.builder()
+                .totalDurationSeconds(totalDuration)
+                .sessionCount(sessions.size())
                 .sessions(sessions)
                 .events(events)
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ExpertBookingCallSessionResponse> listRecentCallSessionsForAdmin(int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), 100);
+        return callSessionRepository.findTop100ByOrderByJoinedAtDesc().stream()
+                .limit(safeLimit)
+                .map(this::mapCallSession)
+                .toList();
     }
 
     private void assertCallEventAllowed(ExpertBooking booking, boolean leaveLike) {

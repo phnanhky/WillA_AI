@@ -2,6 +2,7 @@ package com.willa.ai.backend.controller;
 
 import com.willa.ai.backend.dto.request.WorkspaceExpertRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
+import com.willa.ai.backend.service.ExpertBookingService;
 import com.willa.ai.backend.service.ExpertService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -9,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,9 +18,11 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 @Tag(name = "Admin Experts", description = "Quản lý expert trong workspace")
 @SecurityRequirement(name = "bearerAuth")
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminExpertController {
 
     private final ExpertService expertService;
+    private final ExpertBookingService expertBookingService;
 
     @GetMapping("/experts")
     @Operation(summary = "Danh sách tất cả expert")
@@ -86,6 +90,35 @@ public class AdminExpertController {
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Expert removed successfully")
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/expert-bookings/{bookingId}/call-history")
+    @Operation(summary = "Lịch sử video call + event chi tiết (admin)")
+    public ResponseEntity<ApiResponse> getCallHistory(@PathVariable Long bookingId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Call history retrieved")
+                    .data(expertBookingService.getCallHistoryForAdmin(bookingId))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/expert-call-sessions/recent")
+    @Operation(summary = "Phiên gọi gần đây (admin)")
+    public ResponseEntity<ApiResponse> listRecentCallSessions(
+            @RequestParam(defaultValue = "50") int limit) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Recent call sessions retrieved")
+                    .data(expertBookingService.listRecentCallSessionsForAdmin(limit))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

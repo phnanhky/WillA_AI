@@ -7,6 +7,7 @@ import com.willa.ai.backend.dto.request.ExpertBookingFeedbackRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingMessageRequest;
 import com.willa.ai.backend.dto.response.ExpertBookingCallEventResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingCallHistoryResponse;
+import com.willa.ai.backend.dto.response.ExpertBookingCallSessionResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingCheckoutResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingMessageResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingResponse;
@@ -35,4 +36,9 @@ public interface ExpertBookingService {
             String userEmail, Long bookingId, ExpertBookingCallEventRequest request);
 
     ExpertBookingCallHistoryResponse getCallHistory(String userEmail, Long bookingId);
+
+    /** Admin: sessions + event chi tiết Jitsi. */
+    ExpertBookingCallHistoryResponse getCallHistoryForAdmin(Long bookingId);
+
+    List<ExpertBookingCallSessionResponse> listRecentCallSessionsForAdmin(int limit);
 }

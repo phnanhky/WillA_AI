@@ -1,29 +1,37 @@
 package com.willa.ai.backend.config;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
-/** Tạo / nâng cấp bảng expert bookings (production ddl-auto có thể là validate/none). */
-@Component
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+/**
+ * Tạo / nâng cấp bảng expert bookings + call tracking trước Hibernate validate
+ * (prod ddl-auto=validate).
+ */
+@Configuration
 @Slf4j
 public class ExpertBookingsTableMigration {
 
+    private static final String MIGRATION_BEAN = "expertBookingsSchemaMigration";
     private static final String STATUS_CHECK = "expert_bookings_status_check";
 
-    @PersistenceContext
-    private EntityManager entityManager;
+    @Bean(name = MIGRATION_BEAN)
+    public String migrateExpertBookingTables(DataSource dataSource) {
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement()) {
 
-    @EventListener(ApplicationReadyEvent.class)
-    @Transactional
-    public void migrate() {
-        try {
-            if (!tableExists("expert_bookings")) {
-                entityManager.createNativeQuery("""
+            if (!tableExists(connection, "expert_bookings")) {
+                statement.execute("""
                         CREATE TABLE expert_bookings (
                           id BIGSERIAL PRIMARY KEY,
                           client_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -44,24 +52,18 @@ public class ExpertBookingsTableMigration {
                           updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
                           completed_at TIMESTAMP
                         )
-                        """).executeUpdate();
-                entityManager.createNativeQuery("""
-                        CREATE INDEX idx_expert_bookings_client ON expert_bookings(client_user_id)
-                        """).executeUpdate();
-                entityManager.createNativeQuery("""
-                        CREATE INDEX idx_expert_bookings_expert ON expert_bookings(expert_id)
-                        """).executeUpdate();
-                entityManager.createNativeQuery("""
-                        CREATE INDEX idx_expert_bookings_status ON expert_bookings(status)
-                        """).executeUpdate();
-                addStatusCheckConstraint();
+                        """);
+                statement.execute("CREATE INDEX idx_expert_bookings_client ON expert_bookings(client_user_id)");
+                statement.execute("CREATE INDEX idx_expert_bookings_expert ON expert_bookings(expert_id)");
+                statement.execute("CREATE INDEX idx_expert_bookings_status ON expert_bookings(status)");
+                addStatusCheckConstraint(statement);
                 log.info("Created expert_bookings table");
             } else {
-                upgradeExistingBookingsTable();
+                upgradeExistingBookingsTable(connection, statement);
             }
 
-            if (!tableExists("expert_booking_messages")) {
-                entityManager.createNativeQuery("""
+            if (!tableExists(connection, "expert_booking_messages")) {
+                statement.execute("""
                         CREATE TABLE expert_booking_messages (
                           id BIGSERIAL PRIMARY KEY,
                           booking_id BIGINT NOT NULL REFERENCES expert_bookings(id) ON DELETE CASCADE,
@@ -69,15 +71,13 @@ public class ExpertBookingsTableMigration {
                           content TEXT NOT NULL,
                           created_at TIMESTAMP NOT NULL DEFAULT NOW()
                         )
-                        """).executeUpdate();
-                entityManager.createNativeQuery("""
-                        CREATE INDEX idx_expert_booking_msg_booking ON expert_booking_messages(booking_id)
-                        """).executeUpdate();
+                        """);
+                statement.execute("CREATE INDEX idx_expert_booking_msg_booking ON expert_booking_messages(booking_id)");
                 log.info("Created expert_booking_messages table");
             }
 
-            if (!tableExists("expert_booking_attachments")) {
-                entityManager.createNativeQuery("""
+            if (!tableExists(connection, "expert_booking_attachments")) {
+                statement.execute("""
                         CREATE TABLE expert_booking_attachments (
                           id BIGSERIAL PRIMARY KEY,
                           booking_id BIGINT NOT NULL REFERENCES expert_bookings(id) ON DELETE CASCADE,
@@ -87,22 +87,49 @@ public class ExpertBookingsTableMigration {
                           content_type VARCHAR(200),
                           created_at TIMESTAMP NOT NULL DEFAULT NOW()
                         )
-                        """).executeUpdate();
-                entityManager.createNativeQuery("""
-                        CREATE INDEX idx_expert_booking_att_booking ON expert_booking_attachments(booking_id)
-                        """).executeUpdate();
+                        """);
+                statement.execute("CREATE INDEX idx_expert_booking_att_booking ON expert_booking_attachments(booking_id)");
                 log.info("Created expert_booking_attachments table");
             }
 
-            ensureCallTrackingTables();
-        } catch (Exception e) {
-            log.warn("Expert bookings migration skipped: {}", e.getMessage());
+            ensureCallTrackingTables(connection, statement);
+            return "migrated";
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to migrate expert booking tables", e);
         }
     }
 
-    private void ensureCallTrackingTables() {
-        if (!tableExists("expert_booking_call_events")) {
-            entityManager.createNativeQuery("""
+    @Bean
+    public static BeanFactoryPostProcessor entityManagerFactoryDependsOnExpertBookingsMigration() {
+        return ExpertBookingsTableMigration::ensureEntityManagerDependsOnMigration;
+    }
+
+    private static void ensureEntityManagerDependsOnMigration(ConfigurableListableBeanFactory beanFactory) {
+        if (!beanFactory.containsBeanDefinition("entityManagerFactory")) {
+            return;
+        }
+        BeanDefinition definition = beanFactory.getBeanDefinition("entityManagerFactory");
+        String[] dependsOn = definition.getDependsOn();
+        if (dependsOn != null) {
+            for (String name : dependsOn) {
+                if (MIGRATION_BEAN.equals(name)) {
+                    return;
+                }
+            }
+        }
+        if (dependsOn == null || dependsOn.length == 0) {
+            definition.setDependsOn(MIGRATION_BEAN);
+            return;
+        }
+        String[] next = new String[dependsOn.length + 1];
+        System.arraycopy(dependsOn, 0, next, 0, dependsOn.length);
+        next[dependsOn.length] = MIGRATION_BEAN;
+        definition.setDependsOn(next);
+    }
+
+    private static void ensureCallTrackingTables(Connection connection, Statement statement) throws SQLException {
+        if (!tableExists(connection, "expert_booking_call_events")) {
+            statement.execute("""
                     CREATE TABLE expert_booking_call_events (
                       id BIGSERIAL PRIMARY KEY,
                       booking_id BIGINT NOT NULL REFERENCES expert_bookings(id) ON DELETE CASCADE,
@@ -113,17 +140,13 @@ public class ExpertBookingsTableMigration {
                       payload TEXT,
                       created_at TIMESTAMP NOT NULL DEFAULT NOW()
                     )
-                    """).executeUpdate();
-            entityManager.createNativeQuery("""
-                    CREATE INDEX idx_expert_call_evt_booking ON expert_booking_call_events(booking_id)
-                    """).executeUpdate();
-            entityManager.createNativeQuery("""
-                    CREATE INDEX idx_expert_call_evt_created ON expert_booking_call_events(created_at)
-                    """).executeUpdate();
+                    """);
+            statement.execute("CREATE INDEX idx_expert_call_evt_booking ON expert_booking_call_events(booking_id)");
+            statement.execute("CREATE INDEX idx_expert_call_evt_created ON expert_booking_call_events(created_at)");
             log.info("Created expert_booking_call_events table");
         }
-        if (!tableExists("expert_booking_call_sessions")) {
-            entityManager.createNativeQuery("""
+        if (!tableExists(connection, "expert_booking_call_sessions")) {
+            statement.execute("""
                     CREATE TABLE expert_booking_call_sessions (
                       id BIGSERIAL PRIMARY KEY,
                       booking_id BIGINT NOT NULL REFERENCES expert_bookings(id) ON DELETE CASCADE,
@@ -135,55 +158,47 @@ public class ExpertBookingsTableMigration {
                       duration_seconds BIGINT,
                       created_at TIMESTAMP NOT NULL DEFAULT NOW()
                     )
-                    """).executeUpdate();
-            entityManager.createNativeQuery("""
-                    CREATE INDEX idx_expert_call_sess_booking ON expert_booking_call_sessions(booking_id)
-                    """).executeUpdate();
-            entityManager.createNativeQuery("""
-                    CREATE INDEX idx_expert_call_sess_client ON expert_booking_call_sessions(client_session_id)
-                    """).executeUpdate();
+                    """);
+            statement.execute("CREATE INDEX idx_expert_call_sess_booking ON expert_booking_call_sessions(booking_id)");
+            statement.execute("CREATE INDEX idx_expert_call_sess_client ON expert_booking_call_sessions(client_session_id)");
             log.info("Created expert_booking_call_sessions table");
         }
     }
 
-    private void upgradeExistingBookingsTable() {
-        if (!columnExists("expert_bookings", "drive_links")) {
-            entityManager.createNativeQuery("""
-                    ALTER TABLE expert_bookings ADD COLUMN drive_links TEXT
-                    """).executeUpdate();
+    private static void upgradeExistingBookingsTable(Connection connection, Statement statement) throws SQLException {
+        if (!columnExists(connection, "expert_bookings", "drive_links")) {
+            statement.execute("ALTER TABLE expert_bookings ADD COLUMN drive_links TEXT");
             log.info("Added expert_bookings.drive_links");
         }
-        if (!columnExists("expert_bookings", "meeting_room_url")) {
-            entityManager.createNativeQuery("""
-                    ALTER TABLE expert_bookings ADD COLUMN meeting_room_url TEXT
-                    """).executeUpdate();
+        if (!columnExists(connection, "expert_bookings", "meeting_room_url")) {
+            statement.execute("ALTER TABLE expert_bookings ADD COLUMN meeting_room_url TEXT");
             log.info("Added expert_bookings.meeting_room_url");
         }
-        if (!columnExists("expert_bookings", "reject_reason")) {
-            entityManager.createNativeQuery("""
-                    ALTER TABLE expert_bookings ADD COLUMN reject_reason TEXT
-                    """).executeUpdate();
+        if (!columnExists(connection, "expert_bookings", "reject_reason")) {
+            statement.execute("ALTER TABLE expert_bookings ADD COLUMN reject_reason TEXT");
             log.info("Added expert_bookings.reject_reason");
         }
-                refreshStatusCheckConstraint();
-                backfillMeetingRoomUrls();
-            }
+        refreshStatusCheckConstraint(connection, statement);
+        statement.execute("""
+                UPDATE expert_bookings
+                SET meeting_room_url = 'https://meet.jit.si/WillaBooking' || id
+                WHERE meeting_room_url IS NULL
+                  AND status IN ('AWAITING_EXPERT', 'IN_PROGRESS', 'COMPLETED')
+                """);
+    }
 
-    /** Hibernate cũ chỉ cho phép PENDING_PAYMENT… — cần thêm PENDING_EXPERT, REJECTED. */
-    private void refreshStatusCheckConstraint() {
-        if (constraintExists("expert_bookings", STATUS_CHECK)) {
-            entityManager.createNativeQuery("""
-                    ALTER TABLE expert_bookings DROP CONSTRAINT expert_bookings_status_check
-                    """).executeUpdate();
+    private static void refreshStatusCheckConstraint(Connection connection, Statement statement) throws SQLException {
+        if (constraintExists(connection, "expert_bookings", STATUS_CHECK)) {
+            statement.execute("ALTER TABLE expert_bookings DROP CONSTRAINT expert_bookings_status_check");
             log.info("Dropped legacy expert_bookings_status_check");
         }
-        if (!constraintExists("expert_bookings", STATUS_CHECK)) {
-            addStatusCheckConstraint();
+        if (!constraintExists(connection, "expert_bookings", STATUS_CHECK)) {
+            addStatusCheckConstraint(statement);
         }
     }
 
-    private void addStatusCheckConstraint() {
-        entityManager.createNativeQuery("""
+    private static void addStatusCheckConstraint(Statement statement) throws SQLException {
+        statement.execute("""
                 ALTER TABLE expert_bookings ADD CONSTRAINT expert_bookings_status_check
                 CHECK (status IN (
                   'PENDING_EXPERT',
@@ -194,59 +209,56 @@ public class ExpertBookingsTableMigration {
                   'REJECTED',
                   'CANCELLED'
                 ))
-                """).executeUpdate();
+                """);
         log.info("Added expert_bookings_status_check with full status enum");
     }
 
-    /** Booking đã thanh toán nhưng webhook chưa ghi link Jitsi. */
-    private void backfillMeetingRoomUrls() {
-        entityManager.createNativeQuery("""
-                UPDATE expert_bookings
-                SET meeting_room_url = 'https://meet.jit.si/WillaBooking' || id
-                WHERE meeting_room_url IS NULL
-                  AND status IN ('AWAITING_EXPERT', 'IN_PROGRESS', 'COMPLETED')
-                """).executeUpdate();
-    }
-
-    private boolean tableExists(String tableName) {
-        Object result = entityManager.createNativeQuery("""
+    private static boolean tableExists(Connection connection, String tableName) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement("""
                 SELECT EXISTS (
                   SELECT 1 FROM information_schema.tables
-                  WHERE table_schema = 'public' AND table_name = :table
+                  WHERE table_schema = 'public' AND table_name = ?
                 )
-                """)
-                .setParameter("table", tableName)
-                .getSingleResult();
-        return Boolean.TRUE.equals(result);
+                """)) {
+            ps.setString(1, tableName);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getBoolean(1);
+            }
+        }
     }
 
-    private boolean columnExists(String tableName, String columnName) {
-        Object result = entityManager.createNativeQuery("""
+    private static boolean columnExists(Connection connection, String tableName, String columnName) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement("""
                 SELECT EXISTS (
                   SELECT 1 FROM information_schema.columns
                   WHERE table_schema = 'public'
-                    AND table_name = :table
-                    AND column_name = :column
+                    AND table_name = ?
+                    AND column_name = ?
                 )
-                """)
-                .setParameter("table", tableName)
-                .setParameter("column", columnName)
-                .getSingleResult();
-        return Boolean.TRUE.equals(result);
+                """)) {
+            ps.setString(1, tableName);
+            ps.setString(2, columnName);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getBoolean(1);
+            }
+        }
     }
 
-    private boolean constraintExists(String tableName, String constraintName) {
-        Object result = entityManager.createNativeQuery("""
+    private static boolean constraintExists(Connection connection, String tableName, String constraintName)
+            throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement("""
                 SELECT EXISTS (
                   SELECT 1 FROM information_schema.table_constraints
                   WHERE table_schema = 'public'
-                    AND table_name = :table
-                    AND constraint_name = :name
+                    AND table_name = ?
+                    AND constraint_name = ?
                 )
-                """)
-                .setParameter("table", tableName)
-                .setParameter("name", constraintName)
-                .getSingleResult();
-        return Boolean.TRUE.equals(result);
+                """)) {
+            ps.setString(1, tableName);
+            ps.setString(2, constraintName);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getBoolean(1);
+            }
+        }
     }
 }
