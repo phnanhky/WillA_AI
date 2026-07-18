@@ -36,7 +36,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=5 \
   CMD wget -q --spider http://127.0.0.1:8080/actuator/health || exit 1
 
-# Default JVM opts — VPS nhỏ: tránh OOM khi chạy cùng Elasticsearch
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms512m"
+# VPS 10GiB: cố định heap — đừng dùng MaxRAMPercentage cao (JVM dễ chiếm gần hết host)
+ENV JAVA_OPTS="-XX:+UseContainerSupport -Xms256m -Xmx1280m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+ExitOnOutOfMemoryError"
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]

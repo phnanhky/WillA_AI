@@ -11,28 +11,29 @@ spring:
   datasource:
     hikari:
       pool-name: willa-hikari
-      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:30}
-      minimum-idle: ${HIKARI_MIN_IDLE:10}
+      # Defaults nhẹ cho VPS nhỏ (override bằng env nếu cần scale)
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:10}
+      minimum-idle: ${HIKARI_MIN_IDLE:2}
       connection-timeout: ${HIKARI_CONNECTION_TIMEOUT_MS:20000}
-      idle-timeout: ${HIKARI_IDLE_TIMEOUT_MS:600000}
+      idle-timeout: ${HIKARI_IDLE_TIMEOUT_MS:300000}
       max-lifetime: ${HIKARI_MAX_LIFETIME_MS:1800000}
       leak-detection-threshold: ${HIKARI_LEAK_DETECTION_MS:60000}
   data:
     redis:
       lettuce:
         pool:
-          max-active: ${REDIS_POOL_MAX_ACTIVE:32}
-          max-idle: ${REDIS_POOL_MAX_IDLE:16}
-          min-idle: ${REDIS_POOL_MIN_IDLE:4}
+          max-active: ${REDIS_POOL_MAX_ACTIVE:8}
+          max-idle: ${REDIS_POOL_MAX_IDLE:4}
+          min-idle: ${REDIS_POOL_MIN_IDLE:1}
           max-wait: ${REDIS_POOL_MAX_WAIT_MS:3000}
 
 server:
   tomcat:
     threads:
-      max: ${TOMCAT_MAX_THREADS:150}
-      min-spare: ${TOMCAT_MIN_SPARE_THREADS:20}
-    accept-count: ${TOMCAT_ACCEPT_COUNT:200}
-    max-connections: ${TOMCAT_MAX_CONNECTIONS:8192}
+      max: ${TOMCAT_MAX_THREADS:60}
+      min-spare: ${TOMCAT_MIN_SPARE_THREADS:5}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:100}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:200}
     connection-timeout: ${TOMCAT_CONNECTION_TIMEOUT:20s}
   compression:
     enabled: true
