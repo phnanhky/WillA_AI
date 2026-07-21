@@ -104,6 +104,8 @@ public class CouponServiceImpl implements CouponService {
         }
         if (request.getBonusDays() != null) {
             coupon.setBonusDays(normalizeBonusDays(request.getBonusDays()));
+        } else if (fullUpdate) {
+            coupon.setBonusDays(null);
         }
         if (request.getPlanScope() != null) {
             coupon.setPlanScope(request.getPlanScope());
@@ -132,7 +134,13 @@ public class CouponServiceImpl implements CouponService {
             if (Boolean.TRUE.equals(request.getClearMaxRedemptions())) {
                 coupon.setMaxRedemptions(null);
             } else {
-                coupon.setMaxRedemptions(normalizeMaxRedemptions(request.getMaxRedemptions()));
+                Integer maxRedemptions = normalizeMaxRedemptions(request.getMaxRedemptions());
+                int used = coupon.getRedemptionCount() != null ? coupon.getRedemptionCount() : 0;
+                if (maxRedemptions != null && maxRedemptions < used) {
+                    throw new IllegalArgumentException(
+                            "Giới hạn lượt dùng phải >= số lượt đã dùng (" + used + ")");
+                }
+                coupon.setMaxRedemptions(maxRedemptions);
             }
         }
         return mapResponse(couponRepository.save(coupon));

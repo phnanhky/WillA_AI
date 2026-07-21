@@ -96,6 +96,10 @@ app:
   gallery:
     elasticsearch:
       enabled: ${GALLERY_ELASTICSEARCH_ENABLED:true}
+  # Tài khoản test/nội bộ — không tính vào /admin/analytics
+  # Env: ANALYTICS_EXCLUDED_USER_IDS=3,15,215 (thêm id cách nhau bằng dấu phẩy)
+  analytics:
+    excluded-user-ids: ${ANALYTICS_EXCLUDED_USER_IDS:3,15,215}
 
 ai:
   server:

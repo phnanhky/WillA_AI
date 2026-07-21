@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -18,13 +19,16 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
     @Query(value = """
         SELECT DATE(cm.created_at) as date, COUNT(*) as count
         FROM chat_messages cm
+        JOIN chat_sessions cs ON cs.id = cm.session_id
         WHERE cm.created_at >= :startDate
         AND cm.created_at <= :endDate
+        AND cs.user_id NOT IN (:excludedUserIds)
         GROUP BY DATE(cm.created_at)
         ORDER BY date ASC
         """, nativeQuery = true)
     List<Object[]> getChatCountByDate(@Param("startDate") LocalDateTime startDate,
-                                       @Param("endDate") LocalDateTime endDate);
+                                       @Param("endDate") LocalDateTime endDate,
+                                       @Param("excludedUserIds") Collection<Long> excludedUserIds);
     
     /**
      * User có chat trong kỳ + gói Feedback cao nhất trong kỳ (Pro > Student > Free).
@@ -71,12 +75,14 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         LEFT JOIN users u ON cs.user_id = u.id
         WHERE cs.created_at >= :startDate
           AND cs.created_at <= :endDate
+          AND cs.user_id NOT IN (:excludedUserIds)
         GROUP BY cs.user_id, u.email
         HAVING COUNT(cm.id) > 0
         ORDER BY chat_count DESC
         """, nativeQuery = true)
     List<Object[]> getActiveUsersInPeriod(@Param("startDate") LocalDateTime startDate,
-                                           @Param("endDate") LocalDateTime endDate);
+                                           @Param("endDate") LocalDateTime endDate,
+                                           @Param("excludedUserIds") Collection<Long> excludedUserIds);
     
     /**
      * Lấy số users active từ một ngày
@@ -86,9 +92,11 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         FROM chat_sessions cs
         WHERE cs.created_at >= :startDate
           AND cs.created_at <= :endDate
+          AND cs.user_id NOT IN (:excludedUserIds)
         """, nativeQuery = true)
     Long getActiveUserCount(@Param("startDate") LocalDateTime startDate,
-                            @Param("endDate") LocalDateTime endDate);
+                            @Param("endDate") LocalDateTime endDate,
+                            @Param("excludedUserIds") Collection<Long> excludedUserIds);
     
     /**
      * Lấy số chat trong khoảng thời gian
@@ -96,11 +104,14 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
     @Query(value = """
         SELECT COUNT(*)
         FROM chat_messages cm
+        JOIN chat_sessions cs ON cs.id = cm.session_id
         WHERE cm.created_at >= :startDate
         AND cm.created_at <= :endDate
+        AND cs.user_id NOT IN (:excludedUserIds)
         """, nativeQuery = true)
     Long getChatCount(@Param("startDate") LocalDateTime startDate,
-                      @Param("endDate") LocalDateTime endDate);
+                      @Param("endDate") LocalDateTime endDate,
+                      @Param("excludedUserIds") Collection<Long> excludedUserIds);
     
     /**
      * Lấy feature usage statistics
@@ -111,11 +122,13 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         WHERE atu.created_at >= :startDate
           AND atu.created_at <= :endDate
           AND atu.service_type IS NOT NULL
+          AND atu.user_id NOT IN (:excludedUserIds)
         GROUP BY atu.service_type
         ORDER BY usage_count DESC
         """, nativeQuery = true)
     List<Object[]> getFeatureUsageStats(@Param("startDate") LocalDateTime startDate,
-                                        @Param("endDate") LocalDateTime endDate);
+                                        @Param("endDate") LocalDateTime endDate,
+                                        @Param("excludedUserIds") Collection<Long> excludedUserIds);
     
     /**
      * Lấy số users và chats theo plan
@@ -125,9 +138,10 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         FROM users u
         LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'ACTIVE'
         LEFT JOIN plans p ON s.plan_id = p.id
+        WHERE u.id NOT IN (:excludedUserIds)
         GROUP BY COALESCE(p.name, 'Unknown')
         """, nativeQuery = true)
-    List<Object[]> getUsersByPlan();
+    List<Object[]> getUsersByPlan(@Param("excludedUserIds") Collection<Long> excludedUserIds);
     
     @Query(value = """
         SELECT COALESCE(p.name, 'Unknown'), COUNT(*)
@@ -137,10 +151,12 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         LEFT JOIN plans p ON s.plan_id = p.id
         WHERE cm.created_at >= :startDate
           AND cm.created_at <= :endDate
+          AND cs.user_id NOT IN (:excludedUserIds)
         GROUP BY COALESCE(p.name, 'Unknown')
         """, nativeQuery = true)
     List<Object[]> getChatsByPlan(@Param("startDate") LocalDateTime startDate,
-                                  @Param("endDate") LocalDateTime endDate);
+                                  @Param("endDate") LocalDateTime endDate,
+                                  @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /** Số tài khoản đăng ký mới trong kỳ. */
     @Query(value = """
@@ -148,10 +164,12 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         FROM users u
         WHERE u.created_at >= :startDate
           AND u.created_at <= :endDate
+          AND u.id NOT IN (:excludedUserIds)
         """, nativeQuery = true)
     Long countNewRegistrations(
             @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate);
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /**
      * Số user bắt đầu gói Feedback (MONTHLY/YEARLY) trong kỳ — chuẩn hóa Free/Student/Pro.
@@ -169,6 +187,7 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         WHERE s.start_date >= :startDate
           AND s.start_date <= :endDate
           AND p.billing_cycle IN ('MONTHLY', 'YEARLY')
+          AND s.user_id NOT IN (:excludedUserIds)
         GROUP BY CASE
                    WHEN LOWER(p.name) LIKE '%pro%' THEN 'Pro'
                    WHEN LOWER(p.name) LIKE '%student%' THEN 'Student'
@@ -177,7 +196,8 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         """, nativeQuery = true)
     List<Object[]> countFeedbackPlanStartsInPeriod(
             @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate);
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /**
      * Gói Feedback cao nhất của mỗi user trong kỳ (Pro > Student > Free).
@@ -205,11 +225,13 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         WHERE p.billing_cycle IN ('MONTHLY', 'YEARLY')
           AND s.start_date <= :endDate
           AND s.end_date >= :startDate
+          AND s.user_id NOT IN (:excludedUserIds)
         GROUP BY s.user_id
         """, nativeQuery = true)
     List<Object[]> getHighestFeedbackPlanByUserInPeriod(
             @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate);
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /** Tổng token AI trong kỳ. */
     @Query(value = """
@@ -217,10 +239,12 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         FROM ai_token_usages atu
         WHERE atu.created_at >= :startDate
           AND atu.created_at <= :endDate
+          AND atu.user_id NOT IN (:excludedUserIds)
         """, nativeQuery = true)
     Long sumTokensInPeriod(
             @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate);
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /** Token AI theo user trong kỳ. */
     @Query(value = """
@@ -228,11 +252,13 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         FROM ai_token_usages atu
         WHERE atu.created_at >= :startDate
           AND atu.created_at <= :endDate
+          AND atu.user_id NOT IN (:excludedUserIds)
         GROUP BY atu.user_id
         """, nativeQuery = true)
     List<Object[]> sumTokensByUserInPeriod(
             @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate);
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     // ── Expert analytics ──────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 package com.willa.ai.backend.service.impl;
 
+import com.willa.ai.backend.config.AnalyticsExcludedUsersProperties;
 import com.willa.ai.backend.dto.response.WorkflowUsageReportResponse;
 import com.willa.ai.backend.dto.response.WorkflowUsageReportResponse.UserWorkflowUsageSummary;
 import com.willa.ai.backend.dto.response.WorkflowUsageReportResponse.WorkflowUsageLogItem;
@@ -30,6 +31,7 @@ public class WorkflowUsageServiceImpl implements WorkflowUsageService {
     private final WorkflowUsageRepository workflowUsageRepository;
     private final UserRepository userRepository;
     private final WorkflowUsageRecorder workflowUsageRecorder;
+    private final AnalyticsExcludedUsersProperties excludedUsers;
 
     @Override
     public <T> T track(User user, WorkflowType workflow, Long chatSessionId, Supplier<T> action) {
@@ -170,15 +172,17 @@ public class WorkflowUsageServiceImpl implements WorkflowUsageService {
             throw new IllegalArgumentException("to must be after from");
         }
 
-        Object[] totals = unwrapSingletonRow(workflowUsageRepository.totalDurationAndCountInRange(from, to));
+        Collection<Long> excluded = excludedUsers.queryIds();
+        Object[] totals = unwrapSingletonRow(
+                workflowUsageRepository.totalDurationAndCountInRange(from, to, excluded));
         long totalDurationMs = totals[0] != null ? ((Number) totals[0]).longValue() : 0L;
         long totalRuns = totals[1] != null ? ((Number) totals[1]).longValue() : 0L;
-        long failedRuns = nullSafeLong(workflowUsageRepository.countFailedInRangeAll(from, to));
+        long failedRuns = nullSafeLong(workflowUsageRepository.countFailedInRangeAll(from, to, excluded));
         long successfulRuns = Math.max(totalRuns - failedRuns, 0L);
-        Long activeUsers = workflowUsageRepository.countDistinctUsersInRange(from, to);
+        Long activeUsers = workflowUsageRepository.countDistinctUsersInRange(from, to, excluded);
 
         List<WorkflowUsageSummaryItem> byWorkflow = workflowUsageRepository
-                .aggregateByWorkflowInRange(from, to)
+                .aggregateByWorkflowInRange(from, to, excluded)
                 .stream()
                 .map(row -> WorkflowUsageSummaryItem.builder()
                         .workflow(row[0].toString())
@@ -189,7 +193,7 @@ public class WorkflowUsageServiceImpl implements WorkflowUsageService {
                 .toList();
 
         List<UserWorkflowUsageSummary> byUser = workflowUsageRepository
-                .usersByWorkflowTimeInRange(from, to)
+                .usersByWorkflowTimeInRange(from, to, excluded)
                 .stream()
                 .map(row -> UserWorkflowUsageSummary.builder()
                         .userId(((Number) row[0]).longValue())

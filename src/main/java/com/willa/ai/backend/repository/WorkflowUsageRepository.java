@@ -81,21 +81,25 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
             SELECT w.workflow, COUNT(w), COALESCE(SUM(w.durationMs), 0L), COALESCE(AVG(w.durationMs), 0.0)
             FROM WorkflowUsage w
             WHERE w.startedAt >= :from AND w.startedAt <= :to
+            AND w.user.id NOT IN :excludedUserIds
             GROUP BY w.workflow
             ORDER BY SUM(w.durationMs) DESC
             """)
     List<Object[]> aggregateByWorkflowInRange(
             @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to);
+            @Param("to") LocalDateTime to,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     @Query("""
             SELECT COALESCE(SUM(w.durationMs), 0L), COUNT(w)
             FROM WorkflowUsage w
             WHERE w.startedAt >= :from AND w.startedAt <= :to
+            AND w.user.id NOT IN :excludedUserIds
             """)
     Object[] totalDurationAndCountInRange(
             @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to);
+            @Param("to") LocalDateTime to,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     org.springframework.data.domain.Page<WorkflowUsage> findByStartedAtBetweenOrderByStartedAtDesc(
             LocalDateTime from,
@@ -106,21 +110,25 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
             SELECT COUNT(DISTINCT w.user.id)
             FROM WorkflowUsage w
             WHERE w.startedAt >= :from AND w.startedAt <= :to
+            AND w.user.id NOT IN :excludedUserIds
             """)
     Long countDistinctUsersInRange(
             @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to);
+            @Param("to") LocalDateTime to,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     @Query(value = """
             SELECT DATE(w.started_at) AS day, COUNT(*) AS runs, COALESCE(SUM(w.duration_ms), 0) AS total_ms
             FROM workflow_usages w
             WHERE w.started_at >= :from AND w.started_at <= :to
+              AND w.user_id NOT IN (:excludedUserIds)
             GROUP BY DATE(w.started_at)
             ORDER BY day ASC
             """, nativeQuery = true)
     List<Object[]> getDailyWorkflowStats(
             @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to);
+            @Param("to") LocalDateTime to,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     @Query("""
             SELECT w.user.id, u.email, COUNT(w), COALESCE(SUM(w.durationMs), 0L)
@@ -135,40 +143,46 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
             @Param("to") LocalDateTime to,
             Pageable pageable);
 
-    /** Tất cả user có gọi AI workflow trong kỳ. */
+    /** Tất cả user có gọi AI workflow trong kỳ (đã loại test accounts). */
     @Query("""
             SELECT w.user.id, u.email, COUNT(w), COALESCE(SUM(w.durationMs), 0L)
             FROM WorkflowUsage w
             JOIN w.user u
             WHERE w.startedAt >= :from AND w.startedAt <= :to
+            AND w.user.id NOT IN :excludedUserIds
             GROUP BY w.user.id, u.email
             ORDER BY SUM(w.durationMs) DESC
             """)
     List<Object[]> usersByWorkflowTimeInRange(
             @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to);
+            @Param("to") LocalDateTime to,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     @Query("""
             SELECT w.workflow, COUNT(w)
             FROM WorkflowUsage w
             WHERE w.startedAt >= :from AND w.startedAt <= :to
             AND w.status = com.willa.ai.backend.entity.enums.WorkflowUsageStatus.FAILED
+            AND w.user.id NOT IN :excludedUserIds
             GROUP BY w.workflow
             """)
     List<Object[]> failedCountByWorkflowInRange(
             @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to);
+            @Param("to") LocalDateTime to,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     @Query("""
             SELECT COALESCE(SUM(w.durationMs), 0L), COUNT(w), COALESCE(AVG(w.durationMs), 0.0)
             FROM WorkflowUsage w
             WHERE w.startedAt >= :from AND w.startedAt <= :to
             AND w.workflow = :workflow
+            AND w.user.id NOT IN :excludedUserIds
             """)
     Object[] statsForWorkflowInRange(
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to,
-            @Param("workflow") WorkflowType workflow);
+            @Param("workflow") WorkflowType workflow,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     @Query("""
             SELECT COUNT(w)
@@ -176,11 +190,13 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
             WHERE w.startedAt >= :from AND w.startedAt <= :to
             AND w.workflow = :workflow
             AND w.status = com.willa.ai.backend.entity.enums.WorkflowUsageStatus.FAILED
+            AND w.user.id NOT IN :excludedUserIds
             """)
     Long failedCountForWorkflowInRange(
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to,
-            @Param("workflow") WorkflowType workflow);
+            @Param("workflow") WorkflowType workflow,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     @Query("""
             SELECT w.workflow, COUNT(w)
@@ -212,10 +228,12 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
             FROM WorkflowUsage w
             WHERE w.startedAt >= :from AND w.startedAt <= :to
             AND w.status = com.willa.ai.backend.entity.enums.WorkflowUsageStatus.FAILED
+            AND w.user.id NOT IN :excludedUserIds
             """)
     Long countFailedInRangeAll(
             @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to);
+            @Param("to") LocalDateTime to,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /**
      * Engagement theo user đã dùng AI trong kỳ:
@@ -241,15 +259,18 @@ public interface WorkflowUsageRepository extends JpaRepository<WorkflowUsage, Lo
                 FROM workflow_usages w
                 WHERE w.started_at >= :from
                   AND w.started_at <= :to
+                  AND w.user_id NOT IN (:excludedUserIds)
                 GROUP BY w.user_id
             ) period
             JOIN (
                 SELECT w.user_id, MAX(DATE(w.started_at)) AS last_ever
                 FROM workflow_usages w
+                WHERE w.user_id NOT IN (:excludedUserIds)
                 GROUP BY w.user_id
             ) ever ON ever.user_id = period.user_id
             """, nativeQuery = true)
     List<Object[]> userAiEngagementInRange(
             @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to);
+            @Param("to") LocalDateTime to,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
 }

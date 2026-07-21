@@ -1,5 +1,6 @@
 package com.willa.ai.backend.service.impl;
 
+import com.willa.ai.backend.config.AnalyticsExcludedUsersProperties;
 import com.willa.ai.backend.dto.response.AnalyticsResponse;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.DailyWorkflowStats;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertAnalytics;
@@ -34,6 +35,11 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     
     private final AnalyticsRepository analyticsRepository;
     private final WorkflowUsageRepository workflowUsageRepository;
+    private final AnalyticsExcludedUsersProperties excludedUsers;
+
+    private Collection<Long> excludedIds() {
+        return excludedUsers.queryIds();
+    }
     
     @Override
     public AnalyticsResponse getAnalytics(LocalDate startDate) {
@@ -68,19 +74,23 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     
     private AnalyticsResponse buildAnalyticsResponse(LocalDateTime startDt, LocalDateTime endDt) {
         // Lấy dữ liệu từ repository
-        Long totalActiveUsers = analyticsRepository.getActiveUserCount(startDt, endDt);
-        Long totalChatsInPeriod = analyticsRepository.getChatCount(startDt, endDt);
+        Collection<Long> excluded = excludedIds();
+        Long totalActiveUsers = analyticsRepository.getActiveUserCount(startDt, endDt, excluded);
+        Long totalChatsInPeriod = analyticsRepository.getChatCount(startDt, endDt, excluded);
         Long totalChatsToday = analyticsRepository.getChatCount(
             LocalDate.now().atStartOfDay(),
-            LocalDateTime.now()
+            LocalDateTime.now(),
+            excluded
         );
         Long totalChatsThisWeek = analyticsRepository.getChatCount(
             LocalDate.now().minusDays(7).atStartOfDay(),
-            LocalDateTime.now()
+            LocalDateTime.now(),
+            excluded
         );
         Long totalChatsThisMonth = analyticsRepository.getChatCount(
             LocalDate.now().minusDays(30).atStartOfDay(),
-            LocalDateTime.now()
+            LocalDateTime.now(),
+            excluded
         );
         
         // Daily chat counts
@@ -98,9 +108,9 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         // Chats by plan
         Map<String, Long> chatsByPlan = getChatsByPlan(startDt, endDt);
 
-        Long newRegistrations = analyticsRepository.countNewRegistrations(startDt, endDt);
+        Long newRegistrations = analyticsRepository.countNewRegistrations(startDt, endDt, excludedIds());
         Map<String, Long> feedbackPlanStarts = getFeedbackPlanStartsInPeriod(startDt, endDt);
-        Long totalAiTokens = analyticsRepository.sumTokensInPeriod(startDt, endDt);
+        Long totalAiTokens = analyticsRepository.sumTokensInPeriod(startDt, endDt, excludedIds());
 
         WorkflowUsageAnalytics workflowUsage = buildWorkflowUsageAnalytics(startDt, endDt);
         featureUsageByActionType = enrichFeatureUsageWithWorkflows(featureUsageByActionType, workflowUsage);
@@ -274,19 +284,20 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         LocalDateTime weekStart = LocalDate.now().minusDays(7).atStartOfDay();
         LocalDateTime monthStart = LocalDate.now().minusDays(30).atStartOfDay();
 
+        Collection<Long> excluded = excludedIds();
         Object[] periodTotals = unwrapSingletonRow(
-                workflowUsageRepository.totalDurationAndCountInRange(startDt, endDt));
+                workflowUsageRepository.totalDurationAndCountInRange(startDt, endDt, excluded));
         long totalDurationMs = asLong(periodTotals[0]);
         long totalRuns = asLong(periodTotals[1]);
 
-        Long activeUsers = workflowUsageRepository.countDistinctUsersInRange(startDt, endDt);
+        Long activeUsers = workflowUsageRepository.countDistinctUsersInRange(startDt, endDt, excluded);
 
         PeriodSnapshot today = periodSnapshot(todayStart, now);
         PeriodSnapshot week = periodSnapshot(weekStart, now);
         PeriodSnapshot month = periodSnapshot(monthStart, now);
 
         Map<String, WorkflowTypeStats> byWorkflowRaw = workflowUsageRepository
-                .aggregateByWorkflowInRange(startDt, endDt)
+                .aggregateByWorkflowInRange(startDt, endDt, excluded)
                 .stream()
                 .collect(Collectors.toMap(
                         row -> row[0].toString(),
@@ -302,7 +313,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         Map<String, WorkflowTypeStats> byWorkflow = fillAllWorkflowTypes(byWorkflowRaw);
 
         Map<LocalDate, DailyWorkflowStats> dailyStats = workflowUsageRepository
-                .getDailyWorkflowStats(startDt, endDt)
+                .getDailyWorkflowStats(startDt, endDt, excluded)
                 .stream()
                 .collect(Collectors.toMap(
                         row -> toLocalDate(row[0]),
@@ -316,7 +327,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         Map<Long, String> highestPlanByUser = getHighestFeedbackPlanMap(startDt, endDt);
         Map<Long, Long> tokensByUser = getTokensByUserMap(startDt, endDt);
 
-        List<Object[]> engagementRows = workflowUsageRepository.userAiEngagementInRange(startDt, endDt);
+        List<Object[]> engagementRows = workflowUsageRepository.userAiEngagementInRange(startDt, endDt, excluded);
         Map<Long, long[]> engagementByUser = new HashMap<>();
         double sumActiveDays = 0;
         double sumInactiveDays = 0;
@@ -343,7 +354,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 ? round1(sumActiveDaysBeforeInactive / inactiveUserCount) : 0.0;
 
         List<WorkflowUserActivity> topUsers = workflowUsageRepository
-                .usersByWorkflowTimeInRange(startDt, endDt)
+                .usersByWorkflowTimeInRange(startDt, endDt, excluded)
                 .stream()
                 .map(row -> {
                     Long userId = asLong(row[0]);
@@ -362,7 +373,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .collect(Collectors.toList());
 
         Map<String, Long> failedRunsByWorkflow = workflowUsageRepository
-                .failedCountByWorkflowInRange(startDt, endDt)
+                .failedCountByWorkflowInRange(startDt, endDt, excluded)
                 .stream()
                 .collect(Collectors.toMap(
                         row -> row[0].toString(),
@@ -438,7 +449,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             LocalDateTime now,
             Map<String, Long> failedRunsByWorkflow) {
         Object[] period = unwrapSingletonRow(
-                workflowUsageRepository.statsForWorkflowInRange(periodStart, periodEnd, workflow));
+                workflowUsageRepository.statsForWorkflowInRange(periodStart, periodEnd, workflow, excludedIds()));
         long durationMs = asLong(period[0]);
         long runCount = asLong(period[1]);
         double avgMs = asDouble(period[2]);
@@ -449,7 +460,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
         Long failed = failedRunsByWorkflow.get(workflow.name());
         if (failed == null) {
-            Long q = workflowUsageRepository.failedCountForWorkflowInRange(periodStart, periodEnd, workflow);
+            Long q = workflowUsageRepository.failedCountForWorkflowInRange(
+                    periodStart, periodEnd, workflow, excludedIds());
             failed = q != null ? q : 0L;
         }
 
@@ -467,13 +479,13 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
     private long countRunsForWorkflow(WorkflowType workflow, LocalDateTime from, LocalDateTime to) {
         Object[] totals = unwrapSingletonRow(
-                workflowUsageRepository.statsForWorkflowInRange(from, to, workflow));
+                workflowUsageRepository.statsForWorkflowInRange(from, to, workflow, excludedIds()));
         return asLong(totals[1]);
     }
 
     private PeriodSnapshot periodSnapshot(LocalDateTime from, LocalDateTime to) {
         Object[] totals = unwrapSingletonRow(
-                workflowUsageRepository.totalDurationAndCountInRange(from, to));
+                workflowUsageRepository.totalDurationAndCountInRange(from, to, excludedIds()));
         return new PeriodSnapshot(asLong(totals[1]), asLong(totals[0]));
     }
 
@@ -556,7 +568,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
     
     private Map<LocalDate, Long> getDailyChatCounts(LocalDateTime startDt, LocalDateTime endDt) {
-        List<Object[]> results = analyticsRepository.getChatCountByDate(startDt, endDt);
+        List<Object[]> results = analyticsRepository.getChatCountByDate(startDt, endDt, excludedIds());
         
         return results.stream()
             .collect(Collectors.toMap(
@@ -566,7 +578,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
     
     private List<UserActivityDTO> getActiveUsersInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
-        List<Object[]> results = analyticsRepository.getActiveUsersInPeriod(startDt, endDt);
+        List<Object[]> results = analyticsRepository.getActiveUsersInPeriod(startDt, endDt, excludedIds());
         
         return results.stream()
             .map(row -> UserActivityDTO.builder()
@@ -584,7 +596,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         starts.put("Free", 0L);
         starts.put("Student", 0L);
         starts.put("Pro", 0L);
-        for (Object[] row : analyticsRepository.countFeedbackPlanStartsInPeriod(startDt, endDt)) {
+        for (Object[] row : analyticsRepository.countFeedbackPlanStartsInPeriod(startDt, endDt, excludedIds())) {
             String tier = row[0] != null ? row[0].toString() : "Free";
             starts.put(tier, asLong(row[1]));
         }
@@ -592,7 +604,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
 
     private Map<Long, String> getHighestFeedbackPlanMap(LocalDateTime startDt, LocalDateTime endDt) {
-        return analyticsRepository.getHighestFeedbackPlanByUserInPeriod(startDt, endDt).stream()
+        return analyticsRepository.getHighestFeedbackPlanByUserInPeriod(startDt, endDt, excludedIds()).stream()
                 .collect(Collectors.toMap(
                         row -> asLong(row[0]),
                         row -> row[1] != null ? row[1].toString() : "Free",
@@ -601,7 +613,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
 
     private Map<Long, Long> getTokensByUserMap(LocalDateTime startDt, LocalDateTime endDt) {
-        return analyticsRepository.sumTokensByUserInPeriod(startDt, endDt).stream()
+        return analyticsRepository.sumTokensByUserInPeriod(startDt, endDt, excludedIds()).stream()
                 .collect(Collectors.toMap(
                         row -> asLong(row[0]),
                         row -> asLong(row[1]),
@@ -610,7 +622,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
     
     private Map<String, Long> getFeatureUsage(LocalDateTime startDt, LocalDateTime endDt) {
-        List<Object[]> results = analyticsRepository.getFeatureUsageStats(startDt, endDt);
+        List<Object[]> results = analyticsRepository.getFeatureUsageStats(startDt, endDt, excludedIds());
         
         return results.stream()
             .collect(Collectors.toMap(
@@ -620,7 +632,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
     
     private Map<String, Long> getUsersByPlan() {
-        List<Object[]> results = analyticsRepository.getUsersByPlan();
+        List<Object[]> results = analyticsRepository.getUsersByPlan(excludedIds());
         
         return results.stream()
             .collect(Collectors.toMap(
@@ -631,7 +643,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
     
     private Map<String, Long> getChatsByPlan(LocalDateTime startDt, LocalDateTime endDt) {
-        List<Object[]> results = analyticsRepository.getChatsByPlan(startDt, endDt);
+        List<Object[]> results = analyticsRepository.getChatsByPlan(startDt, endDt, excludedIds());
         
         return results.stream()
             .collect(Collectors.toMap(
