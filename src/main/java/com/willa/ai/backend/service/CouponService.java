@@ -21,9 +21,10 @@ public interface CouponService {
 
     String generateUniqueCode();
 
-    CouponValidationResponse validateForCheckout(String code, Long planId, String planType, long baseAmount);
+    CouponValidationResponse validateForCheckout(
+            String code, Long planId, String planType, long baseAmount, String userEmail);
 
-    Coupon lockForPayment(String code, Long planId, String planType, long baseAmount);
+    Coupon lockForPayment(String code, Long planId, String planType, long baseAmount, String userEmail);
 
     long applyDiscount(Coupon coupon, long baseAmount);
 

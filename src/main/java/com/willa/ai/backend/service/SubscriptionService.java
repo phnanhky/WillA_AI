@@ -10,4 +10,6 @@ public interface SubscriptionService {
     Page<SubscriptionResponse> getAllSubscriptions(int page, int size);
     SubscriptionResponse cancelSubscription(String email, Long subscriptionId);
     void createOrUpdateSubscription(String email, Long planId);
+
+    void createOrUpdateSubscription(String email, Long planId, Integer bonusDays);
 }

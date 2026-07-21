@@ -85,6 +85,12 @@ public class WorkspaceSubscriptionServiceImpl implements WorkspaceSubscriptionSe
     @Override
     @Transactional
     public void createOrUpdateSubscription(String email, Long workspacePlanId) {
+        createOrUpdateSubscription(email, workspacePlanId, null);
+    }
+
+    @Override
+    @Transactional
+    public void createOrUpdateSubscription(String email, Long workspacePlanId, Integer bonusDays) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
 
@@ -100,7 +106,7 @@ public class WorkspaceSubscriptionServiceImpl implements WorkspaceSubscriptionSe
         cancelActiveRecurring(user);
 
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime endDate = calculateEndDate(now, plan);
+        LocalDateTime endDate = applyBonusDays(calculateEndDate(now, plan), bonusDays, plan);
 
         WorkspaceSubscription subscription = WorkspaceSubscription.builder()
                 .user(user)
@@ -154,6 +160,14 @@ public class WorkspaceSubscriptionServiceImpl implements WorkspaceSubscriptionSe
             case YEARLY -> startDate.plusYears(1);
             case ONE_TIME -> startDate.plusYears(100);
         };
+    }
+
+    private LocalDateTime applyBonusDays(LocalDateTime endDate, Integer bonusDays, WorkspacePlan plan) {
+        if (bonusDays == null || bonusDays <= 0 || isFreePlan(plan)
+                || plan.getBillingCycle() == BillingCycle.ONE_TIME) {
+            return endDate;
+        }
+        return endDate.plusDays(bonusDays);
     }
 
     private boolean isFreePlan(WorkspacePlan plan) {

@@ -18,6 +18,7 @@ public class CouponValidationResponse {
     private Long originalAmount;
     private Long discountAmount;
     private Long finalAmount;
+    private Integer bonusDays;
     /** Giá thanh toán nếu không dùng coupon (giảm giá admin). */
     private Long adminDiscountPrice;
     private String message;

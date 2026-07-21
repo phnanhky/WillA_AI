@@ -162,7 +162,7 @@ public class PaymentServiceImpl implements PaymentService {
             Coupon coupon = null;
             long amount;
             if (hasCoupon) {
-                coupon = couponService.lockForPayment(couponCode, planId, planType, listPrice);
+                coupon = couponService.lockForPayment(couponCode, planId, planType, listPrice, user.getEmail());
                 amount = couponService.applyDiscount(coupon, listPrice);
                 payment.setCoupon(coupon);
                 payment.setOriginalAmount(listPrice);
@@ -317,13 +317,14 @@ public class PaymentServiceImpl implements PaymentService {
 
     private void activateEntitlement(Payment payment) {
         Long orderCode = payment.getOrderCode();
+        Integer bonusDays = payment.getCoupon() != null ? payment.getCoupon().getBonusDays() : null;
         if (payment.getWorkspacePlan() != null) {
             workspaceSubscriptionService.createOrUpdateSubscription(
-                    payment.getUser().getEmail(), payment.getWorkspacePlan().getId());
+                    payment.getUser().getEmail(), payment.getWorkspacePlan().getId(), bonusDays);
             System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã kích hoạt gói workspace.");
         } else if (payment.getPlan() != null) {
             subscriptionService.createOrUpdateSubscription(
-                    payment.getUser().getEmail(), payment.getPlan().getId());
+                    payment.getUser().getEmail(), payment.getPlan().getId(), bonusDays);
             System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã cộng token/subscription.");
         } else {
             expertBookingRepository.findByPaymentId(payment.getId()).ifPresent(booking -> {

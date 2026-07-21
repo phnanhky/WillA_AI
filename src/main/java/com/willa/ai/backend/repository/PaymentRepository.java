@@ -14,4 +14,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByOrderCode(Long orderCode);
     List<Payment> findByStatusAndCreatedAtBefore(PaymentStatus status, java.time.LocalDateTime dateTime);
     boolean existsByCoupon_IdAndStatus(Long couponId, PaymentStatus status);
+    long countByCoupon_IdAndStatus(Long couponId, PaymentStatus status);
+    boolean existsByCoupon_IdAndUser_IdAndStatus(Long couponId, Long userId, PaymentStatus status);
 }

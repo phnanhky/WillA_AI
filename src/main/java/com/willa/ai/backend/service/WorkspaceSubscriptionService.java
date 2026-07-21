@@ -13,5 +13,7 @@ public interface WorkspaceSubscriptionService {
 
     void createOrUpdateSubscription(String email, Long workspacePlanId);
 
+    void createOrUpdateSubscription(String email, Long workspacePlanId, Integer bonusDays);
+
     void assignDefaultFreeSubscription(String email);
 }

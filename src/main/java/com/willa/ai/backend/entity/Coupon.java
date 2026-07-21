@@ -35,6 +35,10 @@ public class Coupon {
     @Column(name = "discount_value", nullable = false)
     private Long discountValue;
 
+    /** Số ngày cộng thêm vào thời hạn gói (MONTHLY/YEARLY) khi đổi mã. */
+    @Column(name = "bonus_days")
+    private Integer bonusDays;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "plan_scope", nullable = false, length = 20)
     @Builder.Default
@@ -51,8 +55,27 @@ public class Coupon {
     @Builder.Default
     private Boolean isActive = true;
 
+    @Column(name = "starts_at")
+    private LocalDateTime startsAt;
+
     @Column(name = "expires_at")
     private LocalDateTime expiresAt;
+
+    /** null = không giới hạn lượt dùng. */
+    @Column(name = "max_redemptions")
+    private Integer maxRedemptions;
+
+    @Column(name = "redemption_count", nullable = false)
+    @Builder.Default
+    private Integer redemptionCount = 0;
+
+    /** JSON array user id — null/empty = mọi user. */
+    @Column(name = "allowed_user_ids", columnDefinition = "TEXT")
+    private String allowedUserIds;
+
+    /** JSON array {planType, planId} — null/empty = mọi gói trong scope (hoặc planId legacy). */
+    @Column(name = "eligible_plans", columnDefinition = "TEXT")
+    private String eligiblePlans;
 
     @Column(name = "redeemed_at")
     private LocalDateTime redeemedAt;
@@ -74,6 +97,14 @@ public class Coupon {
     private LocalDateTime updatedAt;
 
     public boolean isRedeemed() {
-        return redeemedAt != null;
+        if (maxRedemptions == null) {
+            return false;
+        }
+        int count = redemptionCount != null ? redemptionCount : 0;
+        return count >= maxRedemptions;
+    }
+
+    public boolean hasAnyRedemption() {
+        return redemptionCount != null && redemptionCount > 0;
     }
 }

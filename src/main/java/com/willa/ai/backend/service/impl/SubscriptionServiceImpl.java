@@ -96,6 +96,13 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         };
     }
 
+    private LocalDateTime applyBonusDays(LocalDateTime endDate, Integer bonusDays, BillingCycle cycle) {
+        if (bonusDays == null || bonusDays <= 0 || cycle == BillingCycle.ONE_TIME) {
+            return endDate;
+        }
+        return endDate.plusDays(bonusDays);
+    }
+
     @Override
     @Transactional
     public Page<SubscriptionResponse> getUserSubscriptions(String email, int page, int size) {
@@ -153,6 +160,12 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     @Override
     @Transactional
     public void createOrUpdateSubscription(String email, Long planId) {
+        createOrUpdateSubscription(email, planId, null);
+    }
+
+    @Override
+    @Transactional
+    public void createOrUpdateSubscription(String email, Long planId, Integer bonusDays) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
 
@@ -172,7 +185,8 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         Wallet wallet = settleAndCancelActiveRecurring(user);
 
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime endDate = calculateEndDate(now, plan.getBillingCycle());
+        LocalDateTime endDate = applyBonusDays(
+                calculateEndDate(now, plan.getBillingCycle()), bonusDays, plan.getBillingCycle());
 
         long balanceBeforeGrant = wallet.getTokenBalance();
         long grant = plan.getTokenLimit().longValue();

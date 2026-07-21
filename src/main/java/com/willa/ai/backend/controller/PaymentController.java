@@ -41,7 +41,8 @@ public class PaymentController {
 
     @PostMapping("/validate-coupon")
     public ResponseEntity<ApiResponse<CouponValidationResponse>> validateCoupon(
-            @RequestBody ValidateCouponRequest request) {
+            @RequestBody ValidateCouponRequest request,
+            Authentication authentication) {
         try {
             if (request.getCode() == null || request.getCode().isBlank()) {
                 return ResponseEntity.badRequest().body(ApiResponse.<CouponValidationResponse>builder()
@@ -59,7 +60,8 @@ public class PaymentController {
             long listPrice = resolveListPrice(request.getPlanId(), planType);
             long adminPrice = resolveAdminPrice(request.getPlanId(), planType);
             CouponValidationResponse result = couponService.validateForCheckout(
-                    request.getCode(), request.getPlanId(), planType, listPrice);
+                    request.getCode(), request.getPlanId(), planType, listPrice,
+                    authentication != null ? authentication.getName() : null);
             result.setAdminDiscountPrice(adminPrice);
             if (result.isValid() && adminPrice < listPrice && adminPrice < result.getFinalAmount()) {
                 result.setMessage(
