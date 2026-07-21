@@ -57,17 +57,10 @@ public class PaymentController {
                         .build());
             }
             String planType = request.getPlanType() != null ? request.getPlanType() : "FEEDBACK";
-            long listPrice = resolveListPrice(request.getPlanId(), planType);
-            long adminPrice = resolveAdminPrice(request.getPlanId(), planType);
+            long planPrice = resolveAdminPrice(request.getPlanId(), planType);
             CouponValidationResponse result = couponService.validateForCheckout(
-                    request.getCode(), request.getPlanId(), planType, listPrice,
+                    request.getCode(), request.getPlanId(), planType, planPrice,
                     authentication != null ? authentication.getName() : null);
-            result.setAdminDiscountPrice(adminPrice);
-            if (result.isValid() && adminPrice < listPrice && adminPrice < result.getFinalAmount()) {
-                result.setMessage(
-                        "Mã hợp lệ. Giảm giá admin đang tốt hơn — xóa mã để thanh toán "
-                                + adminPrice + " VND.");
-            }
             return ResponseEntity.ok(ApiResponse.<CouponValidationResponse>builder()
                     .success(result.isValid())
                     .data(result)
@@ -135,18 +128,6 @@ public class PaymentController {
                     .message("Webhook error: " + e.getMessage())
                     .build());
         }
-    }
-
-    private long resolveListPrice(Long planId, String planType) {
-        boolean isWorkspace = planType != null && planType.equalsIgnoreCase("WORKSPACE");
-        if (isWorkspace) {
-            WorkspacePlan plan = workspacePlanRepository.findById(planId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Workspace plan not found"));
-            return plan.getPrice() != null ? plan.getPrice().longValue() : 0L;
-        }
-        Plan plan = planRepository.findById(planId)
-                .orElseThrow(() -> new ResourceNotFoundException("Plan not found"));
-        return plan.getPrice() != null ? plan.getPrice().longValue() : 0L;
     }
 
     private long resolveAdminPrice(Long planId, String planType) {

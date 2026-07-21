@@ -457,7 +457,7 @@ public class CouponServiceImpl implements CouponService {
     }
 
     private String buildValidMessage(Coupon coupon) {
-        String base = "Mã hợp lệ — áp dụng trên giá gốc, không cộng với giảm giá admin";
+        String base = "Mã hợp lệ — áp dụng trên giá gói hiện tại (đã gồm giảm giá admin nếu có)";
         Integer bonusDays = coupon.getBonusDays();
         if (bonusDays != null && bonusDays > 0) {
             base += ". Cộng thêm " + bonusDays + " ngày sử dụng gói";

@@ -155,20 +155,19 @@ public class PaymentServiceImpl implements PaymentService {
                         .build();
             }
 
-            long listPrice = resolveListPrice(priceBd);
-            long adminPrice = resolvePaymentAmount(priceBd, promotionalPriceBd);
+            long planPrice = resolvePaymentAmount(priceBd, promotionalPriceBd);
             boolean hasCoupon = couponCode != null && !couponCode.isBlank();
 
             Coupon coupon = null;
             long amount;
             if (hasCoupon) {
-                coupon = couponService.lockForPayment(couponCode, planId, planType, listPrice, user.getEmail());
-                amount = couponService.applyDiscount(coupon, listPrice);
+                coupon = couponService.lockForPayment(couponCode, planId, planType, planPrice, user.getEmail());
+                amount = couponService.applyDiscount(coupon, planPrice);
                 payment.setCoupon(coupon);
-                payment.setOriginalAmount(listPrice);
-                payment.setDiscountAmount(Math.max(0, listPrice - amount));
+                payment.setOriginalAmount(planPrice);
+                payment.setDiscountAmount(Math.max(0, planPrice - amount));
             } else {
-                amount = adminPrice;
+                amount = planPrice;
                 validatePayableAmount(amount, planName);
             }
 
@@ -290,12 +289,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    /** Giá gốc (list price) — cơ sở tính coupon, không gồm giảm admin. */
-    private long resolveListPrice(BigDecimal price) {
-        return price != null ? price.longValue() : 0L;
-    }
-
-    /** Giá thanh toán khi không dùng coupon — khớp FE `effectivePlanPrice`. */
+    /** Giá thanh toán / cơ sở tính coupon — khớp FE `effectivePlanPrice`. */
     private long resolvePaymentAmount(BigDecimal price, BigDecimal promotionalPrice) {
         BigDecimal base = price != null ? price : BigDecimal.ZERO;
         BigDecimal effective = promotionalPrice != null ? promotionalPrice : base;
