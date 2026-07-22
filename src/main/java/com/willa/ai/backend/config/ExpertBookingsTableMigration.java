@@ -6,6 +6,7 @@ import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -26,6 +27,7 @@ public class ExpertBookingsTableMigration {
     private static final String STATUS_CHECK = "expert_bookings_status_check";
 
     @Bean(name = MIGRATION_BEAN)
+    @DependsOn("workspaceExpertsSchemaMigration")
     public String migrateExpertBookingTables(DataSource dataSource) {
         try (Connection connection = dataSource.getConnection();
              Statement statement = connection.createStatement()) {
