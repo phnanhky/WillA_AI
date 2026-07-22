@@ -18,6 +18,8 @@ public interface WorkspaceExpertRepository extends JpaRepository<WorkspaceExpert
 
     boolean existsByUserId(Long userId);
 
+    Optional<WorkspaceExpert> findByUserId(Long userId);
+
     Optional<WorkspaceExpert> findByWorkspaceIdAndUserId(Long workspaceId, Long userId);
 
     Optional<WorkspaceExpert> findByWorkspaceIsNullAndUserId(Long userId);

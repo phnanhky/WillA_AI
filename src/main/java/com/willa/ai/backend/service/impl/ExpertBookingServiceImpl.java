@@ -34,6 +34,8 @@ import com.willa.ai.backend.repository.ExpertBookingRepository;
 import com.willa.ai.backend.repository.PaymentRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WorkspaceExpertRepository;
+import com.willa.ai.backend.service.EmailService;
+import com.willa.ai.backend.service.ExpertBookingPolicy;
 import com.willa.ai.backend.service.ExpertBookingRealtimeService;
 import com.willa.ai.backend.service.ExpertBookingService;
 import com.willa.ai.backend.service.PaymentService;
@@ -46,6 +48,7 @@ import vn.payos.type.CheckoutResponseData;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -70,6 +73,7 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
     private final PaymentRepository paymentRepository;
     private final PaymentService paymentService;
     private final ExpertBookingRealtimeService expertBookingRealtimeService;
+    private final EmailService emailService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -145,11 +149,12 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
         }
         if (booking.getStatus() == ExpertBookingStatus.CANCELLED
                 || booking.getStatus() == ExpertBookingStatus.REJECTED
+                || booking.getStatus() == ExpertBookingStatus.EXPIRED
                 || booking.getStatus() == ExpertBookingStatus.COMPLETED) {
             throw new IllegalArgumentException(
                     booking.getStatus() == ExpertBookingStatus.COMPLETED
                             ? "Booking đã hoàn tất — không thể thêm tài liệu"
-                            : "Booking đã hủy hoặc bị từ chối");
+                            : "Booking đã hủy, hết hạn hoặc bị từ chối");
         }
 
         List<String> newLinks = sanitizeDriveLinks(request.getDriveLinks());
@@ -181,8 +186,7 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
         User expertUser = userRepository.findByEmail(expertUserEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         return bookingRepository.findByExpertUserIdOrderByCreatedAtDesc(expertUser.getId()).stream()
-                .filter(b -> b.getStatus() != ExpertBookingStatus.CANCELLED
-                        && b.getStatus() != ExpertBookingStatus.REJECTED)
+                .filter(b -> b.getStatus() != ExpertBookingStatus.CANCELLED)
                 .map(this::mapToResponse)
                 .toList();
     }
@@ -193,7 +197,8 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
         ExpertBooking booking = loadBookingForExpert(expertUserEmail, bookingId);
         if (booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT
                 || booking.getStatus() == ExpertBookingStatus.CANCELLED
-                || booking.getStatus() == ExpertBookingStatus.REJECTED) {
+                || booking.getStatus() == ExpertBookingStatus.REJECTED
+                || booking.getStatus() == ExpertBookingStatus.EXPIRED) {
             throw new IllegalArgumentException("Booking chưa sẵn sàng để cập nhật");
         }
 
@@ -202,7 +207,12 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
             if (next != ExpertBookingStatus.IN_PROGRESS && next != ExpertBookingStatus.COMPLETED) {
                 throw new IllegalArgumentException("Trạng thái không hợp lệ");
             }
-            booking.setStatus(next);
+            if (next == ExpertBookingStatus.IN_PROGRESS
+                    && booking.getStatus() == ExpertBookingStatus.AWAITING_EXPERT) {
+                applyAccept(booking);
+            } else {
+                booking.setStatus(next);
+            }
             if (next == ExpertBookingStatus.COMPLETED) {
                 if (trimOrNull(request.getFeedback()) == null
                         && trimOrNull(booking.getExpertFeedback()) == null) {
@@ -210,7 +220,6 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
                             "Cần nhập phản hồi trước khi hoàn tất hỗ trợ");
                 }
                 booking.setCompletedAt(LocalDateTime.now());
-                // Khóa phòng họp sau khi hoàn tất
                 booking.setMeetingRoomUrl(null);
             }
         }
@@ -218,10 +227,11 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
         String feedback = trimOrNull(request.getFeedback());
         if (feedback != null) {
             booking.setExpertFeedback(feedback);
+            markFeedbackDeliveredIfNeeded(booking);
         }
 
         if (booking.getStatus() == ExpertBookingStatus.AWAITING_EXPERT && feedback != null) {
-            booking.setStatus(ExpertBookingStatus.IN_PROGRESS);
+            applyAccept(booking);
         }
 
         ensureMeetingRoomUrlPersisted(booking);
@@ -229,6 +239,191 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
         ExpertBookingResponse response = mapToResponse(saved);
         expertBookingRealtimeService.publishBookingUpdated(saved, response);
         return response;
+    }
+
+    @Override
+    public int expireUnacceptedBookings() {
+        LocalDateTime now = LocalDateTime.now();
+        List<ExpertBooking> overdue = bookingRepository.findByStatusAndAcceptDeadlineAtBefore(
+                ExpertBookingStatus.AWAITING_EXPERT, now);
+        int count = 0;
+        for (ExpertBooking booking : overdue) {
+            try {
+                expireAndRefund(booking,
+                        "Expert không nhận đơn trong " + ExpertBookingPolicy.ACCEPT_SLA_HOURS
+                                + " giờ — hệ thống hủy và yêu cầu hoàn tiền.",
+                        ExpertBookingStatus.EXPIRED);
+                count++;
+            } catch (Exception e) {
+                log.error("Failed to expire booking {}: {}", booking.getId(), e.getMessage());
+            }
+        }
+        return count;
+    }
+
+    @Override
+    public int autoCompleteExpiredReviewQa() {
+        LocalDateTime now = LocalDateTime.now();
+        List<ExpertBooking> expiredQa = bookingRepository.findByStatusAndBookingTypeAndQaEndsAtBefore(
+                ExpertBookingStatus.IN_PROGRESS, ExpertBookingType.REVIEW, now);
+        int count = 0;
+        for (ExpertBooking booking : expiredQa) {
+            if (trimOrNull(booking.getExpertFeedback()) == null) {
+                continue;
+            }
+            booking.setStatus(ExpertBookingStatus.COMPLETED);
+            booking.setCompletedAt(now);
+            booking.setMeetingRoomUrl(null);
+            ExpertBooking saved = bookingRepository.save(booking);
+            expertBookingRealtimeService.publishBookingUpdated(saved, mapToResponse(saved));
+            count++;
+            log.info("Auto-completed REVIEW booking {} after Q&A window", booking.getId());
+        }
+        return count;
+    }
+
+    @Override
+    public int autoCompleteHourlyCallExhausted() {
+        List<ExpertBooking> hourly = bookingRepository.findAll().stream()
+                .filter(b -> b.getStatus() == ExpertBookingStatus.IN_PROGRESS
+                        && b.getBookingType() == ExpertBookingType.HOURLY)
+                .toList();
+        int count = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (ExpertBooking booking : hourly) {
+            if (hasCallQuotaRemaining(booking)) {
+                continue;
+            }
+            boolean openSessions = !callSessionRepository.findByBookingIdAndLeftAtIsNull(booking.getId()).isEmpty();
+            if (openSessions) {
+                continue;
+            }
+            booking.setStatus(ExpertBookingStatus.COMPLETED);
+            booking.setCompletedAt(now);
+            booking.setMeetingRoomUrl(null);
+            if (trimOrNull(booking.getExpertFeedback()) == null) {
+                booking.setExpertFeedback("Phiên theo giờ đã hết phút call — hệ thống tự đóng.");
+            }
+            ExpertBooking saved = bookingRepository.save(booking);
+            expertBookingRealtimeService.publishBookingUpdated(saved, mapToResponse(saved));
+            count++;
+            log.info("Auto-completed HOURLY booking {} after call quota exhausted", booking.getId());
+        }
+        return count;
+    }
+
+    @Override
+    public ExpertBookingResponse rejectByExpert(String expertUserEmail, Long bookingId, String reason) {
+        ExpertBooking booking = loadBookingForExpert(expertUserEmail, bookingId);
+        if (booking.getStatus() != ExpertBookingStatus.AWAITING_EXPERT
+                && booking.getStatus() != ExpertBookingStatus.IN_PROGRESS) {
+            throw new IllegalArgumentException("Chỉ từ chối được đơn đang chờ nhận hoặc đang hỗ trợ");
+        }
+        if (booking.getStatus() == ExpertBookingStatus.IN_PROGRESS
+                && trimOrNull(booking.getExpertFeedback()) != null) {
+            throw new IllegalArgumentException("Đã gửi feedback — không thể từ chối, hãy đóng phiên");
+        }
+        String why = trimOrNull(reason);
+        if (why == null) {
+            why = "Expert từ chối đơn";
+        }
+        expireAndRefund(booking, why, ExpertBookingStatus.REJECTED);
+        return mapToResponse(bookingRepository.findById(bookingId).orElse(booking));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ExpertBookingResponse> listRefundPendingForAdmin() {
+        return bookingRepository.findAll().stream()
+                .filter(b -> {
+                    Payment p = b.getPayment();
+                    return p != null && p.getStatus() == PaymentStatus.REFUND_PENDING;
+                })
+                .sorted(Comparator.comparing(ExpertBooking::getUpdatedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    public ExpertBookingResponse markRefundSettled(Long bookingId) {
+        ExpertBooking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy booking"));
+        Payment payment = booking.getPayment();
+        if (payment == null || payment.getStatus() != PaymentStatus.REFUND_PENDING) {
+            throw new IllegalArgumentException("Booking không ở trạng thái chờ hoàn tiền ops");
+        }
+        payment.setStatus(PaymentStatus.REFUNDED);
+        paymentRepository.save(payment);
+        log.info("Refund settled for booking {} orderCode={}", bookingId, payment.getOrderCode());
+        return mapToResponse(booking);
+    }
+
+    private void applyAccept(ExpertBooking booking) {
+        LocalDateTime now = LocalDateTime.now();
+        if (booking.getAcceptedAt() == null) {
+            booking.setAcceptedAt(now);
+        }
+        if (booking.getCallMinutesLimit() == null || booking.getCallMinutesLimit() <= 0) {
+            booking.setCallMinutesLimit(ExpertBookingPolicy.callMinutesFor(
+                    booking.getBookingType(), booking.getHourlyHours()));
+        }
+        booking.setStatus(ExpertBookingStatus.IN_PROGRESS);
+    }
+
+    private void markFeedbackDeliveredIfNeeded(ExpertBooking booking) {
+        if (booking.getBookingType() != ExpertBookingType.REVIEW) {
+            return;
+        }
+        if (booking.getFeedbackDeliveredAt() != null) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        booking.setFeedbackDeliveredAt(now);
+        booking.setQaEndsAt(now.plusHours(ExpertBookingPolicy.REVIEW_QA_HOURS));
+    }
+
+    private void expireAndRefund(ExpertBooking booking, String reason, ExpertBookingStatus terminalStatus) {
+        booking.setStatus(terminalStatus);
+        booking.setRejectReason(reason);
+        booking.setMeetingRoomUrl(null);
+        Payment payment = booking.getPayment();
+        if (payment != null && payment.getStatus() == PaymentStatus.PAID) {
+            payment.setStatus(PaymentStatus.REFUND_PENDING);
+            paymentRepository.save(payment);
+            log.warn(
+                    "EXPERT_BOOKING_REFUND_PENDING: bookingId={} orderCode={} amount={} reason={} — ops hoàn trên PayOS dashboard rồi mark settled",
+                    booking.getId(),
+                    payment.getOrderCode(),
+                    payment.getAmount(),
+                    reason);
+        }
+        ExpertBooking saved = bookingRepository.save(booking);
+        expertBookingRealtimeService.publishBookingUpdated(saved, mapToResponse(saved));
+        notifyClientRefund(saved, reason);
+    }
+
+    private void notifyClientRefund(ExpertBooking booking, String reason) {
+        try {
+            User client = booking.getClient();
+            if (client == null || client.getEmail() == null) {
+                return;
+            }
+            emailService.sendSimpleEmail(
+                    client.getEmail(),
+                    "WillA — Đơn Expert đã hủy, đang xử lý hoàn tiền",
+                    "Xin chào " + (client.getFullName() != null ? client.getFullName() : "")
+                            + ",\n\nĐơn Expert #" + booking.getId() + " đã bị hủy.\n"
+                            + reason
+                            + "\n\nChúng tôi đã ghi nhận yêu cầu hoàn "
+                            + booking.getAmountVnd()
+                            + " VND. Tiền thường về tài khoản trong 1–3 ngày làm việc sau khi ops hoàn trên PayOS. "
+                            + "Nếu quá hạn, liên hệ support@willaai.tech kèm mã PayOS "
+                            + (booking.getPayment() != null ? booking.getPayment().getOrderCode() : "—")
+                            + ".\n\n— WillA");
+        } catch (Exception e) {
+            log.warn("Could not email refund notice for booking {}: {}", booking.getId(), e.getMessage());
+        }
     }
 
     @Override
@@ -245,15 +440,14 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
     public ExpertBookingMessageResponse sendMessage(
             String userEmail, Long bookingId, ExpertBookingMessageRequest request) {
         ExpertBooking booking = loadBookingForParticipant(userEmail, bookingId);
-        assertChatWritable(booking);
+        User sender = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        assertChatWritable(booking, sender);
 
         String content = trimOrNull(request.getContent());
         if (content == null) {
             throw new IllegalArgumentException("Nội dung tin nhắn trống");
         }
-
-        User sender = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("User not found"));
 
         ExpertBookingMessage message = ExpertBookingMessage.builder()
                 .booking(booking)
@@ -289,7 +483,10 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
 
         String roomName = trimOrNull(request.getRoomName());
         if (roomName == null) {
-            roomName = "WillaBooking" + booking.getId();
+            String url = trimOrNull(booking.getMeetingRoomUrl());
+            roomName = url != null && url.contains("meet.jit.si/")
+                    ? url.substring(url.lastIndexOf('/') + 1)
+                    : ("WillaEB" + booking.getId() + "x" + generateRoomSecret());
         }
         String clientSessionId = trimOrNull(request.getClientSessionId());
         String payload = trimOrNull(request.getPayload());
@@ -371,15 +568,21 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
 
     private void assertCallEventAllowed(ExpertBooking booking, boolean leaveLike) {
         ExpertBookingStatus status = booking.getStatus();
-        if (status == ExpertBookingStatus.AWAITING_EXPERT
-                || status == ExpertBookingStatus.IN_PROGRESS) {
+        if (status == ExpertBookingStatus.IN_PROGRESS) {
+            if (!leaveLike && !hasCallQuotaRemaining(booking)) {
+                throw new IllegalArgumentException(
+                        "Đã hết phút call của gói. Book thêm gói theo giờ để tiếp tục.");
+            }
             return;
         }
         // Cho phép ghi leave sau khi đơn vừa hoàn tất (race hangup vs complete)
         if (leaveLike && status == ExpertBookingStatus.COMPLETED) {
             return;
         }
-        throw new IllegalArgumentException("Video call không khả dụng ở trạng thái hiện tại");
+        throw new IllegalArgumentException(
+                status == ExpertBookingStatus.AWAITING_EXPERT
+                        ? "Expert chưa nhận đơn — chưa mở video call"
+                        : "Video call không khả dụng ở trạng thái hiện tại");
     }
 
     private void assertCallActive(ExpertBooking booking) {
@@ -479,18 +682,102 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
     private void assertChatReadable(ExpertBooking booking) {
         ExpertBookingStatus status = booking.getStatus();
         if (status == ExpertBookingStatus.CANCELLED
-                || status == ExpertBookingStatus.REJECTED) {
+                || status == ExpertBookingStatus.REJECTED
+                || status == ExpertBookingStatus.EXPIRED) {
             throw new IllegalArgumentException("Chat chưa khả dụng cho booking này");
         }
     }
 
-    private void assertChatWritable(ExpertBooking booking) {
+    private void assertChatWritable(ExpertBooking booking, User sender) {
         ExpertBookingStatus status = booking.getStatus();
-        // Chỉ chat khi đang hỗ trợ — sau COMPLETED khóa gửi tin
         if (status != ExpertBookingStatus.AWAITING_EXPERT
                 && status != ExpertBookingStatus.IN_PROGRESS) {
             throw new IllegalArgumentException("Không thể gửi tin nhắn ở trạng thái hiện tại");
         }
+        boolean isClient = booking.getClient().getId().equals(sender.getId());
+        if (!isClient) {
+            return; // expert luôn gửi được khi phiên mở
+        }
+        if (!clientCanSendMessage(booking)) {
+            throw new IllegalArgumentException(
+                    "Đã hết hạn Q&A hoặc hết 8 tin hỏi làm rõ. "
+                            + "Book gói theo giờ nếu cần trao đổi thêm.");
+        }
+    }
+
+    private boolean clientCanSendMessage(ExpertBooking booking) {
+        if (booking.getStatus() != ExpertBookingStatus.AWAITING_EXPERT
+                && booking.getStatus() != ExpertBookingStatus.IN_PROGRESS) {
+            return false;
+        }
+        // Trước khi có feedback chính: client vẫn nhắn được (làm rõ brief)
+        if (booking.getBookingType() != ExpertBookingType.REVIEW
+                || booking.getFeedbackDeliveredAt() == null) {
+            return true;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (booking.getQaEndsAt() != null && now.isAfter(booking.getQaEndsAt())) {
+            return false;
+        }
+        return countClientQaMessages(booking) < ExpertBookingPolicy.REVIEW_QA_CLIENT_MESSAGES;
+    }
+
+    private int countClientQaMessages(ExpertBooking booking) {
+        if (booking.getFeedbackDeliveredAt() == null) {
+            return 0;
+        }
+        return (int) messageRepository.countByBookingIdAndSenderIdAndCreatedAtAfter(
+                booking.getId(),
+                booking.getClient().getId(),
+                booking.getFeedbackDeliveredAt());
+    }
+
+    private long computeCallSecondsUsed(ExpertBooking booking) {
+        long closed = callSessionRepository.findByBookingIdOrderByJoinedAtDesc(booking.getId()).stream()
+                .filter(s -> s.getLeftAt() != null)
+                .map(ExpertBookingCallSession::getDurationSeconds)
+                .filter(Objects::nonNull)
+                .mapToLong(Long::longValue)
+                .sum();
+        long open = callSessionRepository.findByBookingIdAndLeftAtIsNull(booking.getId()).stream()
+                .mapToLong(s -> {
+                    if (s.getJoinedAt() == null) return 0L;
+                    return Math.max(0, Duration.between(s.getJoinedAt(), LocalDateTime.now()).getSeconds());
+                })
+                .sum();
+        return closed + open;
+    }
+
+    private boolean hasCallQuotaRemaining(ExpertBooking booking) {
+        int limitMin = booking.getCallMinutesLimit() != null && booking.getCallMinutesLimit() > 0
+                ? booking.getCallMinutesLimit()
+                : ExpertBookingPolicy.callMinutesFor(booking.getBookingType(), booking.getHourlyHours());
+        long used = computeCallSecondsUsed(booking);
+        return used < limitMin * 60L;
+    }
+
+    private String buildQuotaHint(ExpertBooking booking) {
+        if (booking.getStatus() == ExpertBookingStatus.AWAITING_EXPERT) {
+            return "Expert cần nhận đơn trong 24h sau thanh toán; quá hạn sẽ hoàn tiền.";
+        }
+        if (booking.getStatus() != ExpertBookingStatus.IN_PROGRESS) {
+            return null;
+        }
+        if (booking.getBookingType() == ExpertBookingType.REVIEW) {
+            if (booking.getFeedbackDeliveredAt() == null) {
+                return "Review gồm 1 nhận xét viết + tối đa 8 tin làm rõ trong 48h sau feedback; call tối đa 15 phút.";
+            }
+            int used = countClientQaMessages(booking);
+            int left = Math.max(0, ExpertBookingPolicy.REVIEW_QA_CLIENT_MESSAGES - used);
+            return "Q&A: còn " + left + "/" + ExpertBookingPolicy.REVIEW_QA_CLIENT_MESSAGES
+                    + " tin · hết hạn "
+                    + (booking.getQaEndsAt() != null ? booking.getQaEndsAt().toString() : "—");
+        }
+        int limit = booking.getCallMinutesLimit() != null
+                ? booking.getCallMinutesLimit()
+                : ExpertBookingPolicy.callMinutesForHourly(booking.getHourlyHours());
+        long remSec = Math.max(0, limit * 60L - computeCallSecondsUsed(booking));
+        return "Call còn ~" + (remSec / 60) + " phút (gói " + limit + " phút).";
     }
 
     private Payment createPaymentForBooking(ExpertBooking booking) {
@@ -682,6 +969,14 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
             atts = attachmentRepository.findByBookingIdOrderByCreatedAtAsc(booking.getId());
         }
 
+        long callUsed = computeCallSecondsUsed(booking);
+        int callLimitMin = booking.getCallMinutesLimit() != null && booking.getCallMinutesLimit() > 0
+                ? booking.getCallMinutesLimit()
+                : ExpertBookingPolicy.callMinutesFor(booking.getBookingType(), booking.getHourlyHours());
+        long callRemaining = Math.max(0, callLimitMin * 60L - callUsed);
+        boolean canCall = booking.getStatus() == ExpertBookingStatus.IN_PROGRESS && callRemaining > 0;
+        int qaUsed = countClientQaMessages(booking);
+
         return ExpertBookingResponse.builder()
                 .id(booking.getId())
                 .bookingType(booking.getBookingType())
@@ -700,35 +995,48 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
                 .clientName(client.getFullName())
                 .clientEmail(client.getEmail())
                 .orderCode(payment != null ? payment.getOrderCode() : null)
+                .paymentStatus(payment != null && payment.getStatus() != null ? payment.getStatus().name() : null)
                 .meetingRoomUrl(resolveMeetingRoomUrl(booking))
                 .rejectReason(booking.getRejectReason())
                 .createdAt(booking.getCreatedAt())
                 .completedAt(booking.getCompletedAt())
+                .paidAt(booking.getPaidAt())
+                .acceptDeadlineAt(booking.getAcceptDeadlineAt())
+                .acceptedAt(booking.getAcceptedAt())
+                .feedbackDeliveredAt(booking.getFeedbackDeliveredAt())
+                .qaEndsAt(booking.getQaEndsAt())
+                .callMinutesLimit(callLimitMin)
+                .clientQaMessagesUsed(qaUsed)
+                .clientQaMessageLimit(ExpertBookingPolicy.REVIEW_QA_CLIENT_MESSAGES)
+                .clientCanSendMessage(clientCanSendMessage(booking))
+                .callSecondsUsed(callUsed)
+                .callSecondsRemaining(callRemaining)
+                .canCall(canCall)
+                .quotaHint(buildQuotaHint(booking))
                 .build();
     }
 
-    /** Link Jitsi chỉ khi đang hỗ trợ — sau COMPLETED không trả room (khóa video). */
+    /** Link Jitsi chỉ khi IN_PROGRESS và còn phút call. */
     private String resolveMeetingRoomUrl(ExpertBooking booking) {
-        String url = trimOrNull(booking.getMeetingRoomUrl());
-        ExpertBookingStatus status = booking.getStatus();
-        if (status != ExpertBookingStatus.AWAITING_EXPERT
-                && status != ExpertBookingStatus.IN_PROGRESS) {
+        if (booking.getStatus() != ExpertBookingStatus.IN_PROGRESS) {
             return null;
         }
+        if (!hasCallQuotaRemaining(booking)) {
+            return null;
+        }
+        String url = trimOrNull(booking.getMeetingRoomUrl());
         if (url != null) {
             return url;
         }
-        return buildMeetingRoomUrl(booking.getId());
+        return buildMeetingRoomUrl(booking.getId(), generateRoomSecret());
     }
 
     private void ensureMeetingRoomUrlPersisted(ExpertBooking booking) {
         if (trimOrNull(booking.getMeetingRoomUrl()) != null) {
             return;
         }
-        ExpertBookingStatus status = booking.getStatus();
-        if (status == ExpertBookingStatus.AWAITING_EXPERT
-                || status == ExpertBookingStatus.IN_PROGRESS) {
-            booking.setMeetingRoomUrl(buildMeetingRoomUrl(booking.getId()));
+        if (booking.getStatus() == ExpertBookingStatus.IN_PROGRESS) {
+            booking.setMeetingRoomUrl(buildMeetingRoomUrl(booking.getId(), generateRoomSecret()));
         }
     }
 
@@ -761,7 +1069,20 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    public static String generateRoomSecret() {
+        return java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 20);
+    }
+
+    /** Room không đoán được từ booking id — secret lưu trong URL. */
+    public static String buildMeetingRoomUrl(Long bookingId, String roomSecret) {
+        String secret = roomSecret != null && !roomSecret.isBlank()
+                ? roomSecret.trim()
+                : generateRoomSecret();
+        return "https://meet.jit.si/WillaEB" + bookingId + "x" + secret;
+    }
+
+    /** @deprecated dùng buildMeetingRoomUrl(id, secret) */
     public static String buildMeetingRoomUrl(Long bookingId) {
-        return "https://meet.jit.si/WillaBooking" + bookingId;
+        return buildMeetingRoomUrl(bookingId, generateRoomSecret());
     }
 }

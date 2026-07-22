@@ -1,11 +1,13 @@
 package com.willa.ai.backend.service.impl;
 
+import com.willa.ai.backend.dto.response.PaymentConfirmResponse;
 import com.willa.ai.backend.entity.Coupon;
 import com.willa.ai.backend.entity.Payment;
 import com.willa.ai.backend.entity.Plan;
 import com.willa.ai.backend.entity.User;
 import com.willa.ai.backend.entity.WorkspacePlan;
 import com.willa.ai.backend.entity.enums.ExpertBookingStatus;
+import com.willa.ai.backend.entity.enums.ExpertBookingType;
 import com.willa.ai.backend.entity.enums.PaymentStatus;
 import com.willa.ai.backend.exception.ResourceNotFoundException;
 import com.willa.ai.backend.repository.ExpertBookingRepository;
@@ -14,6 +16,8 @@ import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WorkspacePlanRepository;
 import com.willa.ai.backend.service.CouponService;
+import com.willa.ai.backend.service.EmailService;
+import com.willa.ai.backend.service.ExpertBookingPolicy;
 import com.willa.ai.backend.service.ExpertBookingRealtimeService;
 import com.willa.ai.backend.service.PaymentService;
 import com.willa.ai.backend.service.SubscriptionService;
@@ -25,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.payos.PayOS;
 import vn.payos.type.CheckoutResponseData;
+import vn.payos.type.PaymentLinkData;
 import vn.payos.type.Webhook;
 import vn.payos.type.WebhookData;
 
@@ -77,6 +82,9 @@ public class PaymentServiceImpl implements PaymentService {
     @Autowired
     private CouponService couponService;
 
+    @Autowired
+    private EmailService emailService;
+
     @Value("${payos.client-id}")
     private String clientId;
 
@@ -91,6 +99,9 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Value("${payos.cancel-url}")
     private String baseCancelUrl;
+
+    @Value("${app.frontendUrl:${app.baseUrl:https://willaai.tech}}")
+    private String frontendUrl;
 
     @Override
     @Transactional
@@ -323,19 +334,113 @@ public class PaymentServiceImpl implements PaymentService {
         } else {
             expertBookingRepository.findByPaymentId(payment.getId()).ifPresent(booking -> {
                 if (booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT) {
+                    LocalDateTime now = LocalDateTime.now();
+                    booking.setPaidAt(now);
+                    booking.setAcceptDeadlineAt(now.plusHours(ExpertBookingPolicy.ACCEPT_SLA_HOURS));
+                    booking.setCallMinutesLimit(
+                            ExpertBookingPolicy.callMinutesFor(
+                                    booking.getBookingType(), booking.getHourlyHours()));
+                    String secret = ExpertBookingServiceImpl.generateRoomSecret();
                     booking.setMeetingRoomUrl(
-                            ExpertBookingServiceImpl.buildMeetingRoomUrl(booking.getId()));
-                    if (booking.getBookingType() == com.willa.ai.backend.entity.enums.ExpertBookingType.HOURLY) {
-                        booking.setStatus(ExpertBookingStatus.IN_PROGRESS);
-                    } else {
-                        booking.setStatus(ExpertBookingStatus.AWAITING_EXPERT);
-                    }
+                            ExpertBookingServiceImpl.buildMeetingRoomUrl(booking.getId(), secret));
+                    booking.setStatus(ExpertBookingStatus.AWAITING_EXPERT);
                     expertBookingRepository.save(booking);
                     expertBookingRealtimeService.notifyBookingsChanged(booking);
+                    notifyExpertNewBooking(booking);
                     System.out.println("Thanh toán thành công expert booking: " + booking.getId());
                 }
             });
         }
+    }
+
+    private void notifyExpertNewBooking(com.willa.ai.backend.entity.ExpertBooking booking) {
+        try {
+            User expertUser = booking.getExpert() != null ? booking.getExpert().getUser() : null;
+            if (expertUser == null || expertUser.getEmail() == null) {
+                return;
+            }
+            String base = frontendUrl != null ? frontendUrl.trim().replaceAll("/$", "") : "https://willaai.tech";
+            String typeLabel = booking.getBookingType() == ExpertBookingType.HOURLY
+                    ? "Trao đổi theo giờ"
+                    : "Review ấn phẩm";
+            emailService.sendExpertNewBookingEmail(
+                    expertUser.getEmail(),
+                    expertUser.getFullName(),
+                    booking.getId(),
+                    typeLabel,
+                    booking.getAmountVnd() != null ? booking.getAmountVnd() : 0L,
+                    base + "/experts/orders");
+        } catch (Exception e) {
+            System.err.println("Failed to email expert new booking: " + e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional
+    public PaymentConfirmResponse confirmOrderByOrderCode(Long orderCode) {
+        if (orderCode == null) {
+            throw new IllegalArgumentException("Thiếu orderCode");
+        }
+        Payment payment = paymentRepository.findByOrderCode(orderCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn thanh toán"));
+
+        if (payment.getStatus() == PaymentStatus.PAID
+                || payment.getStatus() == PaymentStatus.REFUND_PENDING
+                || payment.getStatus() == PaymentStatus.REFUNDED) {
+            return buildConfirmResponse(payment, false, "Đơn đã được kích hoạt trước đó");
+        }
+
+        try {
+            PaymentLinkData link = payOS.getPaymentLinkInformation(orderCode);
+            String payosStatus = link != null && link.getStatus() != null
+                    ? link.getStatus().trim().toUpperCase()
+                    : "";
+            if ("PAID".equals(payosStatus)) {
+                if (payment.getStatus() == PaymentStatus.PENDING) {
+                    payment.setStatus(PaymentStatus.PAID);
+                    if (link.getTransactions() != null && !link.getTransactions().isEmpty()
+                            && link.getTransactions().get(0).getReference() != null) {
+                        payment.setTransactionId(link.getTransactions().get(0).getReference());
+                    }
+                    paymentRepository.save(payment);
+                    if (payment.getCoupon() != null) {
+                        couponService.markRedeemed(payment.getCoupon(), payment, payment.getUser());
+                    }
+                    activateEntitlement(payment);
+                    return buildConfirmResponse(payment, true, "Đã xác nhận thanh toán với PayOS và kích hoạt đơn");
+                }
+            }
+            return buildConfirmResponse(payment, false,
+                    "PayOS status=" + (payosStatus.isEmpty() ? "UNKNOWN" : payosStatus));
+        } catch (Exception e) {
+            throw new RuntimeException("Không xác nhận được PayOS: " + e.getMessage(), e);
+        }
+    }
+
+    private PaymentConfirmResponse buildConfirmResponse(Payment payment, boolean activated, String message) {
+        Long bookingId = null;
+        String bookingStatus = null;
+        String redirect = "/chat";
+        var bookingOpt = expertBookingRepository.findByPaymentId(payment.getId());
+        if (bookingOpt.isPresent()) {
+            var b = bookingOpt.get();
+            bookingId = b.getId();
+            bookingStatus = b.getStatus() != null ? b.getStatus().name() : null;
+            redirect = "/experts/orders";
+            if (b.getStatus() == ExpertBookingStatus.AWAITING_EXPERT
+                    || b.getStatus() == ExpertBookingStatus.IN_PROGRESS) {
+                redirect = "/experts/chat?booking=" + b.getId();
+            }
+        }
+        return PaymentConfirmResponse.builder()
+                .orderCode(payment.getOrderCode())
+                .paymentStatus(payment.getStatus() != null ? payment.getStatus().name() : null)
+                .activated(activated)
+                .expertBookingId(bookingId)
+                .expertBookingStatus(bookingStatus)
+                .suggestedRedirect(redirect)
+                .message(message)
+                .build();
     }
 
     @Override

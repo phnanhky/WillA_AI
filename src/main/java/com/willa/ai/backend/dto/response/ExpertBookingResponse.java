@@ -33,8 +33,23 @@ public class ExpertBookingResponse {
     private String clientName;
     private String clientEmail;
     private Long orderCode;
+    private String paymentStatus;
     private String meetingRoomUrl;
     private String rejectReason;
     private LocalDateTime createdAt;
     private LocalDateTime completedAt;
+    private LocalDateTime paidAt;
+    private LocalDateTime acceptDeadlineAt;
+    private LocalDateTime acceptedAt;
+    private LocalDateTime feedbackDeliveredAt;
+    private LocalDateTime qaEndsAt;
+    private Integer callMinutesLimit;
+    /** Số tin client đã gửi sau khi có feedback (REVIEW Q&A). */
+    private Integer clientQaMessagesUsed;
+    private Integer clientQaMessageLimit;
+    private Boolean clientCanSendMessage;
+    private Long callSecondsUsed;
+    private Long callSecondsRemaining;
+    private Boolean canCall;
+    private String quotaHint;
 }

@@ -5,6 +5,7 @@ import com.willa.ai.backend.dto.request.CreateExpertBookingRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingCallEventRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingFeedbackRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingMessageRequest;
+import com.willa.ai.backend.dto.request.ExpertBookingRejectRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.service.ExpertBookingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -95,6 +96,24 @@ public class ExpertBookingController {
                     .status(true)
                     .message("Booking updated")
                     .data(expertBookingService.updateByExpert(authentication.getName(), bookingId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/{bookingId}/reject")
+    @Operation(summary = "Expert từ chối đơn → REFUND_PENDING")
+    public ResponseEntity<ApiResponse> reject(
+            @PathVariable Long bookingId,
+            @RequestBody(required = false) ExpertBookingRejectRequest request,
+            Authentication authentication) {
+        try {
+            String reason = request != null ? request.getReason() : null;
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Booking rejected")
+                    .data(expertBookingService.rejectByExpert(authentication.getName(), bookingId, reason))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

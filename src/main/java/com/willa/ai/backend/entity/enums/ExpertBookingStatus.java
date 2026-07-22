@@ -7,5 +7,7 @@ public enum ExpertBookingStatus {
     IN_PROGRESS,
     COMPLETED,
     REJECTED,
-    CANCELLED
+    CANCELLED,
+    /** Hết SLA Accept / không nhận đơn — đã (hoặc chờ) hoàn tiền. */
+    EXPIRED
 }

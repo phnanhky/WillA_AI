@@ -4,10 +4,13 @@ import com.willa.ai.backend.entity.ExpertBookingMessage;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
 public interface ExpertBookingMessageRepository extends JpaRepository<ExpertBookingMessage, Long> {
 
     List<ExpertBookingMessage> findByBookingIdOrderByCreatedAtAsc(Long bookingId);
+
+    long countByBookingIdAndSenderIdAndCreatedAtAfter(Long bookingId, Long senderId, LocalDateTime after);
 }

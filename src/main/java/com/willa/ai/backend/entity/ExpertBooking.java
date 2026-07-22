@@ -87,6 +87,30 @@ public class ExpertBooking {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
+    /** Thời điểm thanh toán thành công (webhook). */
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
+
+    /** Hạn expert phải Accept — mặc định paidAt + 24h. */
+    @Column(name = "accept_deadline_at")
+    private LocalDateTime acceptDeadlineAt;
+
+    /** Expert bấm Accept / bắt đầu hỗ trợ. */
+    @Column(name = "accepted_at")
+    private LocalDateTime acceptedAt;
+
+    /** Lần đầu lưu feedback chính (mở cửa sổ Q&A REVIEW). */
+    @Column(name = "feedback_delivered_at")
+    private LocalDateTime feedbackDeliveredAt;
+
+    /** Hết hạn Q&A client (REVIEW): feedbackDeliveredAt + 48h. */
+    @Column(name = "qa_ends_at")
+    private LocalDateTime qaEndsAt;
+
+    /** Giới hạn phút call (REVIEW=15, HOURLY=hours*60). */
+    @Column(name = "call_minutes_limit")
+    private Integer callMinutesLimit;
+
     /** Phòng video call (Jitsi Meet) — tạo sau khi thanh toán. */
     @Column(name = "meeting_room_url")
     private String meetingRoomUrl;

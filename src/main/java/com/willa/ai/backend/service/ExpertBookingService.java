@@ -41,4 +41,19 @@ public interface ExpertBookingService {
     ExpertBookingCallHistoryResponse getCallHistoryForAdmin(Long bookingId);
 
     List<ExpertBookingCallSessionResponse> listRecentCallSessionsForAdmin(int limit);
+
+    /** Cron: hết SLA Accept → EXPIRED + REFUND_PENDING. */
+    int expireUnacceptedBookings();
+
+    /** Cron: hết Q&A REVIEW → auto COMPLETED. */
+    int autoCompleteExpiredReviewQa();
+
+    /** Cron: HOURLY hết phút call → auto COMPLETED. */
+    int autoCompleteHourlyCallExhausted();
+
+    ExpertBookingResponse rejectByExpert(String expertUserEmail, Long bookingId, String reason);
+
+    List<ExpertBookingResponse> listRefundPendingForAdmin();
+
+    ExpertBookingResponse markRefundSettled(Long bookingId);
 }

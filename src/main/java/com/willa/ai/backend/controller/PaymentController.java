@@ -10,6 +10,7 @@ import com.willa.ai.backend.repository.PlanRepository;
 import com.willa.ai.backend.repository.WorkspacePlanRepository;
 import com.willa.ai.backend.service.CouponService;
 import com.willa.ai.backend.service.PaymentService;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -126,6 +127,32 @@ public class PaymentController {
             return ResponseEntity.badRequest().body(ApiResponse.<String>builder()
                     .success(false)
                     .message("Webhook error: " + e.getMessage())
+                    .build());
+        }
+    }
+
+    @PostMapping("/confirm")
+    @Operation(summary = "Xác nhận thanh toán từ return URL (poll PayOS — bù webhook)")
+    public ResponseEntity<ApiResponse<com.willa.ai.backend.dto.response.PaymentConfirmResponse>> confirmPayment(
+            @RequestBody Map<String, Object> request) {
+        try {
+            if (!request.containsKey("orderCode") || request.get("orderCode") == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.<com.willa.ai.backend.dto.response.PaymentConfirmResponse>builder()
+                        .success(false)
+                        .message("Missing orderCode")
+                        .build());
+            }
+            Long orderCode = Long.parseLong(request.get("orderCode").toString());
+            var result = paymentService.confirmOrderByOrderCode(orderCode);
+            return ResponseEntity.ok(ApiResponse.<com.willa.ai.backend.dto.response.PaymentConfirmResponse>builder()
+                    .success(true)
+                    .data(result)
+                    .message(result.getMessage())
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.<com.willa.ai.backend.dto.response.PaymentConfirmResponse>builder()
+                    .success(false)
+                    .message(e.getMessage())
                     .build());
         }
     }

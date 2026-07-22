@@ -28,6 +28,8 @@ public class WorkspaceExpertsMigration {
                           user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                           expertise VARCHAR(500),
                           bio TEXT,
+                          headline VARCHAR(200),
+                          portfolio_url VARCHAR(500),
                           is_active BOOLEAN NOT NULL DEFAULT TRUE,
                           review_price BIGINT,
                           hourly_rate BIGINT,
@@ -87,6 +89,16 @@ public class WorkspaceExpertsMigration {
         if (!columnExists("workspace_experts", "hourly_rate")) {
             entityManager.createNativeQuery("""
                     ALTER TABLE workspace_experts ADD COLUMN hourly_rate BIGINT
+                    """).executeUpdate();
+        }
+        if (!columnExists("workspace_experts", "headline")) {
+            entityManager.createNativeQuery("""
+                    ALTER TABLE workspace_experts ADD COLUMN headline VARCHAR(200)
+                    """).executeUpdate();
+        }
+        if (!columnExists("workspace_experts", "portfolio_url")) {
+            entityManager.createNativeQuery("""
+                    ALTER TABLE workspace_experts ADD COLUMN portfolio_url VARCHAR(500)
                     """).executeUpdate();
         }
         migrateToAppWideExperts();

@@ -1,5 +1,6 @@
 package com.willa.ai.backend.service;
 
+import com.willa.ai.backend.dto.request.ExpertSelfProfileRequest;
 import com.willa.ai.backend.dto.request.WorkspaceExpertRequest;
 import com.willa.ai.backend.dto.response.AdminWorkspaceSummaryResponse;
 import com.willa.ai.backend.dto.response.WorkspaceExpertResponse;
@@ -17,6 +18,12 @@ public interface ExpertService {
     List<WorkspaceExpertResponse> listWorkspaceExperts(String currentEmail, Long workspaceId);
 
     List<AdminWorkspaceSummaryResponse> listAllWorkspacesForAdmin();
+
+    WorkspaceExpertResponse getActiveExpert(Long expertId);
+
+    WorkspaceExpertResponse getMyExpertProfile(String email);
+
+    WorkspaceExpertResponse updateMyExpertProfile(String email, ExpertSelfProfileRequest request);
 
     WorkspaceExpertResponse createExpert(WorkspaceExpertRequest request);
 

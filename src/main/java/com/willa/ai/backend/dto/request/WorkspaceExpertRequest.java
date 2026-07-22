@@ -30,6 +30,10 @@ public class WorkspaceExpertRequest {
 
     private String bio;
 
+    private String headline;
+
+    private String portfolioUrl;
+
     private Boolean isActive;
 
     /** Giá review ấn phẩm (VND). */

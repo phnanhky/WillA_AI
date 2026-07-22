@@ -20,6 +20,15 @@ public interface EmailService {
     /** Báo cho User đã có rằng đã được thêm làm Expert (không gửi mật khẩu). */
     void sendExpertAssignedEmail(String to, String fullName, String loginUrl);
 
+    /** Báo expert có đơn mới cần Accept trong 24h. */
+    void sendExpertNewBookingEmail(
+            String to,
+            String expertName,
+            Long bookingId,
+            String bookingTypeLabel,
+            long amountVnd,
+            String ordersUrl);
+
     void sendTaskDeadlineEmail(
             String to,
             String subjectVi,

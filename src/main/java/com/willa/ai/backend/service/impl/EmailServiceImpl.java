@@ -143,6 +143,30 @@ public class EmailServiceImpl implements EmailService {
     }
 
     @Override
+    public void sendExpertNewBookingEmail(
+            String to,
+            String expertName,
+            Long bookingId,
+            String bookingTypeLabel,
+            long amountVnd,
+            String ordersUrl) {
+        String name = expertName != null && !expertName.isBlank() ? expertName.trim() : "bạn";
+        String subject = "WillaAI - Đơn Expert #" + bookingId + " cần nhận trong 24h";
+        String html = "<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;color:#333;'>"
+                + "<div style='max-width:560px;margin:0 auto;padding:24px;'>"
+                + "<h2>Đơn mới #" + bookingId + "</h2>"
+                + "<p>Xin chào <strong>" + escapeHtml(name) + "</strong>,</p>"
+                + "<p>Khách vừa thanh toán đơn <strong>" + escapeHtml(bookingTypeLabel) + "</strong> "
+                + "(" + amountVnd + " VND).</p>"
+                + "<p><strong>Bạn cần bấm Nhận đơn (Accept) trong 24 giờ</strong> — "
+                + "quá hạn hệ thống hủy đơn và yêu cầu hoàn tiền khách.</p>"
+                + "<p><a href='" + ordersUrl + "' style='display:inline-block;background:#8b3dff;color:#fff;"
+                + "padding:12px 20px;text-decoration:none;border-radius:6px;font-weight:600;'>Mở Đơn hàng Expert</a></p>"
+                + "</div></body></html>";
+        sendHtmlEmail(to, subject, html);
+    }
+
+    @Override
     public void sendWorkspaceInviteEmail(String to, String workspaceName, String inviterName, String inviteLink, String role) {
         String subject = "WillaAI - Lời mời tham gia workspace \"" + workspaceName + "\"";
         String htmlContent = "<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;color:#333;'>"

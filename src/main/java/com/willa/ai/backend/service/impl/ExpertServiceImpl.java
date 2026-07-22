@@ -1,5 +1,6 @@
 package com.willa.ai.backend.service.impl;
 
+import com.willa.ai.backend.dto.request.ExpertSelfProfileRequest;
 import com.willa.ai.backend.dto.request.WorkspaceExpertRequest;
 import com.willa.ai.backend.dto.response.AdminWorkspaceSummaryResponse;
 import com.willa.ai.backend.dto.response.WorkspaceExpertResponse;
@@ -99,6 +100,71 @@ public class ExpertServiceImpl implements ExpertService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public WorkspaceExpertResponse getActiveExpert(Long expertId) {
+        WorkspaceExpert expert = expertRepository.findById(expertId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy expert"));
+        if (!Boolean.TRUE.equals(expert.getIsActive())) {
+            throw new RuntimeException("Expert không còn hoạt động");
+        }
+        return mapToResponse(expert, null, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public WorkspaceExpertResponse getMyExpertProfile(String email) {
+        User user = userRepository.findByEmail(email.trim().toLowerCase())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
+        WorkspaceExpert expert = expertRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new RuntimeException("Bạn chưa được gán làm expert"));
+        return mapToResponse(expert, null, null);
+    }
+
+    @Override
+    public WorkspaceExpertResponse updateMyExpertProfile(String email, ExpertSelfProfileRequest request) {
+        User user = userRepository.findByEmail(email.trim().toLowerCase())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
+        WorkspaceExpert expert = expertRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new RuntimeException("Bạn chưa được gán làm expert"));
+
+        if (request.getExpertise() != null) {
+            expert.setExpertise(trimOrNull(request.getExpertise()));
+        }
+        if (request.getBio() != null) {
+            expert.setBio(trimOrNull(request.getBio()));
+        }
+        if (request.getHeadline() != null) {
+            expert.setHeadline(trimOrNull(request.getHeadline()));
+        }
+        if (request.getPortfolioUrl() != null) {
+            expert.setPortfolioUrl(trimOrNull(request.getPortfolioUrl()));
+        }
+        if (request.getReviewPrice() != null) {
+            expert.setReviewPrice(normalizePrice(request.getReviewPrice()));
+        }
+        if (request.getHourlyRate() != null) {
+            expert.setHourlyRate(normalizePrice(request.getHourlyRate()));
+        }
+
+        boolean dirtyUser = false;
+        String fullName = trimOrNull(request.getFullName());
+        if (fullName != null && !fullName.equals(user.getFullName())) {
+            user.setFullName(fullName);
+            dirtyUser = true;
+        }
+        String avatarUrl = trimOrNull(request.getAvatarUrl());
+        if (avatarUrl != null) {
+            user.setAvatarUrl(avatarUrl);
+            dirtyUser = true;
+        }
+        if (dirtyUser) {
+            userRepository.save(user);
+        }
+
+        return mapToResponse(expertRepository.save(expert), null, null);
+    }
+
+    @Override
     public WorkspaceExpertResponse createExpert(WorkspaceExpertRequest request) {
         String email = request.getEmail().trim().toLowerCase();
         boolean createIfMissing = request.getCreateAccountIfMissing() == null
@@ -141,6 +207,8 @@ public class ExpertServiceImpl implements ExpertService {
                 .user(user)
                 .expertise(trimOrNull(request.getExpertise()))
                 .bio(trimOrNull(request.getBio()))
+                .headline(trimOrNull(request.getHeadline()))
+                .portfolioUrl(trimOrNull(request.getPortfolioUrl()))
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
                 .reviewPrice(normalizePrice(request.getReviewPrice()))
                 .hourlyRate(normalizePrice(request.getHourlyRate()))
@@ -178,6 +246,12 @@ public class ExpertServiceImpl implements ExpertService {
         }
         if (request.getBio() != null) {
             expert.setBio(trimOrNull(request.getBio()));
+        }
+        if (request.getHeadline() != null) {
+            expert.setHeadline(trimOrNull(request.getHeadline()));
+        }
+        if (request.getPortfolioUrl() != null) {
+            expert.setPortfolioUrl(trimOrNull(request.getPortfolioUrl()));
         }
         if (request.getIsActive() != null) {
             expert.setIsActive(request.getIsActive());
@@ -312,6 +386,8 @@ public class ExpertServiceImpl implements ExpertService {
                 .platformExpert(true)
                 .expertise(expert.getExpertise())
                 .bio(expert.getBio())
+                .headline(expert.getHeadline())
+                .portfolioUrl(expert.getPortfolioUrl())
                 .isActive(expert.getIsActive())
                 .reviewPrice(expert.getReviewPrice())
                 .hourlyRate(expert.getHourlyRate())

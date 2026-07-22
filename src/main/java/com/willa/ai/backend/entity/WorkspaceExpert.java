@@ -35,6 +35,14 @@ public class WorkspaceExpert {
     @Column(columnDefinition = "TEXT")
     private String bio;
 
+    /** Dòng mô tả ngắn dưới tên (vd: Senior UI Designer). */
+    @Column(length = 200)
+    private String headline;
+
+    /** Link portfolio / Behance / Instagram / website. */
+    @Column(name = "portfolio_url", length = 500)
+    private String portfolioUrl;
+
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private Boolean isActive = true;

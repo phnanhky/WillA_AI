@@ -25,6 +25,8 @@ public class WorkspaceExpertResponse {
     private Boolean platformExpert;
     private String expertise;
     private String bio;
+    private String headline;
+    private String portfolioUrl;
     private Boolean isActive;
     private LocalDateTime createdAt;
     /** Giá review ấn phẩm (VND). Mặc định 49.000. */

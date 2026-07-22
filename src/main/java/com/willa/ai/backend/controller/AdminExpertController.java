@@ -124,4 +124,32 @@ public class AdminExpertController {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
         }
     }
+
+    @GetMapping("/expert-bookings/refund-pending")
+    @Operation(summary = "Đơn chờ ops hoàn tiền trên PayOS")
+    public ResponseEntity<ApiResponse> listRefundPending() {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Refund-pending bookings")
+                    .data(expertBookingService.listRefundPendingForAdmin())
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/expert-bookings/{bookingId}/mark-refund-settled")
+    @Operation(summary = "Đánh dấu đã hoàn tiền xong trên PayOS")
+    public ResponseEntity<ApiResponse> markRefundSettled(@PathVariable Long bookingId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Refund marked settled")
+                    .data(expertBookingService.markRefundSettled(bookingId))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
 }

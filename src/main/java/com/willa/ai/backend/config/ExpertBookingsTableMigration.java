@@ -50,7 +50,13 @@ public class ExpertBookingsTableMigration {
                           reject_reason TEXT,
                           created_at TIMESTAMP NOT NULL DEFAULT NOW(),
                           updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                          completed_at TIMESTAMP
+                          completed_at TIMESTAMP,
+                          paid_at TIMESTAMP,
+                          accept_deadline_at TIMESTAMP,
+                          accepted_at TIMESTAMP,
+                          feedback_delivered_at TIMESTAMP,
+                          qa_ends_at TIMESTAMP,
+                          call_minutes_limit INT
                         )
                         """);
                 statement.execute("CREATE INDEX idx_expert_bookings_client ON expert_bookings(client_user_id)");
@@ -178,6 +184,29 @@ public class ExpertBookingsTableMigration {
             statement.execute("ALTER TABLE expert_bookings ADD COLUMN reject_reason TEXT");
             log.info("Added expert_bookings.reject_reason");
         }
+        addColumnIfMissing(connection, statement, "paid_at", "TIMESTAMP");
+        addColumnIfMissing(connection, statement, "accept_deadline_at", "TIMESTAMP");
+        addColumnIfMissing(connection, statement, "accepted_at", "TIMESTAMP");
+        addColumnIfMissing(connection, statement, "feedback_delivered_at", "TIMESTAMP");
+        addColumnIfMissing(connection, statement, "qa_ends_at", "TIMESTAMP");
+        addColumnIfMissing(connection, statement, "call_minutes_limit", "INT");
+        // Backfill SLA for đơn đang chờ Accept
+        statement.execute("""
+                UPDATE expert_bookings
+                SET paid_at = COALESCE(paid_at, updated_at, created_at),
+                    accept_deadline_at = COALESCE(
+                        accept_deadline_at,
+                        COALESCE(paid_at, updated_at, created_at) + INTERVAL '24 hours'
+                    ),
+                    call_minutes_limit = COALESCE(
+                        call_minutes_limit,
+                        CASE
+                          WHEN booking_type = 'HOURLY' THEN GREATEST(COALESCE(hourly_hours, 1), 1) * 60
+                          ELSE 15
+                        END
+                    )
+                WHERE status = 'AWAITING_EXPERT'
+                """);
         refreshStatusCheckConstraint(connection, statement);
         statement.execute("""
                 UPDATE expert_bookings
@@ -185,6 +214,14 @@ public class ExpertBookingsTableMigration {
                 WHERE meeting_room_url IS NULL
                   AND status IN ('AWAITING_EXPERT', 'IN_PROGRESS', 'COMPLETED')
                 """);
+    }
+
+    private static void addColumnIfMissing(
+            Connection connection, Statement statement, String column, String sqlType) throws SQLException {
+        if (!columnExists(connection, "expert_bookings", column)) {
+            statement.execute("ALTER TABLE expert_bookings ADD COLUMN " + column + " " + sqlType);
+            log.info("Added expert_bookings.{}", column);
+        }
     }
 
     private static void refreshStatusCheckConstraint(Connection connection, Statement statement) throws SQLException {
@@ -207,7 +244,8 @@ public class ExpertBookingsTableMigration {
                   'IN_PROGRESS',
                   'COMPLETED',
                   'REJECTED',
-                  'CANCELLED'
+                  'CANCELLED',
+                  'EXPIRED'
                 ))
                 """);
         log.info("Added expert_bookings_status_check with full status enum");

@@ -12,5 +12,7 @@ public interface ExpertBookingCallSessionRepository extends JpaRepository<Expert
     Optional<ExpertBookingCallSession> findFirstByBookingIdAndClientSessionIdAndLeftAtIsNullOrderByJoinedAtDesc(
             Long bookingId, String clientSessionId);
 
+    List<ExpertBookingCallSession> findByBookingIdAndLeftAtIsNull(Long bookingId);
+
     List<ExpertBookingCallSession> findTop100ByOrderByJoinedAtDesc();
 }
