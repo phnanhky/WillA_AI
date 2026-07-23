@@ -58,7 +58,6 @@ public class WorkflowUsageServiceImpl implements WorkflowUsageService {
     }
 
     @Override
-    @Transactional
     public void trackRunnable(User user, WorkflowType workflow, Long chatSessionId, Runnable action) {
         track(user, workflow, chatSessionId, () -> {
             action.run();

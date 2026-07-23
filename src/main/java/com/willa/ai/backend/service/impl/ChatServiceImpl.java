@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.multipart.MultipartFile;
@@ -83,6 +84,8 @@ public class ChatServiceImpl implements ChatService {
     private final QwenTokenEstimateService qwenTokenEstimateService;
     private final QwenTokenEstimateProperties qwenTokenEstimateProperties;
     private final PersonaService personaService;
+    /** Short DB writes only — never wrap long AI HTTP calls in an outer @Transactional. */
+    private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${ai.qwen.model:qwen3-vl-flash}")
@@ -181,7 +184,6 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    @Transactional
     public ChatMessageResponse sendMessageToAi(String email, Long sessionId, String content, String actionType, Integer errorIndex, String box2d, Integer imageIndex, String replyLang, List<MultipartFile> files) {
         User user = getUserByEmail(email);
         WorkflowType workflow = hasAnalyzableUpload(files) ? WorkflowType.ANALYZE : WorkflowType.CHAT;
@@ -304,27 +306,29 @@ public class ChatServiceImpl implements ChatService {
 
         String imageUrlStr = imageUrlsFuture.join();
 
-        ChatMessage userMessage = ChatMessage.builder()
-                .session(session)
-                .role(MessageRole.USER)
-                .content(content)
-                .imageUrl(imageUrlStr)
-                .tokensUsed(0)
-                .build();
-        chatMessageRepository.save(userMessage);
-
         String storedAiContent = prepareAiContentForStorage(aiResponseContent);
         String aiMessageImageUrl = resolveAiMessageImageUrl(aiResponseContent, storedAiContent, imageUrlStr);
+        final String finalAiContent = aiResponseContent;
+        final int tokensForMessage = totalTokensCombined;
 
-        ChatMessage aiMessage = ChatMessage.builder()
-                .session(session)
-                .role(MessageRole.AI)
-                .content(storedAiContent)
-                .imageUrl(aiMessageImageUrl)
-                .tokensUsed(totalTokensCombined)
-                .build();
-        ChatMessage savedAiMessage = chatMessageRepository.save(aiMessage);
-        if (isAnalysisPayload(aiResponseContent)) {
+        ChatMessage savedAiMessage = transactionTemplate.execute(status -> {
+            ChatSession managedSession = getSessionEntity(email, sessionId);
+            chatMessageRepository.save(ChatMessage.builder()
+                    .session(managedSession)
+                    .role(MessageRole.USER)
+                    .content(content)
+                    .imageUrl(imageUrlStr)
+                    .tokensUsed(0)
+                    .build());
+            return chatMessageRepository.save(ChatMessage.builder()
+                    .session(managedSession)
+                    .role(MessageRole.AI)
+                    .content(storedAiContent)
+                    .imageUrl(aiMessageImageUrl)
+                    .tokensUsed(tokensForMessage)
+                    .build());
+        });
+        if (isAnalysisPayload(finalAiContent)) {
             personaService.refreshAfterAnalysis(user.getId());
         }
         return mapToMessageResponse(savedAiMessage);
@@ -736,22 +740,26 @@ public class ChatServiceImpl implements ChatService {
             return usage;
         }
         int total = usage.getTotalTokens();
-        Long newBalance = wallet.getTokenBalance() - total;
-        wallet.setTokenBalance(newBalance < 0 ? 0L : newBalance);
-        walletRepository.save(wallet);
-        aiTokenUsageRepository.save(AITokenUsage.builder()
-                .user(user)
-                .model(qwenModel)
-                .promptTokens(usage.getPromptTokens())
-                .completionTokens(usage.getCompletionTokens())
-                .totalTokens(total)
-                .serviceType(serviceType)
-                .build());
+        transactionTemplate.executeWithoutResult(status -> {
+            Wallet managed = walletRepository.findByUserId(user.getId())
+                    .orElseThrow(() -> new RuntimeException("Wallet not found"));
+            Long newBalance = (managed.getTokenBalance() != null ? managed.getTokenBalance() : 0L) - total;
+            managed.setTokenBalance(newBalance < 0 ? 0L : newBalance);
+            walletRepository.save(managed);
+            wallet.setTokenBalance(managed.getTokenBalance());
+            aiTokenUsageRepository.save(AITokenUsage.builder()
+                    .user(user)
+                    .model(qwenModel)
+                    .promptTokens(usage.getPromptTokens())
+                    .completionTokens(usage.getCompletionTokens())
+                    .totalTokens(total)
+                    .serviceType(serviceType)
+                    .build());
+        });
         return usage;
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Object prepareRegen(String email, Long sessionId, String errorIndices, Integer imageIndex, String replyLang) {
         User user = getUserByEmail(email);
         return workflowUsageService.track(user, WorkflowType.PREPARE_REGEN, sessionId, () -> {
@@ -769,13 +777,12 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    @Transactional
     public Object regenImage(String email, Long sessionId, String errorIndices, String finalPrompt, Integer imageIndex, String replyLang) {
         User user = getUserByEmail(email);
         String planName = getPlanNameForUser(user.getId());
         generationLimitChecker.checkLimit(user, planName);
         return workflowUsageService.track(user, WorkflowType.REGEN, sessionId, () -> {
-            ChatSession session = getSessionEntity(email, sessionId);
+            getSessionEntity(email, sessionId);
             seedAiAnalysisFromSession(email, sessionId, imageIndex);
             MultiValueMap<String, Object> body = aiServerClient.sessionForm(sessionId.toString());
             if (errorIndices != null) {
@@ -791,13 +798,16 @@ public class ChatServiceImpl implements ChatService {
             String rawJson = resultNode.toString();
             String storedContent = persistImagePayloadContent(rawJson);
             String regenImageUrl = extractImagePayloadUrl(storedContent);
-            chatMessageRepository.save(ChatMessage.builder()
-                    .session(session)
-                    .role(MessageRole.AI)
-                    .content(storedContent)
-                    .imageUrl(regenImageUrl)
-                    .tokensUsed(0)
-                    .build());
+            transactionTemplate.executeWithoutResult(status -> {
+                ChatSession managedSession = getSessionEntity(email, sessionId);
+                chatMessageRepository.save(ChatMessage.builder()
+                        .session(managedSession)
+                        .role(MessageRole.AI)
+                        .content(storedContent)
+                        .imageUrl(regenImageUrl)
+                        .tokensUsed(0)
+                        .build());
+            });
             try {
                 return objectMapper.readTree(storedContent);
             } catch (Exception e) {
@@ -807,7 +817,6 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    @Transactional
     public ChatMessageResponse generateImage(String email, Long sessionId, String prompt, List<MultipartFile> files) {
         User user = getUserByEmail(email);
         return workflowUsageService.track(user, WorkflowType.GENERATE, sessionId,
@@ -815,7 +824,7 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private ChatMessageResponse doGenerateImage(User user, String email, Long sessionId, String prompt, List<MultipartFile> files) {
-        ChatSession session = getSessionEntity(email, sessionId);
+        getSessionEntity(email, sessionId);
         if (prompt == null || prompt.isBlank()) {
             throw new RuntimeException("Vui lòng nhập mô tả để tạo ảnh.");
         }
@@ -828,7 +837,7 @@ public class ChatServiceImpl implements ChatService {
 
         List<ImagePart> images = expandToImageParts(files);
         if (!images.isEmpty()) {
-            return generateImageFromReference(email, user, session, sessionId, prompt, images, wallet);
+            return generateImageFromReference(email, user, sessionId, prompt, images, wallet);
         }
 
         Map<String, String> userMsg = new HashMap<>();
@@ -846,21 +855,23 @@ public class ChatServiceImpl implements ChatService {
         String replyText = normalizeGenerateReply(
                 rawReply, prompt, storedImageUrl != null && !storedImageUrl.isBlank());
 
-        chatMessageRepository.save(ChatMessage.builder()
-                .session(session)
-                .role(MessageRole.USER)
-                .content(prompt)
-                .tokensUsed(0)
-                .build());
-
-        ChatMessage saved = chatMessageRepository.save(ChatMessage.builder()
-                .session(session)
-                .role(MessageRole.AI)
-                .content(replyText)
-                .imageUrl(storedImageUrl)
-                .tokensUsed(0)
-                .build());
-        return mapToMessageResponse(saved);
+        return transactionTemplate.execute(status -> {
+            ChatSession managedSession = getSessionEntity(email, sessionId);
+            chatMessageRepository.save(ChatMessage.builder()
+                    .session(managedSession)
+                    .role(MessageRole.USER)
+                    .content(prompt)
+                    .tokensUsed(0)
+                    .build());
+            ChatMessage saved = chatMessageRepository.save(ChatMessage.builder()
+                    .session(managedSession)
+                    .role(MessageRole.AI)
+                    .content(replyText)
+                    .imageUrl(storedImageUrl)
+                    .tokensUsed(0)
+                    .build());
+            return mapToMessageResponse(saved);
+        });
     }
 
     /**
@@ -870,7 +881,6 @@ public class ChatServiceImpl implements ChatService {
     private ChatMessageResponse generateImageFromReference(
             String email,
             User user,
-            ChatSession session,
             Long sessionId,
             String prompt,
             List<ImagePart> images,
@@ -906,22 +916,24 @@ public class ChatServiceImpl implements ChatService {
             }
             String replyText = buildGenerateSuccessReply(prompt);
 
-            chatMessageRepository.save(ChatMessage.builder()
-                    .session(session)
-                    .role(MessageRole.USER)
-                    .content(prompt)
-                    .imageUrl(userImageUrl)
-                    .tokensUsed(0)
-                    .build());
-
-            ChatMessage saved = chatMessageRepository.save(ChatMessage.builder()
-                    .session(session)
-                    .role(MessageRole.AI)
-                    .content(replyText)
-                    .imageUrl(storedImageUrl)
-                    .tokensUsed(0)
-                    .build());
-            return mapToMessageResponse(saved);
+            return transactionTemplate.execute(status -> {
+                ChatSession managedSession = getSessionEntity(email, sessionId);
+                chatMessageRepository.save(ChatMessage.builder()
+                        .session(managedSession)
+                        .role(MessageRole.USER)
+                        .content(prompt)
+                        .imageUrl(userImageUrl)
+                        .tokensUsed(0)
+                        .build());
+                ChatMessage saved = chatMessageRepository.save(ChatMessage.builder()
+                        .session(managedSession)
+                        .role(MessageRole.AI)
+                        .content(replyText)
+                        .imageUrl(storedImageUrl)
+                        .tokensUsed(0)
+                        .build());
+                return mapToMessageResponse(saved);
+            });
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
@@ -1201,7 +1213,6 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    @Transactional
     public Object suggestStyle(String email, MultipartFile file, String box2d, String suggestType) {
         User user = getUserByEmail(email);
         return workflowUsageService.track(user, WorkflowType.SUGGEST_STYLE, null, () -> {
@@ -1215,7 +1226,6 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Object extractLayers(String email, String imageBase64, String mimeType, int numLayers) {
         User user = getUserByEmail(email);
         return workflowUsageService.track(user, WorkflowType.EXTRACT_LAYERS, null, () -> {
