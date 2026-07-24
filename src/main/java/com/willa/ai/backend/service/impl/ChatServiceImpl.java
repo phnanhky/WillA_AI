@@ -1270,29 +1270,33 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private String getPlanNameForUser(Long userId) {
-        List<Subscription> activeSubs = subscriptionRepository.findActiveRecurringByUserId(
-                userId, SubscriptionStatus.ACTIVE);
-        if (!activeSubs.isEmpty()) {
-            return activeSubs.get(0).getPlan().getName();
-        }
-        return "Free";
+        return transactionTemplate.execute(status -> {
+            List<Subscription> activeSubs = subscriptionRepository.findActiveRecurringByUserId(
+                    userId, SubscriptionStatus.ACTIVE);
+            if (!activeSubs.isEmpty()) {
+                return activeSubs.get(0).getPlan().getName();
+            }
+            return "Free";
+        });
     }
 
     private java.time.LocalDateTime getHistoryCutoffDate(Long userId) {
-        List<Subscription> activeSubs = subscriptionRepository.findActiveRecurringByUserId(
-                userId, SubscriptionStatus.ACTIVE);
-        if (!activeSubs.isEmpty()) {
-            Subscription activeSub = activeSubs.get(0);
-            String planName = activeSub.getPlan().getName();
-            if (planName.equalsIgnoreCase("Student") || planName.equalsIgnoreCase("Free")) {
-                return java.time.LocalDateTime.now().minusDays(7);
+        return transactionTemplate.execute(status -> {
+            List<Subscription> activeSubs = subscriptionRepository.findActiveRecurringByUserId(
+                    userId, SubscriptionStatus.ACTIVE);
+            if (!activeSubs.isEmpty()) {
+                Subscription activeSub = activeSubs.get(0);
+                String planName = activeSub.getPlan().getName();
+                if (planName.equalsIgnoreCase("Student") || planName.equalsIgnoreCase("Free")) {
+                    return java.time.LocalDateTime.now().minusDays(7);
+                }
+                if (activeSub.getStartDate() == null) {
+                    return java.time.LocalDateTime.now().minusDays(7);
+                }
+                return activeSub.getStartDate().minusDays(7);
             }
-            if (activeSub.getStartDate() == null) {
-                return java.time.LocalDateTime.now().minusDays(7);
-            }
-            return activeSub.getStartDate().minusDays(7);
-        }
-        return java.time.LocalDateTime.now().minusDays(7);
+            return java.time.LocalDateTime.now().minusDays(7);
+        });
     }
 
     private ChatSession getSessionEntity(String email, Long sessionId) {

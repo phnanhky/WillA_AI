@@ -19,7 +19,7 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
 
     @Query("""
             SELECT s FROM Subscription s
-            JOIN s.plan p
+            JOIN FETCH s.plan p
             WHERE s.user.id = :userId
               AND s.status = :status
               AND (s.endDate IS NULL OR s.endDate > CURRENT_TIMESTAMP)
