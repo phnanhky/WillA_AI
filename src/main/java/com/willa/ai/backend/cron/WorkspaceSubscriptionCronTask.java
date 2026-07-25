@@ -34,7 +34,13 @@ public class WorkspaceSubscriptionCronTask {
                 workspaceSubscriptionRepository.findByStatus(SubscriptionStatus.ACTIVE);
 
         for (WorkspaceSubscription sub : activeSubscriptions) {
-            if (sub.getWorkspacePlan().getBillingCycle() == BillingCycle.ONE_TIME) {
+            WorkspacePlan plan = sub.getWorkspacePlan();
+            // Free vĩnh viễn — không expire
+            if (plan != null && (Boolean.TRUE.equals(plan.getIsDefault())
+                    || (plan.getCode() != null && plan.getCode().toUpperCase().contains("FREE")))) {
+                continue;
+            }
+            if (plan != null && plan.getBillingCycle() == BillingCycle.ONE_TIME) {
                 continue;
             }
             if (sub.getEndDate() == null || !sub.getEndDate().isBefore(now)) {

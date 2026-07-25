@@ -93,10 +93,12 @@ public class WorkspaceSubscriptionsTableMigration {
         if (!tableExists("workspace_plans")) {
             return;
         }
+        // Luôn gắn Free mặc định (+100 năm) — không dùng workspace_plan_id Pro/Student
+        // còn sót trên user sau khi hủy gói trả phí.
         int inserted = entityManager.createNativeQuery("""
                 INSERT INTO workspace_subscriptions (user_id, workspace_plan_id, start_date, end_date, status)
                 SELECT u.id,
-                       COALESCE(u.workspace_plan_id, (SELECT id FROM workspace_plans WHERE is_default = TRUE LIMIT 1)),
+                       (SELECT id FROM workspace_plans WHERE is_default = TRUE LIMIT 1),
                        NOW(),
                        NOW() + INTERVAL '100 years',
                        'ACTIVE'
@@ -105,9 +107,69 @@ public class WorkspaceSubscriptionsTableMigration {
                   SELECT 1 FROM workspace_subscriptions ws
                   WHERE ws.user_id = u.id AND ws.status = 'ACTIVE'
                 )
+                  AND EXISTS (SELECT 1 FROM workspace_plans WHERE is_default = TRUE)
                 """).executeUpdate();
         if (inserted > 0) {
-            log.info("Backfilled {} workspace subscriptions (100-year) for existing users", inserted);
+            log.info("Backfilled {} Free workspace subscriptions (100-year) for existing users", inserted);
+        }
+
+        // Đồng bộ user.workspace_plan về Free khi chỉ còn Free active
+        int synced = entityManager.createNativeQuery("""
+                UPDATE users u
+                SET workspace_plan_id = (SELECT id FROM workspace_plans WHERE is_default = TRUE LIMIT 1),
+                    workspace_plan_tier = 'FREE_WORKSPACE'
+                WHERE EXISTS (
+                  SELECT 1 FROM workspace_subscriptions ws
+                  JOIN workspace_plans p ON p.id = ws.workspace_plan_id
+                  WHERE ws.user_id = u.id
+                    AND ws.status = 'ACTIVE'
+                    AND p.is_default = TRUE
+                )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM workspace_subscriptions ws2
+                    JOIN workspace_plans p2 ON p2.id = ws2.workspace_plan_id
+                    WHERE ws2.user_id = u.id
+                      AND ws2.status = 'ACTIVE'
+                      AND p2.is_default = FALSE
+                      AND UPPER(COALESCE(p2.code, '')) NOT LIKE '%FREE%'
+                  )
+                  AND (
+                    u.workspace_plan_id IS DISTINCT FROM (SELECT id FROM workspace_plans WHERE is_default = TRUE LIMIT 1)
+                    OR u.workspace_plan_tier IS DISTINCT FROM 'FREE_WORKSPACE'
+                  )
+                """).executeUpdate();
+        if (synced > 0) {
+            log.info("Synced {} users to Free workspace plan", synced);
+        }
+
+        // Sửa Student/Pro bị gán nhầm endDate +100 năm (do coi price=0 là Free)
+        int fixedMonthly = entityManager.createNativeQuery("""
+                UPDATE workspace_subscriptions ws
+                SET end_date = ws.start_date + INTERVAL '1 month',
+                    updated_at = NOW()
+                FROM workspace_plans p
+                WHERE ws.workspace_plan_id = p.id
+                  AND ws.status = 'ACTIVE'
+                  AND p.billing_cycle = 'MONTHLY'
+                  AND p.is_default = FALSE
+                  AND UPPER(COALESCE(p.code, '')) NOT LIKE '%FREE%'
+                  AND ws.end_date > NOW() + INTERVAL '2 years'
+                """).executeUpdate();
+        int fixedYearly = entityManager.createNativeQuery("""
+                UPDATE workspace_subscriptions ws
+                SET end_date = ws.start_date + INTERVAL '1 year',
+                    updated_at = NOW()
+                FROM workspace_plans p
+                WHERE ws.workspace_plan_id = p.id
+                  AND ws.status = 'ACTIVE'
+                  AND p.billing_cycle = 'YEARLY'
+                  AND p.is_default = FALSE
+                  AND UPPER(COALESCE(p.code, '')) NOT LIKE '%FREE%'
+                  AND ws.end_date > NOW() + INTERVAL '2 years'
+                """).executeUpdate();
+        if (fixedMonthly + fixedYearly > 0) {
+            log.info("Corrected endDate for {} paid workspace subscriptions wrongly set to ~100 years",
+                    fixedMonthly + fixedYearly);
         }
     }
 

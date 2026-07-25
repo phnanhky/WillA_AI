@@ -8,6 +8,7 @@ import com.willa.ai.backend.repository.UserRepository;
 import com.willa.ai.backend.repository.WorkspacePlanRepository;
 import com.willa.ai.backend.service.FileService;
 import com.willa.ai.backend.service.UserService;
+import com.willa.ai.backend.service.WorkspaceSubscriptionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -35,6 +36,8 @@ public class UserServiceImpl implements UserService {
     private FileService fileService;
     @Autowired
     private WorkspacePlanRepository workspacePlanRepository;
+    @Autowired
+    private WorkspaceSubscriptionService workspaceSubscriptionService;
 
     @Override
     public Page<UserResponse> getAllUsers(Pageable pageable) {
@@ -226,9 +229,11 @@ public class UserServiceImpl implements UserService {
     private UserResponse assignWorkspacePlan(Long userId, WorkspacePlan plan) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
-        user.setWorkspacePlan(plan);
-        syncWorkspacePlanTier(user, plan);
-        return convertToResponse(userRepository.save(user));
+        // Tạo/đổi subscription đúng chu kỳ (Free = +100 năm; Pro/Student theo billing)
+        workspaceSubscriptionService.createOrUpdateSubscription(user.getEmail(), plan.getId());
+        User refreshed = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+        return convertToResponse(refreshed);
     }
 
     private void syncWorkspacePlanTier(User user, WorkspacePlan plan) {

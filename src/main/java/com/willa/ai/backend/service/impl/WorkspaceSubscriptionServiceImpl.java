@@ -79,6 +79,9 @@ public class WorkspaceSubscriptionServiceImpl implements WorkspaceSubscriptionSe
 
         subscription.setStatus(SubscriptionStatus.CANCELLED);
         WorkspaceSubscription updated = workspaceSubscriptionRepository.save(subscription);
+
+        // Hủy Pro/Student (hoặc Free) → luôn đảm bảo còn Free vĩnh viễn nếu không còn gói trả phí
+        assignFreePlanIfNoActiveRecurring(subscription.getUser(), LocalDateTime.now());
         return mapToResponse(updated);
     }
 
@@ -170,11 +173,20 @@ public class WorkspaceSubscriptionServiceImpl implements WorkspaceSubscriptionSe
         return endDate.plusDays(bonusDays);
     }
 
+    /**
+     * Chỉ Free là vĩnh viễn (+100 năm). Không dùng price=0 — Student Workspace cũng 0₫
+     * nhưng vẫn MONTHLY và phải hết hạn rồi về Free.
+     */
     private boolean isFreePlan(WorkspacePlan plan) {
-        return Boolean.TRUE.equals(plan.getIsDefault())
-                || plan.getCode().toUpperCase().contains("FREE")
-                || (plan.getPrice() != null && plan.getPrice().signum() == 0
-                && (plan.getPromotionalPrice() == null || plan.getPromotionalPrice().signum() == 0));
+        if (plan == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(plan.getIsDefault())) {
+            return true;
+        }
+        String code = plan.getCode() != null ? plan.getCode().toUpperCase() : "";
+        String name = plan.getName() != null ? plan.getName().toUpperCase() : "";
+        return code.contains("FREE") || name.contains("FREE");
     }
 
     private void validateStudentPlan(User user, WorkspacePlan plan) {
@@ -220,6 +232,10 @@ public class WorkspaceSubscriptionServiceImpl implements WorkspaceSubscriptionSe
 
     private void checkAndExpireSubscriptionInDb(WorkspaceSubscription sub, LocalDateTime now) {
         if (sub.getStatus() != SubscriptionStatus.ACTIVE) {
+            return;
+        }
+        // Free vĩnh viễn — không expire dù endDate lỡ sai
+        if (isFreePlan(sub.getWorkspacePlan())) {
             return;
         }
         if (sub.getWorkspacePlan().getBillingCycle() == BillingCycle.ONE_TIME) {
