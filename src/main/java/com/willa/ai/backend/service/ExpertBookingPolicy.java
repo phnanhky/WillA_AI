@@ -1,7 +1,8 @@
 package com.willa.ai.backend.service;
 
 /**
- * Policy cố định cho Expert Review / Hourly — SLA Accept, Q&A, call minutes.
+ * Policy cố định cho Expert Review / Hourly — SLA Accept, Q&A, call, hạn dùng Hourly.
+ * Option A: chat/call chỉ sau Accept ({@code IN_PROGRESS}). Reject chỉ khi {@code AWAITING_EXPERT}.
  */
 public final class ExpertBookingPolicy {
 
@@ -18,6 +19,9 @@ public final class ExpertBookingPolicy {
 
     /** Call tối đa trong gói REVIEW (phút). Cần dài hơn → upsell HOURLY. */
     public static final int REVIEW_CALL_MINUTES = 15;
+
+    /** Hourly phải dùng trong bao nhiêu ngày kể từ paidAt (hết hạn → auto COMPLETED, không hoàn). */
+    public static final int HOURLY_VALIDITY_DAYS = 30;
 
     public static int callMinutesForHourly(Integer hours) {
         int h = hours != null && hours > 0 ? hours : 1;

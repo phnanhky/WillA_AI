@@ -58,7 +58,8 @@ public class ExpertBookingsTableMigration {
                           accepted_at TIMESTAMP,
                           feedback_delivered_at TIMESTAMP,
                           qa_ends_at TIMESTAMP,
-                          call_minutes_limit INT
+                          call_minutes_limit INT,
+                          service_expires_at TIMESTAMP
                         )
                         """);
                 statement.execute("CREATE INDEX idx_expert_bookings_client ON expert_bookings(client_user_id)");
@@ -101,6 +102,8 @@ public class ExpertBookingsTableMigration {
             }
 
             ensureCallTrackingTables(connection, statement);
+            ensureRefundSupportSchema(connection, statement);
+            ensureHourlyValiditySchema(connection, statement);
             return "migrated";
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to migrate expert booking tables", e);
@@ -133,6 +136,40 @@ public class ExpertBookingsTableMigration {
         System.arraycopy(dependsOn, 0, next, 0, dependsOn.length);
         next[dependsOn.length] = MIGRATION_BEAN;
         definition.setDependsOn(next);
+    }
+
+    private static void ensureRefundSupportSchema(Connection connection, Statement statement) throws SQLException {
+        addColumnIfMissing(connection, statement, "refund_bank_name", "VARCHAR(120)");
+        addColumnIfMissing(connection, statement, "refund_account_number", "VARCHAR(60)");
+        addColumnIfMissing(connection, statement, "refund_account_holder", "VARCHAR(200)");
+        if (!tableExists(connection, "expert_refund_support_messages")) {
+            statement.execute("""
+                    CREATE TABLE expert_refund_support_messages (
+                      id BIGSERIAL PRIMARY KEY,
+                      booking_id BIGINT NOT NULL REFERENCES expert_bookings(id) ON DELETE CASCADE,
+                      sender_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                      content TEXT NOT NULL,
+                      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """);
+            statement.execute(
+                    "CREATE INDEX idx_expert_refund_msg_booking ON expert_refund_support_messages(booking_id)");
+            log.info("Created expert_refund_support_messages table");
+        }
+    }
+
+    /** Hourly: service_expires_at = paid_at + 30 ngày. */
+    private static void ensureHourlyValiditySchema(Connection connection, Statement statement) throws SQLException {
+        addColumnIfMissing(connection, statement, "service_expires_at", "TIMESTAMP");
+        statement.execute("""
+                UPDATE expert_bookings
+                SET service_expires_at = COALESCE(
+                        paid_at, accepted_at, updated_at, created_at
+                    ) + INTERVAL '30 days'
+                WHERE booking_type = 'HOURLY'
+                  AND service_expires_at IS NULL
+                  AND status IN ('AWAITING_EXPERT', 'IN_PROGRESS')
+                """);
     }
 
     private static void ensureCallTrackingTables(Connection connection, Statement statement) throws SQLException {

@@ -13,15 +13,16 @@ public class ExpertBookingSlaCronTask {
 
     private final ExpertBookingService expertBookingService;
 
-    /** Mỗi 15 phút: hết SLA Accept → hoàn tiền; hết Q&A REVIEW → auto complete. */
+    /** Mỗi 15 phút: hết SLA Accept → hoàn tiền; hết Q&A REVIEW / Hourly hết phút hoặc hết hạn 30 ngày → auto complete. */
     @Scheduled(cron = "0 */15 * * * *")
     public void processExpertBookingSla() {
         int expired = expertBookingService.expireUnacceptedBookings();
         int completed = expertBookingService.autoCompleteExpiredReviewQa();
         int hourlyDone = expertBookingService.autoCompleteHourlyCallExhausted();
-        if (expired > 0 || completed > 0 || hourlyDone > 0) {
-            log.info("Expert booking SLA cron: expired={}, autoCompletedQa={}, hourlyExhausted={}",
-                    expired, completed, hourlyDone);
+        int hourlyValidity = expertBookingService.autoCompleteExpiredHourlyValidity();
+        if (expired > 0 || completed > 0 || hourlyDone > 0 || hourlyValidity > 0) {
+            log.info("Expert booking SLA cron: expired={}, autoCompletedQa={}, hourlyExhausted={}, hourlyValidity={}",
+                    expired, completed, hourlyDone, hourlyValidity);
         }
     }
 }

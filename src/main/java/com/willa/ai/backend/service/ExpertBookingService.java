@@ -5,12 +5,14 @@ import com.willa.ai.backend.dto.request.CreateExpertBookingRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingCallEventRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingFeedbackRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingMessageRequest;
+import com.willa.ai.backend.dto.request.ExpertRefundBankDetailsRequest;
 import com.willa.ai.backend.dto.response.ExpertBookingCallEventResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingCallHistoryResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingCallSessionResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingCheckoutResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingMessageResponse;
 import com.willa.ai.backend.dto.response.ExpertBookingResponse;
+import com.willa.ai.backend.dto.response.ExpertRefundSupportMessageResponse;
 
 import java.util.List;
 
@@ -51,9 +53,24 @@ public interface ExpertBookingService {
     /** Cron: HOURLY hết phút call → auto COMPLETED. */
     int autoCompleteHourlyCallExhausted();
 
+    /** Cron: HOURLY quá hạn dùng (30 ngày) → auto COMPLETED. */
+    int autoCompleteExpiredHourlyValidity();
+
     ExpertBookingResponse rejectByExpert(String expertUserEmail, Long bookingId, String reason);
 
     List<ExpertBookingResponse> listRefundPendingForAdmin();
 
+    ExpertBookingResponse getBookingForAdmin(Long bookingId);
+
+    /** Admin CS: đưa đơn đã PAID vào hàng đợi hoàn PayOS. */
+    ExpertBookingResponse adminRequestRefund(Long bookingId, String reason);
+
     ExpertBookingResponse markRefundSettled(Long bookingId);
+
+    List<ExpertRefundSupportMessageResponse> listRefundSupportMessages(String userEmail, Long bookingId, boolean asAdmin);
+
+    ExpertRefundSupportMessageResponse sendRefundSupportMessage(
+            String userEmail, Long bookingId, String content, boolean asAdmin);
+
+    ExpertBookingResponse saveRefundBankDetails(String clientEmail, Long bookingId, ExpertRefundBankDetailsRequest request);
 }

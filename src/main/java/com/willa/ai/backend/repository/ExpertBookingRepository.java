@@ -26,4 +26,9 @@ public interface ExpertBookingRepository extends JpaRepository<ExpertBooking, Lo
             ExpertBookingStatus status,
             ExpertBookingType bookingType,
             LocalDateTime qaEndsAt);
+
+    List<ExpertBooking> findByStatusAndBookingTypeAndServiceExpiresAtBefore(
+            ExpertBookingStatus status,
+            ExpertBookingType bookingType,
+            LocalDateTime serviceExpiresAt);
 }

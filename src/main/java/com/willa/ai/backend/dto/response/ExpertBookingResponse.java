@@ -43,6 +43,8 @@ public class ExpertBookingResponse {
     private LocalDateTime acceptedAt;
     private LocalDateTime feedbackDeliveredAt;
     private LocalDateTime qaEndsAt;
+    /** Hạn dùng Hourly (paidAt + 30 ngày). */
+    private LocalDateTime serviceExpiresAt;
     private Integer callMinutesLimit;
     /** Số tin client đã gửi sau khi có feedback (REVIEW Q&A). */
     private Integer clientQaMessagesUsed;
@@ -52,4 +54,9 @@ public class ExpertBookingResponse {
     private Long callSecondsRemaining;
     private Boolean canCall;
     private String quotaHint;
+
+    /** Thông tin STK khách gửi để ops chuyển hoàn. */
+    private String refundBankName;
+    private String refundAccountNumber;
+    private String refundAccountHolder;
 }

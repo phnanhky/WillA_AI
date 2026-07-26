@@ -6,6 +6,7 @@ import com.willa.ai.backend.dto.request.ExpertBookingCallEventRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingFeedbackRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingMessageRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingRejectRequest;
+import com.willa.ai.backend.dto.request.ExpertRefundBankDetailsRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.service.ExpertBookingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -164,6 +165,60 @@ public class ExpertBookingController {
                     .status(true)
                     .message("Message sent")
                     .data(expertBookingService.sendMessage(authentication.getName(), bookingId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/{bookingId}/refund-support/messages")
+    @Operation(summary = "Chat CS hoàn tiền (khách)")
+    public ResponseEntity<ApiResponse> listRefundSupportMessages(
+            @PathVariable Long bookingId,
+            Authentication authentication) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Refund support messages")
+                    .data(expertBookingService.listRefundSupportMessages(
+                            authentication.getName(), bookingId, false))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/{bookingId}/refund-support/messages")
+    @Operation(summary = "Khách gửi tin CS hoàn tiền")
+    public ResponseEntity<ApiResponse> sendRefundSupportMessage(
+            @PathVariable Long bookingId,
+            @RequestBody ExpertBookingMessageRequest request,
+            Authentication authentication) {
+        try {
+            String content = request != null ? request.getContent() : null;
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Message sent")
+                    .data(expertBookingService.sendRefundSupportMessage(
+                            authentication.getName(), bookingId, content, false))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PutMapping("/{bookingId}/refund-bank-details")
+    @Operation(summary = "Khách gửi STK nhận hoàn tiền")
+    public ResponseEntity<ApiResponse> saveRefundBankDetails(
+            @PathVariable Long bookingId,
+            @RequestBody ExpertRefundBankDetailsRequest request,
+            Authentication authentication) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Bank details saved")
+                    .data(expertBookingService.saveRefundBankDetails(
+                            authentication.getName(), bookingId, request))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

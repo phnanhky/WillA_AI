@@ -111,12 +111,29 @@ public class ExpertBooking {
     @Column(name = "call_minutes_limit")
     private Integer callMinutesLimit;
 
+    /**
+     * Hạn dùng gói HOURLY (paidAt + {@link com.willa.ai.backend.service.ExpertBookingPolicy#HOURLY_VALIDITY_DAYS}).
+     * Quá hạn → cron auto COMPLETED phần còn lại (không hoàn).
+     */
+    @Column(name = "service_expires_at")
+    private LocalDateTime serviceExpiresAt;
+
     /** Phòng video call (Jitsi Meet) — tạo sau khi thanh toán. */
     @Column(name = "meeting_room_url")
     private String meetingRoomUrl;
 
     @Column(name = "reject_reason", columnDefinition = "TEXT")
     private String rejectReason;
+
+    /** Ngân hàng nhận hoàn (khách gửi khi REFUND_PENDING). */
+    @Column(name = "refund_bank_name", length = 120)
+    private String refundBankName;
+
+    @Column(name = "refund_account_number", length = 60)
+    private String refundAccountNumber;
+
+    @Column(name = "refund_account_holder", length = 200)
+    private String refundAccountHolder;
 
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

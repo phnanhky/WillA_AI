@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import com.willa.ai.backend.entity.User;
+import com.willa.ai.backend.entity.enums.Role;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
@@ -15,4 +16,5 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByResetToken(String resetToken);
     boolean existsByEmail(String email);
     List<User> findByIsStudentTrueAndStudentVerifiedAtBefore(LocalDateTime time);
+    Optional<User> findFirstByRoleOrderByIdAsc(Role role);
 }

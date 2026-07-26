@@ -1,5 +1,7 @@
 package com.willa.ai.backend.controller;
 
+import com.willa.ai.backend.dto.request.AdminExpertRefundRequest;
+import com.willa.ai.backend.dto.request.ExpertBookingMessageRequest;
 import com.willa.ai.backend.dto.request.WorkspaceExpertRequest;
 import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.service.ExpertBookingService;
@@ -11,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -133,6 +136,73 @@ public class AdminExpertController {
                     .status(true)
                     .message("Refund-pending bookings")
                     .data(expertBookingService.listRefundPendingForAdmin())
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/expert-bookings/{bookingId}")
+    @Operation(summary = "Tra cứu booking (CS hỗ trợ hoàn tiền)")
+    public ResponseEntity<ApiResponse> getBooking(@PathVariable Long bookingId) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Booking retrieved")
+                    .data(expertBookingService.getBookingForAdmin(bookingId))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/expert-bookings/{bookingId}/request-refund")
+    @Operation(summary = "Admin đưa đơn PAID vào hàng đợi hoàn PayOS (hỗ trợ khách)")
+    public ResponseEntity<ApiResponse> requestRefund(
+            @PathVariable Long bookingId,
+            @RequestBody(required = false) AdminExpertRefundRequest body) {
+        try {
+            String reason = body != null ? body.getReason() : null;
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Refund queued for PayOS ops")
+                    .data(expertBookingService.adminRequestRefund(bookingId, reason))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @GetMapping("/expert-bookings/{bookingId}/refund-support/messages")
+    @Operation(summary = "Chat CS hoàn tiền (admin)")
+    public ResponseEntity<ApiResponse> listRefundSupportMessages(
+            @PathVariable Long bookingId,
+            Authentication authentication) {
+        try {
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Refund support messages")
+                    .data(expertBookingService.listRefundSupportMessages(
+                            authentication.getName(), bookingId, true))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/expert-bookings/{bookingId}/refund-support/messages")
+    @Operation(summary = "Admin gửi tin CS hoàn tiền / hỏi STK")
+    public ResponseEntity<ApiResponse> sendRefundSupportMessage(
+            @PathVariable Long bookingId,
+            @RequestBody ExpertBookingMessageRequest body,
+            Authentication authentication) {
+        try {
+            String content = body != null ? body.getContent() : null;
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Message sent")
+                    .data(expertBookingService.sendRefundSupportMessage(
+                            authentication.getName(), bookingId, content, true))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

@@ -340,6 +340,10 @@ public class PaymentServiceImpl implements PaymentService {
                     booking.setCallMinutesLimit(
                             ExpertBookingPolicy.callMinutesFor(
                                     booking.getBookingType(), booking.getHourlyHours()));
+                    if (booking.getBookingType() == ExpertBookingType.HOURLY) {
+                        booking.setServiceExpiresAt(
+                                now.plusDays(ExpertBookingPolicy.HOURLY_VALIDITY_DAYS));
+                    }
                     String secret = ExpertBookingServiceImpl.generateRoomSecret();
                     booking.setMeetingRoomUrl(
                             ExpertBookingServiceImpl.buildMeetingRoomUrl(booking.getId(), secret));
