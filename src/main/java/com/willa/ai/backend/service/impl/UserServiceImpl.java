@@ -204,12 +204,53 @@ public class UserServiceImpl implements UserService {
             throw new RuntimeException("Mã OTP đã hết hạn");
         }
 
-        // Cập nhật trạng thái sinh viên
         user.setIsStudent(true);
         user.setStudentVerifiedAt(LocalDateTime.now());
-        user.setStudentOtp(null); // Xóa OTP sau khi dùng xong
+        user.setRequiresReview(false);
+        user.setStudentOtp(null);
         user.setStudentOtpExpiry(null);
         userRepository.save(user);
+    }
+
+    @Override
+    public UserResponse submitStudentIdCard(String userEmail, String studentIdCardUrl) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        if (Boolean.TRUE.equals(user.getIsStudent())) {
+            return convertToResponse(user);
+        }
+        String cardUrl = studentIdCardUrl != null ? studentIdCardUrl.trim() : "";
+        if (cardUrl.isEmpty()) {
+            throw new RuntimeException("Vui lòng tải lên ảnh thẻ sinh viên.");
+        }
+        user.setStudentIdCardUrl(cardUrl);
+        user.setRequiresReview(true);
+        userRepository.save(user);
+        return convertToResponse(user);
+    }
+
+    @Override
+    public UserResponse approveStudentByIdCard(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+        if (user.getStudentIdCardUrl() == null || user.getStudentIdCardUrl().isBlank()) {
+            throw new RuntimeException("User chưa gửi ảnh thẻ sinh viên.");
+        }
+        user.setIsStudent(true);
+        user.setStudentVerifiedAt(LocalDateTime.now());
+        user.setRequiresReview(false);
+        userRepository.save(user);
+        return convertToResponse(user);
+    }
+
+    @Override
+    public UserResponse rejectStudentByIdCard(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+        user.setRequiresReview(false);
+        // Giữ studentIdCardUrl để đối chiếu; không cấp isStudent
+        userRepository.save(user);
+        return convertToResponse(user);
     }
 
     @Override
@@ -267,6 +308,7 @@ public class UserServiceImpl implements UserService {
                 .workspacePlanName(user.getWorkspacePlan() != null ? user.getWorkspacePlan().getName() : null)
                 .requiresReview(user.getRequiresReview())
                 .studentVerifiedAt(user.getStudentVerifiedAt())
+                .studentIdCardUrl(user.getStudentIdCardUrl())
                 .firebaseUid(user.getFirebaseUid())
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())

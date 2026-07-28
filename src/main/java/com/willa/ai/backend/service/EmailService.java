@@ -39,4 +39,13 @@ public interface EmailService {
             String dueLabel,
             com.willa.ai.backend.entity.enums.TaskDeadlineNotificationType type,
             String taskUrl);
+
+    /** Cảm ơn đã thanh toán gói Feedback / Workspace. */
+    void sendPaymentThankYouEmail(
+            String to,
+            String buyerName,
+            Long orderCode,
+            String planName,
+            long amountVnd,
+            String appUrl);
 }

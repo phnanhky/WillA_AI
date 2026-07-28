@@ -58,6 +58,19 @@ public class Payment {
     @Column(name = "discount_amount")
     private Long discountAmount;
 
+    /** Full name on order (checkout). Legacy: buyer_last_name kept for old rows. */
+    @Column(name = "buyer_first_name", length = 120)
+    private String buyerFirstName;
+
+    @Column(name = "buyer_last_name", length = 120)
+    private String buyerLastName;
+
+    @Column(name = "buyer_phone", length = 40)
+    private String buyerPhone;
+
+    @Column(name = "buyer_email", length = 255)
+    private String buyerEmail;
+
     @OneToOne(mappedBy = "payment", fetch = FetchType.LAZY)
     private ExpertBooking expertBooking;
 

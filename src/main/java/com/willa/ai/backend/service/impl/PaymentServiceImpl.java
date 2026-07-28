@@ -1,5 +1,6 @@
 package com.willa.ai.backend.service.impl;
 
+import com.willa.ai.backend.dto.request.CreatePaymentLinkRequest;
 import com.willa.ai.backend.dto.response.PaymentConfirmResponse;
 import com.willa.ai.backend.entity.Coupon;
 import com.willa.ai.backend.entity.Payment;
@@ -107,11 +108,19 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     @CircuitBreaker(name = "payosCircuitBreaker", fallbackMethod = "createPaymentLinkFallback")
     @Retry(name = "payosRetry", fallbackMethod = "createPaymentLinkFallback")
-    public CheckoutResponseData createPaymentLink(String userEmail, Long planId, String planType, String couponCode) {
+    public CheckoutResponseData createPaymentLink(String userEmail, CreatePaymentLinkRequest request) {
         try {
+            if (request == null || request.getPlanId() == null) {
+                throw new IllegalArgumentException("Thiếu planId");
+            }
+            Long planId = request.getPlanId();
+            String planType = request.getPlanType();
+            String couponCode = request.getCouponCode();
             boolean isWorkspace = planType != null && planType.equalsIgnoreCase("WORKSPACE");
             User user = userRepository.findByEmail(userEmail)
                     .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + userEmail));
+
+            requireBuyerInfo(request);
 
             Long orderCode = System.currentTimeMillis() / 1000;
             BigDecimal priceBd;
@@ -166,6 +175,9 @@ public class PaymentServiceImpl implements PaymentService {
                         .build();
             }
 
+            applyBuyerInfo(payment, request);
+            syncUserContactFromBuyer(user, request);
+
             long planPrice = resolvePaymentAmount(priceBd, promotionalPriceBd);
             boolean hasCoupon = couponCode != null && !couponCode.isBlank();
 
@@ -209,6 +221,57 @@ public class PaymentServiceImpl implements PaymentService {
         } catch (Exception e) {
             throw new RuntimeException(e.getMessage());
         }
+    }
+
+    private void requireBuyerInfo(CreatePaymentLinkRequest request) {
+        if (blank(resolveBuyerName(request)) || blank(request.getEmail())) {
+            throw new IllegalArgumentException(
+                    "Vui lòng nhập đầy đủ tên và email trên đơn hàng.");
+        }
+        String email = request.getEmail().trim();
+        if (!email.contains("@")) {
+            throw new IllegalArgumentException("Email trên đơn hàng không hợp lệ.");
+        }
+    }
+
+    private void applyBuyerInfo(Payment payment, CreatePaymentLinkRequest request) {
+        String name = resolveBuyerName(request);
+        payment.setBuyerFirstName(name);
+        payment.setBuyerLastName(null);
+        payment.setBuyerPhone(trim(request.getPhone()));
+        payment.setBuyerEmail(trim(request.getEmail()));
+    }
+
+    private void syncUserContactFromBuyer(User user, CreatePaymentLinkRequest request) {
+        boolean dirty = false;
+        String phone = trim(request.getPhone());
+        if (phone != null && (user.getPhoneNumber() == null || user.getPhoneNumber().isBlank())) {
+            user.setPhoneNumber(phone);
+            dirty = true;
+        }
+        String name = resolveBuyerName(request);
+        if ((user.getFullName() == null || user.getFullName().isBlank()) && name != null) {
+            user.setFullName(name);
+            dirty = true;
+        }
+        if (dirty) {
+            userRepository.save(user);
+        }
+    }
+
+    /** Full name on order; stored in buyer_first_name. */
+    private static String resolveBuyerName(CreatePaymentLinkRequest request) {
+        return trim(request.getName());
+    }
+
+    private static boolean blank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    private static String trim(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 
     @Override
@@ -286,7 +349,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     public CheckoutResponseData createPaymentLinkFallback(
-            String userEmail, Long planId, String planType, String couponCode, Throwable t) {
+            String userEmail, CreatePaymentLinkRequest request, Throwable t) {
         System.err.println("PayOS API encountered an error. Resilience4j fallback triggered: " + t.getMessage());
         throw new RuntimeException("Cổng thanh toán PayOS đang gặp sự cố hoặc quá tải. Vui lòng thử lại sau.", t);
     }
@@ -327,10 +390,12 @@ public class PaymentServiceImpl implements PaymentService {
             workspaceSubscriptionService.createOrUpdateSubscription(
                     payment.getUser().getEmail(), payment.getWorkspacePlan().getId(), bonusDays);
             System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã kích hoạt gói workspace.");
+            sendPlanThankYouEmail(payment, payment.getWorkspacePlan().getName());
         } else if (payment.getPlan() != null) {
             subscriptionService.createOrUpdateSubscription(
                     payment.getUser().getEmail(), payment.getPlan().getId(), bonusDays);
             System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã cộng token/subscription.");
+            sendPlanThankYouEmail(payment, payment.getPlan().getName());
         } else {
             expertBookingRepository.findByPaymentId(payment.getId()).ifPresent(booking -> {
                 if (booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT) {
@@ -354,6 +419,34 @@ public class PaymentServiceImpl implements PaymentService {
                     System.out.println("Thanh toán thành công expert booking: " + booking.getId());
                 }
             });
+        }
+    }
+
+    private void sendPlanThankYouEmail(Payment payment, String planName) {
+        try {
+            User user = payment.getUser();
+            String to = payment.getBuyerEmail() != null && !payment.getBuyerEmail().isBlank()
+                    ? payment.getBuyerEmail().trim()
+                    : (user != null ? user.getEmail() : null);
+            if (to == null || to.isBlank()) {
+                return;
+            }
+            String first = payment.getBuyerFirstName() != null ? payment.getBuyerFirstName().trim() : "";
+            String last = payment.getBuyerLastName() != null ? payment.getBuyerLastName().trim() : "";
+            String buyerName = first.isEmpty() ? last : (last.isEmpty() ? first : (first + " " + last).trim());
+            if (buyerName.isEmpty() && user != null && user.getFullName() != null) {
+                buyerName = user.getFullName();
+            }
+            String base = frontendUrl != null ? frontendUrl.trim().replaceAll("/$", "") : "https://willaai.tech";
+            emailService.sendPaymentThankYouEmail(
+                    to,
+                    buyerName,
+                    payment.getOrderCode(),
+                    planName,
+                    payment.getAmount() != null ? payment.getAmount() : 0L,
+                    base);
+        } catch (Exception e) {
+            System.err.println("Failed to send payment thank-you email: " + e.getMessage());
         }
     }
 

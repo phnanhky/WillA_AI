@@ -186,6 +186,33 @@ public class EmailServiceImpl implements EmailService {
     }
 
     @Override
+    public void sendPaymentThankYouEmail(
+            String to,
+            String buyerName,
+            Long orderCode,
+            String planName,
+            long amountVnd,
+            String appUrl) {
+        String name = buyerName != null && !buyerName.isBlank() ? buyerName.trim() : "bạn";
+        String plan = planName != null && !planName.isBlank() ? planName.trim() : "gói WillA";
+        String subject = "WillaAI - Cảm ơn bạn đã thanh toán (đơn #" + orderCode + ")";
+        String amountLabel = String.format("%,d", amountVnd).replace(',', '.') + " VND";
+        String body =
+                "<p style='margin:0 0 12px;'>Xin chào <strong>" + escapeHtml(name) + "</strong>,</p>"
+                        + "<p style='margin:0 0 12px;'>Cảm ơn bạn đã thanh toán thành công trên <strong style='color:"
+                        + BRAND + ";'>WillaAI</strong>.</p>"
+                        + "<p style='margin:0 0 8px;'>Chi tiết đơn:</p>"
+                        + "<ul style='margin:0 0 20px;padding-left:20px;color:" + TEXT + ";'>"
+                        + "<li>Mã đơn: <strong>#" + orderCode + "</strong></li>"
+                        + "<li>Gói: <strong>" + escapeHtml(plan) + "</strong></li>"
+                        + "<li>Số tiền: <strong>" + amountLabel + "</strong></li>"
+                        + "</ul>"
+                        + "<p style='margin:0 0 20px;'>Gói của bạn đã được kích hoạt. Chúc bạn trải nghiệm tuyệt vời!</p>"
+                        + ctaButton(appUrl != null ? appUrl : appBase(), "Mở WillA");
+        sendHtmlEmail(to, subject, wrapEmail("Cảm ơn đã thanh toán", body));
+    }
+
+    @Override
     public void sendWorkspaceInviteEmail(String to, String workspaceName, String inviterName, String inviteLink, String role) {
         String subject = "WillaAI - Lời mời tham gia workspace \"" + workspaceName + "\"";
         String body =

@@ -1,5 +1,6 @@
 package com.willa.ai.backend.controller;
 
+import com.willa.ai.backend.dto.request.CreatePaymentLinkRequest;
 import com.willa.ai.backend.dto.request.ValidateCouponRequest;
 import com.willa.ai.backend.dto.ApiResponse;
 import com.willa.ai.backend.dto.response.CouponValidationResponse;
@@ -77,26 +78,20 @@ public class PaymentController {
 
     @PostMapping("/create-link")
     public ResponseEntity<ApiResponse<CheckoutResponseData>> createPaymentLink(
-            @RequestBody Map<String, Object> request,
+            @RequestBody CreatePaymentLinkRequest request,
             Authentication authentication) {
         try {
-            if (!request.containsKey("planId") || request.get("planId") == null) {
+            if (request == null || request.getPlanId() == null) {
                 return ResponseEntity.badRequest().body(ApiResponse.<CheckoutResponseData>builder()
                         .success(false)
                         .message("Missing 'planId' in request body")
                         .build());
             }
-            
-            Long planId = Long.parseLong(request.get("planId").toString());
-            String planType = request.containsKey("planType") && request.get("planType") != null
-                    ? request.get("planType").toString()
-                    : "FEEDBACK";
-            String couponCode = request.containsKey("couponCode") && request.get("couponCode") != null
-                    ? request.get("couponCode").toString()
-                    : null;
+            if (request.getPlanType() == null || request.getPlanType().isBlank()) {
+                request.setPlanType("FEEDBACK");
+            }
             String email = authentication.getName();
-
-            CheckoutResponseData result = paymentService.createPaymentLink(email, planId, planType, couponCode);
+            CheckoutResponseData result = paymentService.createPaymentLink(email, request);
 
             return ResponseEntity.ok(ApiResponse.<CheckoutResponseData>builder()
                     .success(true)

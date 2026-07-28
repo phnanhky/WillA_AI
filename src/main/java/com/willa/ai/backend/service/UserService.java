@@ -16,7 +16,14 @@ public interface UserService {
     void activeUser(Long userId);
     void deactivateUser(Long userId);
     void requestStudentVerification(String eduEmail);
+    /** Cách 1: OTP email .edu → isStudent ngay. */
     void confirmStudentVerification(String eduEmail, String otp);
+    /** Cách 2: upload thẻ SV (không cần .edu) → chờ Admin duyệt. */
+    UserResponse submitStudentIdCard(String userEmail, String studentIdCardUrl);
+    /** Admin duyệt yêu cầu thẻ SV. */
+    UserResponse approveStudentByIdCard(Long userId);
+    /** Admin từ chối yêu cầu thẻ SV. */
+    UserResponse rejectStudentByIdCard(Long userId);
     UserResponse updateWorkspacePlanTier(Long userId, WorkspacePlanTier tier);
     UserResponse updateUserWorkspacePlan(Long userId, Long workspacePlanId);
 }

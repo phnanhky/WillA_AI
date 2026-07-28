@@ -33,6 +33,7 @@ public class UserResponse {
     private String workspacePlanName;
     private Boolean requiresReview;
     private LocalDateTime studentVerifiedAt;
+    private String studentIdCardUrl;
     private String firebaseUid;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

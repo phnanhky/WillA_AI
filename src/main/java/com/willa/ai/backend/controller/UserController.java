@@ -212,11 +212,72 @@ public class UserController {
     }
 
     @PostMapping("/confirm-student")
-    public ResponseEntity<ApiResponse> confirmStudentVerification(@RequestParam String eduEmail, @RequestParam String otp) {
+    public ResponseEntity<ApiResponse> confirmStudentVerification(
+            @RequestParam String eduEmail,
+            @RequestParam String otp) {
         userService.confirmStudentVerification(eduEmail, otp);
         return ResponseEntity.ok(ApiResponse.builder()
                 .status(true)
                 .message("Xác thực sinh viên thành công")
                 .build());
+    }
+
+    /** Cách 2: gửi ảnh thẻ SV — chờ Admin duyệt (không cần email .edu). */
+    @PostMapping("/student-id-card")
+    public ResponseEntity<ApiResponse> submitStudentIdCard(
+            Authentication authentication,
+            @RequestParam String studentIdCardUrl) {
+        try {
+            UserResponse user = userService.submitStudentIdCard(authentication.getName(), studentIdCardUrl);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Đã gửi ảnh thẻ. Vui lòng chờ Admin duyệt.")
+                    .data(user)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.builder()
+                            .status(false)
+                            .message(e.getMessage())
+                            .build());
+        }
+    }
+
+    @PostMapping("/{userId}/approve-student")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse> approveStudent(@PathVariable Long userId) {
+        try {
+            UserResponse user = userService.approveStudentByIdCard(userId);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Đã duyệt tài khoản Student")
+                    .data(user)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.builder()
+                            .status(false)
+                            .message(e.getMessage())
+                            .build());
+        }
+    }
+
+    @PostMapping("/{userId}/reject-student")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse> rejectStudent(@PathVariable Long userId) {
+        try {
+            UserResponse user = userService.rejectStudentByIdCard(userId);
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Đã từ chối yêu cầu xác thực Student")
+                    .data(user)
+                    .build());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.builder()
+                            .status(false)
+                            .message(e.getMessage())
+                            .build());
+        }
     }
 }

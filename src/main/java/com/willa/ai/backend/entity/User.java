@@ -107,6 +107,10 @@ public class User implements UserDetails {
     @Column(name = "student_verified_at")
     private LocalDateTime studentVerifiedAt;
 
+    /** Ảnh thẻ sinh viên (URL file upload) — bắt buộc khi xác thực Student. */
+    @Column(name = "student_id_card_url", columnDefinition = "TEXT")
+    private String studentIdCardUrl;
+
     @Column(name = "avatar_url", columnDefinition = "TEXT")
     private String avatarUrl;
 
