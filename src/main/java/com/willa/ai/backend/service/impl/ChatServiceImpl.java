@@ -210,16 +210,6 @@ public class ChatServiceImpl implements ChatService {
         try {
             List<ImagePart> images = expandToImageParts(files);
 
-            String personaContext = personaService.getAiContextJsonForUser(user.getId());
-            QwenTokenEstimateResponse estimate = estimateTokenUsage(images, content, personaContext, sessionId);
-            long walletBefore = wallet.getTokenBalance() != null ? wallet.getTokenBalance() : 0L;
-            log.info(
-                    "Token ESTIMATE [userId={}, sessionId={}, model={}, images={}]: input={}, output={}, total={}, wallet={} ({})",
-                    user.getId(), sessionId, qwenModel, estimate.getImageCount(),
-                    estimate.getInputTokens(), estimate.getOutputTokens(), estimate.getTotalTokens(), walletBefore,
-                    qwenTokenEstimateProperties.isUseAiServer() ? "ai-server" : "local");
-            qwenTokenEstimateService.requireSufficientBalance(wallet, estimate.getTotalTokens());
-
             // Phân quyền theo gói: chỉ gói PRO mới được gửi file PDF/PSD hoặc nhiều ảnh.
             // Gói Student/Free chỉ phân tích đúng 1 ảnh thường mỗi lần.
             if (!planName.equalsIgnoreCase("Pro")) {
@@ -239,63 +229,92 @@ public class ChatServiceImpl implements ChatService {
                 }
             }
 
-            int actualInput = 0;
-            int actualOutput = 0;
-            if (images.isEmpty()) {
-                if ("zoom".equalsIgnoreCase(actionType)) {
-                    seedAiAnalysisFromSession(email, sessionId, imageIndex);
-                }
-                MultiValueMap<String, Object> body = aiServerClient.chatForm(
-                        sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang, chatHistoryJson);
-                JsonNode rootNode = callAiChatWithAnalysisRecovery(email, sessionId, body);
-                aiResponseContent = contentFromAiNode(rootNode);
-                TokenUsage usage = deductTokensForAiCall(user, wallet, rootNode, "CHAT");
-                totalTokensCombined = usage.getTotalTokens();
-                actualInput = usage.getPromptTokens();
-                actualOutput = usage.getCompletionTokens();
-            } else {
-                final List<ImagePart> imagesForUpload = images;
-                imageUrlsFuture = CompletableFuture.supplyAsync(() -> uploadImagesToR2(imagesForUpload));
-                com.fasterxml.jackson.databind.node.ArrayNode arrayNode = objectMapper.createArrayNode();
-                int batchImageIndex = 0;
-                for (ImagePart image : images) {
-                    batchImageIndex++;
-                    MultiValueMap<String, Object> body = aiServerClient.chatForm(
-                            sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang, chatHistoryJson);
-                    body.add("file", AiServerClient.toFileResource(image.bytes(), image.filename()));
-                    JsonNode rootNode = aiServerClient.chat(body);
-                    JsonNode nodeToAdd = rootNode;
-                    if (rootNode != null && rootNode.isObject()) {
-                        ObjectNode copy = (ObjectNode) rootNode.deepCopy();
-                        copy.put("image_index", batchImageIndex);
-                        copy.put("image_total", images.size());
-                        if (!copy.hasNonNull("schema_version")) {
-                            copy.put("schema_version", AI_PAYLOAD_SCHEMA_VERSION);
-                        }
-                        nodeToAdd = copy;
-                    }
-                    arrayNode.add(nodeToAdd);
-                    TokenUsage usage = deductTokensForAiCall(user, wallet, rootNode, "ANALYZE");
-                    totalTokensCombined += usage.getTotalTokens();
-                    actualInput += usage.getPromptTokens();
-                    actualOutput += usage.getCompletionTokens();
-                    log.info(
-                            "Token ACTUAL per image [userId={}, sessionId={}, image {}/{}, file={}]: input={}, output={}, total={}",
-                            user.getId(), sessionId, batchImageIndex, images.size(), image.filename(),
-                            usage.getPromptTokens(), usage.getCompletionTokens(), usage.getTotalTokens());
-                }
-                if (images.size() == 1 && arrayNode.size() > 0) {
-                    aiResponseContent = arrayNode.get(0).toString();
-                } else {
-                    aiResponseContent = arrayNode.toString();
-                }
+            String personaContext = personaService.getAiContextJsonForUser(user.getId());
+            QwenTokenEstimateResponse estimate = estimateTokenUsage(images, content, personaContext, sessionId);
+            long walletBefore = wallet.getTokenBalance() != null ? wallet.getTokenBalance() : 0L;
+            log.info(
+                    "Token ESTIMATE [userId={}, sessionId={}, model={}, images={}]: input={}, output={}, total={}, wallet={} ({})",
+                    user.getId(), sessionId, qwenModel, estimate.getImageCount(),
+                    estimate.getInputTokens(), estimate.getOutputTokens(), estimate.getTotalTokens(), walletBefore,
+                    qwenTokenEstimateProperties.isUseAiServer() ? "ai-server" : "local");
+            long reserved = Math.max(0L, estimate.getTotalTokens());
+            qwenTokenEstimateService.requireSufficientBalance(wallet, reserved);
+            if (reserved > 0) {
+                adjustWalletBalance(user, wallet, -reserved);
+                log.info(
+                        "Token RESERVE [userId={}, sessionId={}]: reserved={}, walletAfter={}",
+                        user.getId(), sessionId, reserved, wallet.getTokenBalance());
             }
 
-            long walletAfter = wallet.getTokenBalance() != null ? wallet.getTokenBalance() : 0L;
-            log.info(
-                    "Token ACTUAL total [userId={}, sessionId={}]: input={}, output={}, total={}, walletAfter={} | vs estimate total={}",
-                    user.getId(), sessionId, actualInput, actualOutput, totalTokensCombined, walletAfter,
-                    estimate.getTotalTokens());
+            int actualInput = 0;
+            int actualOutput = 0;
+            try {
+                if (images.isEmpty()) {
+                    if ("zoom".equalsIgnoreCase(actionType)) {
+                        seedAiAnalysisFromSession(email, sessionId, imageIndex);
+                    }
+                    MultiValueMap<String, Object> body = aiServerClient.chatForm(
+                            sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang, chatHistoryJson);
+                    JsonNode rootNode = callAiChatWithAnalysisRecovery(email, sessionId, body);
+                    aiResponseContent = contentFromAiNode(rootNode);
+                    TokenUsage usage = recordAiTokenUsage(user, rootNode, "CHAT");
+                    totalTokensCombined = usage.getTotalTokens();
+                    actualInput = usage.getPromptTokens();
+                    actualOutput = usage.getCompletionTokens();
+                } else {
+                    final List<ImagePart> imagesForUpload = images;
+                    imageUrlsFuture = CompletableFuture.supplyAsync(() -> uploadImagesToR2(imagesForUpload));
+                    com.fasterxml.jackson.databind.node.ArrayNode arrayNode = objectMapper.createArrayNode();
+                    int batchImageIndex = 0;
+                    for (ImagePart image : images) {
+                        batchImageIndex++;
+                        MultiValueMap<String, Object> body = aiServerClient.chatForm(
+                                sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang, chatHistoryJson);
+                        body.add("file", AiServerClient.toFileResource(image.bytes(), image.filename()));
+                        JsonNode rootNode = aiServerClient.chat(body);
+                        JsonNode nodeToAdd = rootNode;
+                        if (rootNode != null && rootNode.isObject()) {
+                            ObjectNode copy = (ObjectNode) rootNode.deepCopy();
+                            copy.put("image_index", batchImageIndex);
+                            copy.put("image_total", images.size());
+                            if (!copy.hasNonNull("schema_version")) {
+                                copy.put("schema_version", AI_PAYLOAD_SCHEMA_VERSION);
+                            }
+                            nodeToAdd = copy;
+                        }
+                        arrayNode.add(nodeToAdd);
+                        TokenUsage usage = recordAiTokenUsage(user, rootNode, "ANALYZE");
+                        totalTokensCombined += usage.getTotalTokens();
+                        actualInput += usage.getPromptTokens();
+                        actualOutput += usage.getCompletionTokens();
+                        log.info(
+                                "Token ACTUAL per image [userId={}, sessionId={}, image {}/{}, file={}]: input={}, output={}, total={}",
+                                user.getId(), sessionId, batchImageIndex, images.size(), image.filename(),
+                                usage.getPromptTokens(), usage.getCompletionTokens(), usage.getTotalTokens());
+                    }
+                    if (images.size() == 1 && arrayNode.size() > 0) {
+                        aiResponseContent = arrayNode.get(0).toString();
+                    } else {
+                        aiResponseContent = arrayNode.toString();
+                    }
+                }
+
+                reconcileReservedTokens(user, wallet, reserved, totalTokensCombined);
+                if (totalTokensCombined <= 0 && reserved > 0) {
+                    totalTokensCombined = (int) Math.min(Integer.MAX_VALUE, reserved);
+                }
+                long walletAfter = wallet.getTokenBalance() != null ? wallet.getTokenBalance() : 0L;
+                log.info(
+                        "Token ACTUAL total [userId={}, sessionId={}]: input={}, output={}, total={}, walletAfter={} | vs estimate total={}",
+                        user.getId(), sessionId, actualInput, actualOutput, totalTokensCombined, walletAfter,
+                        estimate.getTotalTokens());
+            } catch (RuntimeException e) {
+                refundReservedTokens(user, wallet, reserved);
+                throw e;
+            } catch (Exception e) {
+                refundReservedTokens(user, wallet, reserved);
+                throw new RuntimeException("Failed to call AI or parse response: " + e.getMessage(), e);
+            }
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
@@ -735,28 +754,71 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private TokenUsage deductTokensForAiCall(User user, Wallet wallet, JsonNode rootNode, String serviceType) {
+        TokenUsage usage = recordAiTokenUsage(user, rootNode, serviceType);
+        if (!usage.hasTokens()) {
+            return usage;
+        }
+        adjustWalletBalance(user, wallet, -usage.getTotalTokens());
+        return usage;
+    }
+
+    /** Ghi usage AI; không đụng wallet (dùng với reserve/reconcile). */
+    private TokenUsage recordAiTokenUsage(User user, JsonNode rootNode, String serviceType) {
         TokenUsage usage = aiServerClient.parseUsage(rootNode);
         if (!usage.hasTokens()) {
             return usage;
         }
         int total = usage.getTotalTokens();
+        transactionTemplate.executeWithoutResult(status -> aiTokenUsageRepository.save(AITokenUsage.builder()
+                .user(user)
+                .model(qwenModel)
+                .promptTokens(usage.getPromptTokens())
+                .completionTokens(usage.getCompletionTokens())
+                .totalTokens(total)
+                .serviceType(serviceType)
+                .build()));
+        return usage;
+    }
+
+    /**
+     * Sau AI: chỉnh ví theo actual.
+     * Không có usage trong response → giữ charge = reserved (không hoàn).
+     */
+    private void reconcileReservedTokens(User user, Wallet wallet, long reserved, long actual) {
+        long billable = actual > 0 ? actual : reserved;
+        long delta = reserved - billable; // >0 hoàn, <0 trừ thêm
+        if (delta != 0) {
+            adjustWalletBalance(user, wallet, delta);
+        }
+        log.info(
+                "Token RECONCILE [userId={}]: reserved={}, actual={}, billable={}, delta={}, walletAfter={}",
+                user.getId(), reserved, actual, billable, delta, wallet.getTokenBalance());
+    }
+
+    private void refundReservedTokens(User user, Wallet wallet, long reserved) {
+        if (reserved <= 0) {
+            return;
+        }
+        adjustWalletBalance(user, wallet, reserved);
+        log.info(
+                "Token REFUND [userId={}]: reserved={}, walletAfter={}",
+                user.getId(), reserved, wallet.getTokenBalance());
+    }
+
+    /** delta &gt; 0 cộng token; delta &lt; 0 trừ token. Floor tại 0. */
+    private void adjustWalletBalance(User user, Wallet wallet, long delta) {
+        if (delta == 0) {
+            return;
+        }
         transactionTemplate.executeWithoutResult(status -> {
             Wallet managed = walletRepository.findByUserId(user.getId())
                     .orElseThrow(() -> new RuntimeException("Wallet not found"));
-            Long newBalance = (managed.getTokenBalance() != null ? managed.getTokenBalance() : 0L) - total;
-            managed.setTokenBalance(newBalance < 0 ? 0L : newBalance);
+            long bal = managed.getTokenBalance() != null ? managed.getTokenBalance() : 0L;
+            long next = bal + delta;
+            managed.setTokenBalance(next < 0 ? 0L : next);
             walletRepository.save(managed);
             wallet.setTokenBalance(managed.getTokenBalance());
-            aiTokenUsageRepository.save(AITokenUsage.builder()
-                    .user(user)
-                    .model(qwenModel)
-                    .promptTokens(usage.getPromptTokens())
-                    .completionTokens(usage.getCompletionTokens())
-                    .totalTokens(total)
-                    .serviceType(serviceType)
-                    .build());
         });
-        return usage;
     }
 
     @Override
