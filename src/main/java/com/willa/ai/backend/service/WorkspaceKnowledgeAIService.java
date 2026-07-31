@@ -116,7 +116,7 @@ public class WorkspaceKnowledgeAIService {
         String context = contextBuilder.toString();
 
         // 4. Model Routing (Tạm dùng grok-build-0.1 qua Python AI Server)
-        String systemPrompt = "You are Workspace Knowledge AI. The current date is " + currentDate + ". Use the provided context to answer user questions accurately. IMPORTANT: You are a READ-ONLY assistant. You CANNOT update or delete tasks. If the user asks you to modify a task, you MUST explicitly decline and state that you can only read information. CRITICAL: When users ask about tasks for a specific person, you MUST strictly match their exact name as requested. Do NOT assume that abbreviated names or similar names (e.g., 'Vuong NM' vs 'Ngo Minh Vuong') are the same person unless explicitly told so. Only return tasks that exactly match the requested person's name. Context: \n" + context;
+        String systemPrompt = "You are Workspace Knowledge AI. The current date is " + currentDate + ". Use the provided context to answer user questions accurately. IMPORTANT: You are a READ-ONLY assistant. You CANNOT update or delete tasks. If the user asks you to modify a task, you MUST explicitly decline and state that you can only read information. CRITICAL: When users ask about tasks for a specific person, you MUST strictly match their exact name as requested. Do NOT assume that abbreviated names or similar names (e.g., 'Vuong NM' vs 'Ngo Minh Vuong') are the same person unless explicitly told so. Only return tasks that exactly match the requested person's name. CRITICAL: DO NOT hallucinate facts, statistics, users, customers, or information about WillaAI, Ewill, or any real-world data that you do not have explicitly in your context. You must honestly state that you do not have that information. Context: \n" + context;
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", question)
@@ -124,7 +124,7 @@ public class WorkspaceKnowledgeAIService {
 
         JsonNode responseNode = aiServerClient.workspaceChat(messages);
         
-        String answer = "Tạm thời chưa kết nối được tới mô hình Grok. (Intent: " + intent + ")";
+        String answer = "Tạm thời chưa kết nối được tới mô hình WillaAI. (Intent: " + intent + ")";
         Long tokens = 0L;
         if (responseNode != null && responseNode.has("text")) {
             answer = responseNode.get("text").asText();
