@@ -34,6 +34,12 @@ public class AnalyticsResponse {
      */
     private Map<String, Long> feedbackPlanStartsInPeriod;
 
+    /**
+     * Số user bắt đầu gói Workspace trong kỳ (workspace_subscriptions.start_date).
+     * Keys: Free, Student, Pro.
+     */
+    private Map<String, Long> workspacePlanStartsInPeriod;
+
     /** Tổng token AI (ai_token_usages) trong kỳ lọc. */
     private Long totalAiTokensInPeriod;
     

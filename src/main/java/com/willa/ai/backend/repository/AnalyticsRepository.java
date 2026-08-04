@@ -617,6 +617,33 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate);
 
+    /**
+     * Số user bắt đầu gói Workspace trong kỳ — chuẩn hóa Free/Student/Pro.
+     * Mỗi user chỉ đếm 1 lần / tier.
+     */
+    @Query(value = """
+        SELECT CASE
+                   WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%PRO%' THEN 'Pro'
+                   WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%STUDENT%' THEN 'Student'
+                   ELSE 'Free'
+               END AS plan_tier,
+               COUNT(DISTINCT ws.user_id)
+        FROM workspace_subscriptions ws
+        JOIN workspace_plans wp ON wp.id = ws.workspace_plan_id
+        WHERE ws.start_date >= :startDate
+          AND ws.start_date <= :endDate
+          AND ws.user_id NOT IN (:excludedUserIds)
+        GROUP BY CASE
+                   WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%PRO%' THEN 'Pro'
+                   WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%STUDENT%' THEN 'Student'
+                   ELSE 'Free'
+                 END
+        """, nativeQuery = true)
+    List<Object[]> countWorkspacePlanStartsByTierInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
+
     @Query(value = """
         SELECT COUNT(*)
         FROM workspace_projects wp

@@ -112,6 +112,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         Long newRegistrations = analyticsRepository.countNewRegistrations(startDt, endDt, excludedIds());
         List<RegisteredUserDTO> newRegisteredUsers = listNewRegisteredUsers(startDt, endDt);
         Map<String, Long> feedbackPlanStarts = getFeedbackPlanStartsInPeriod(startDt, endDt);
+        Map<String, Long> workspacePlanStarts = getWorkspacePlanStartsInPeriod(startDt, endDt);
         Long totalAiTokens = analyticsRepository.sumTokensInPeriod(startDt, endDt, excludedIds());
 
         WorkflowUsageAnalytics workflowUsage = buildWorkflowUsageAnalytics(startDt, endDt);
@@ -128,6 +129,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .newRegistrationsInPeriod(newRegistrations != null ? newRegistrations : 0)
             .newRegisteredUsers(newRegisteredUsers)
             .feedbackPlanStartsInPeriod(feedbackPlanStarts)
+            .workspacePlanStartsInPeriod(workspacePlanStarts)
             .totalAiTokensInPeriod(totalAiTokens != null ? totalAiTokens : 0)
             .dailyChatCounts(dailyChatCounts)
             .topActiveUsers(topActiveUsers)
@@ -634,6 +636,18 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         starts.put("Student", 0L);
         starts.put("Pro", 0L);
         for (Object[] row : analyticsRepository.countFeedbackPlanStartsInPeriod(startDt, endDt, excludedIds())) {
+            String tier = row[0] != null ? row[0].toString() : "Free";
+            starts.put(tier, asLong(row[1]));
+        }
+        return starts;
+    }
+
+    private Map<String, Long> getWorkspacePlanStartsInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
+        Map<String, Long> starts = new LinkedHashMap<>();
+        starts.put("Free", 0L);
+        starts.put("Student", 0L);
+        starts.put("Pro", 0L);
+        for (Object[] row : analyticsRepository.countWorkspacePlanStartsByTierInPeriod(startDt, endDt, excludedIds())) {
             String tier = row[0] != null ? row[0].toString() : "Free";
             starts.put(tier, asLong(row[1]));
         }
