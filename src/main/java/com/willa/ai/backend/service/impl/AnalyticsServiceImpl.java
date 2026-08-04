@@ -248,7 +248,6 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                         .title((String) row[1])
                         .ownerEmail((String) row[2])
                         .memberCount(asLong(row[3]))
-                        .channelMessagesInPeriod(asLong(row[4]))
                         .build())
                 .collect(Collectors.toList());
 
@@ -257,8 +256,6 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .totalWorkspaces(nz(analyticsRepository.countTotalWorkspaces()))
                 .membersJoinedInPeriod(nz(analyticsRepository.countMembersJoinedInPeriod(startDt, endDt)))
                 .totalMembers(nz(analyticsRepository.countTotalWorkspaceMembers()))
-                .channelMessagesInPeriod(nz(analyticsRepository.countChannelMessagesInPeriod(startDt, endDt)))
-                .dmMessagesInPeriod(nz(analyticsRepository.countDmMessagesInPeriod(startDt, endDt)))
                 .activeSubscriptions(nz(analyticsRepository.countActiveWorkspaceSubscriptions()))
                 .planStartsInPeriod(nz(analyticsRepository.countWorkspacePlanStartsInPeriod(startDt, endDt)))
                 .projectsCreatedInPeriod(nz(analyticsRepository.countProjectsCreatedInPeriod(startDt, endDt)))
@@ -327,7 +324,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                         (a, b) -> a,
                         LinkedHashMap::new));
 
-        Map<Long, String> highestPlanByUser = getHighestFeedbackPlanMap(startDt, endDt);
+        Map<Long, String> feedbackPlanByUser = getCurrentFeedbackPlanMap();
+        Map<Long, String> workspacePlanByUser = getWorkspacePlanMap();
         Map<Long, Long> tokensByUser = getTokensByUserMap(startDt, endDt);
 
         List<Object[]> engagementRows = workflowUsageRepository.userAiEngagementInRange(startDt, endDt, excluded);
@@ -365,7 +363,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                     return WorkflowUserActivity.builder()
                             .userId(userId)
                             .email((String) row[1])
-                            .planName(highestPlanByUser.getOrDefault(userId, "Free"))
+                            .planName(feedbackPlanByUser.getOrDefault(userId, "Free"))
+                            .workspacePlanName(workspacePlanByUser.getOrDefault(userId, "Free"))
                             .runCount(asLong(row[2]))
                             .totalDurationMs(asLong(row[3]))
                             .aiTokensUsed(tokensByUser.getOrDefault(userId, 0L))
@@ -581,7 +580,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
     
     private List<RegisteredUserDTO> listNewRegisteredUsers(LocalDateTime startDt, LocalDateTime endDt) {
-        Map<Long, String> highestPlanByUser = getHighestFeedbackPlanMap(startDt, endDt);
+        Map<Long, String> feedbackPlanByUser = getCurrentFeedbackPlanMap();
+        Map<Long, String> workspacePlanByUser = getWorkspacePlanMap();
         return analyticsRepository.listNewRegistrationsInPeriod(startDt, endDt, excludedIds()).stream()
                 .map(row -> {
                     Long userId = asLong(row[0]);
@@ -590,7 +590,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                             .email(row[1] != null ? row[1].toString() : "")
                             .fullName(row[2] != null ? row[2].toString() : "")
                             .createdAt(formatCreatedAt(row[3]))
-                            .planName(highestPlanByUser.getOrDefault(userId, "Free"))
+                            .planName(feedbackPlanByUser.getOrDefault(userId, "Free"))
+                            .workspacePlanName(workspacePlanByUser.getOrDefault(userId, "Free"))
                             .build();
                 })
                 .collect(Collectors.toList());
@@ -608,16 +609,22 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
 
     private List<UserActivityDTO> getActiveUsersInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
+        Map<Long, String> feedbackPlanByUser = getCurrentFeedbackPlanMap();
+        Map<Long, String> workspacePlanByUser = getWorkspacePlanMap();
         List<Object[]> results = analyticsRepository.getActiveUsersInPeriod(startDt, endDt, excludedIds());
         
         return results.stream()
-            .map(row -> UserActivityDTO.builder()
-                .userId(asLong(row[0]))
-                .email((String) row[1])
-                .planName(row[2] != null ? row[2].toString() : "Free")
-                .chatCount(asLong(row[3]))
-                .aiTokensUsed(asLong(row[4]))
-                .build())
+            .map(row -> {
+                Long userId = asLong(row[0]);
+                return UserActivityDTO.builder()
+                    .userId(userId)
+                    .email((String) row[1])
+                    .planName(feedbackPlanByUser.getOrDefault(userId, "Free"))
+                    .workspacePlanName(workspacePlanByUser.getOrDefault(userId, "Free"))
+                    .chatCount(asLong(row[3]))
+                    .aiTokensUsed(asLong(row[4]))
+                    .build();
+            })
             .collect(Collectors.toList());
     }
 
@@ -633,13 +640,50 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         return starts;
     }
 
-    private Map<Long, String> getHighestFeedbackPlanMap(LocalDateTime startDt, LocalDateTime endDt) {
-        return analyticsRepository.getHighestFeedbackPlanByUserInPeriod(startDt, endDt, excludedIds()).stream()
+    /** Gói Feedback ACTIVE còn hạn tại thời điểm search. */
+    private Map<Long, String> getCurrentFeedbackPlanMap() {
+        return analyticsRepository.listCurrentFeedbackPlansByUser(excludedIds()).stream()
                 .collect(Collectors.toMap(
                         row -> asLong(row[0]),
                         row -> row[1] != null ? row[1].toString() : "Free",
                         (a, b) -> a,
                         LinkedHashMap::new));
+    }
+
+    /** Gói Workspace hiện tại (ACTIVE sub → assigned plan) tại thời điểm search. */
+    private Map<Long, String> getWorkspacePlanMap() {
+        return analyticsRepository.listCurrentWorkspacePlansByUser(excludedIds()).stream()
+                .collect(Collectors.toMap(
+                        row -> asLong(row[0]),
+                        row -> displayWorkspacePlanTier(
+                                row[1] != null ? row[1].toString() : null,
+                                row[2] != null ? row[2].toString() : null),
+                        (a, b) -> a,
+                        LinkedHashMap::new));
+    }
+
+    private static String displayWorkspacePlanTier(String name, String code) {
+        String raw = code != null && !code.isBlank() ? code : name;
+        if (raw == null || raw.isBlank()) {
+            return "Free";
+        }
+        String upper = raw.toUpperCase(Locale.ROOT);
+        if (upper.contains("PRO")) {
+            return "Pro";
+        }
+        if (upper.contains("STUDENT")) {
+            return "Student";
+        }
+        if (name != null && !name.isBlank()) {
+            String shortened = name.replaceAll("(?i)\\s*workspace\\s*", " ").trim();
+            if (!shortened.isBlank() && !shortened.equalsIgnoreCase(name)) {
+                return shortened;
+            }
+            if (name.toLowerCase(Locale.ROOT).contains("pro")) return "Pro";
+            if (name.toLowerCase(Locale.ROOT).contains("student")) return "Student";
+            if (name.toLowerCase(Locale.ROOT).contains("free")) return "Free";
+        }
+        return "Free";
     }
 
     private Map<Long, Long> getTokensByUserMap(LocalDateTime startDt, LocalDateTime endDt) {

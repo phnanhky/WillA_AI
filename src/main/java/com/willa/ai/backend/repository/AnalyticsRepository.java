@@ -250,6 +250,68 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
             @Param("endDate") LocalDateTime endDate,
             @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
+    /**
+     * Gói Feedback hiện tại tại thời điểm query (ACTIVE + còn hạn).
+     * Columns: user_id, plan_tier (Free/Student/Pro)
+     */
+    @Query(value = """
+        SELECT s.user_id,
+               CASE
+                   WHEN MAX(CASE
+                       WHEN LOWER(p.name) LIKE '%pro%' THEN 3
+                       WHEN LOWER(p.name) LIKE '%student%' THEN 2
+                       WHEN LOWER(p.name) LIKE '%free%' THEN 1
+                       ELSE 0
+                   END) = 3 THEN 'Pro'
+                   WHEN MAX(CASE
+                       WHEN LOWER(p.name) LIKE '%pro%' THEN 3
+                       WHEN LOWER(p.name) LIKE '%student%' THEN 2
+                       WHEN LOWER(p.name) LIKE '%free%' THEN 1
+                       ELSE 0
+                   END) = 2 THEN 'Student'
+                   ELSE 'Free'
+               END AS plan_tier
+        FROM subscriptions s
+        JOIN plans p ON p.id = s.plan_id
+        WHERE s.status = 'ACTIVE'
+          AND s.end_date >= NOW()
+          AND p.billing_cycle IN ('MONTHLY', 'YEARLY')
+          AND s.user_id NOT IN (:excludedUserIds)
+        GROUP BY s.user_id
+        """, nativeQuery = true)
+    List<Object[]> listCurrentFeedbackPlansByUser(
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
+
+    /**
+     * Gói Workspace hiện tại tại thời điểm query.
+     * Ưu tiên workspace_subscriptions ACTIVE còn hạn; fallback users.workspace_plan.
+     * Columns: user_id, plan_name, plan_code
+     */
+    @Query(value = """
+        SELECT u.id,
+               COALESCE(active_wp.name, assigned_wp.name, u.workspace_plan_tier, 'FREE_WORKSPACE') AS plan_name,
+               COALESCE(active_wp.code, assigned_wp.code, u.workspace_plan_tier, 'FREE_WORKSPACE') AS plan_code
+        FROM users u
+        LEFT JOIN LATERAL (
+            SELECT wp.name, wp.code
+            FROM workspace_subscriptions ws
+            JOIN workspace_plans wp ON wp.id = ws.workspace_plan_id
+            WHERE ws.user_id = u.id
+              AND ws.status = 'ACTIVE'
+              AND ws.end_date >= NOW()
+            ORDER BY CASE
+                WHEN UPPER(wp.code) LIKE '%PRO%' THEN 3
+                WHEN UPPER(wp.code) LIKE '%STUDENT%' THEN 2
+                ELSE 1
+            END DESC, ws.end_date DESC
+            LIMIT 1
+        ) active_wp ON TRUE
+        LEFT JOIN workspace_plans assigned_wp ON assigned_wp.id = u.workspace_plan_id
+        WHERE u.id NOT IN (:excludedUserIds)
+        """, nativeQuery = true)
+    List<Object[]> listCurrentWorkspacePlansByUser(
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
+
     /** Tổng token AI trong kỳ. */
     @Query(value = """
         SELECT COALESCE(SUM(atu.total_tokens), 0)
@@ -569,26 +631,17 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
         SELECT w.id,
                w.title,
                u.email,
-               (SELECT COUNT(*) FROM workspace_members wm WHERE wm.workspace_id = w.id) AS member_count,
-               COALESCE((
-                   SELECT COUNT(*)
-                   FROM channel_messages cm
-                   JOIN workspace_channels wc ON wc.id = cm.channel_id
-                   WHERE wc.workspace_id = w.id
-                     AND cm.created_at >= :startDate
-                     AND cm.created_at <= :endDate
-               ), 0) AS msg_count
+               (SELECT COUNT(*) FROM workspace_members wm WHERE wm.workspace_id = w.id) AS member_count
         FROM workspaces w
         JOIN users u ON u.id = w.owner_id
         WHERE (w.created_at >= :startDate AND w.created_at <= :endDate)
            OR EXISTS (
-               SELECT 1 FROM channel_messages cm2
-               JOIN workspace_channels wc2 ON wc2.id = cm2.channel_id
-               WHERE wc2.workspace_id = w.id
-                 AND cm2.created_at >= :startDate
-                 AND cm2.created_at <= :endDate
+               SELECT 1 FROM workspace_members wm2
+               WHERE wm2.workspace_id = w.id
+                 AND wm2.joined_at >= :startDate
+                 AND wm2.joined_at <= :endDate
            )
-        ORDER BY msg_count DESC, member_count DESC
+        ORDER BY member_count DESC, w.created_at DESC
         LIMIT 20
         """, nativeQuery = true)
     List<Object[]> topWorkspacesInPeriod(

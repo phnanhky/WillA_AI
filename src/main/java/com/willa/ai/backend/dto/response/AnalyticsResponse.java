@@ -151,8 +151,6 @@ public class AnalyticsResponse {
         private Long totalWorkspaces;
         private Long membersJoinedInPeriod;
         private Long totalMembers;
-        private Long channelMessagesInPeriod;
-        private Long dmMessagesInPeriod;
         private Long activeSubscriptions;
         /** User bắt đầu gói Workspace trong kỳ (start_date). */
         private Long planStartsInPeriod;
@@ -169,7 +167,6 @@ public class AnalyticsResponse {
         private String title;
         private String ownerEmail;
         private Long memberCount;
-        private Long channelMessagesInPeriod;
     }
     
     @Data
@@ -257,8 +254,10 @@ public class AnalyticsResponse {
         private String fullName;
         /** ISO local datetime string from users.created_at */
         private String createdAt;
-        /** Gói Feedback cao nhất trong kỳ (Free/Student/Pro). */
+        /** Gói Feedback hiện tại tại thời điểm search (Free/Student/Pro). */
         private String planName;
+        /** Gói Workspace hiện tại tại thời điểm search (Free/Student/Pro). */
+        private String workspacePlanName;
     }
 
     @Data
@@ -268,8 +267,10 @@ public class AnalyticsResponse {
     public static class WorkflowUserActivity {
         private Long userId;
         private String email;
-        /** Gói Feedback cao nhất trong kỳ (Free/Student/Pro). */
+        /** Gói Feedback hiện tại tại thời điểm search (Free/Student/Pro). */
         private String planName;
+        /** Gói Workspace hiện tại tại thời điểm search (Free/Student/Pro). */
+        private String workspacePlanName;
         private Long runCount;
         private Long totalDurationMs;
         /** Tổng token AI trong kỳ. */
@@ -287,7 +288,10 @@ public class AnalyticsResponse {
     public static class UserActivityDTO {
         private Long userId;
         private String email;
+        /** Gói Feedback hiện tại tại thời điểm search. */
         private String planName;
+        /** Gói Workspace hiện tại tại thời điểm search. */
+        private String workspacePlanName;
         private Long chatCount;
         private Long aiTokensUsed;
     }
