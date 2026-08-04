@@ -25,6 +25,9 @@ public class AnalyticsResponse {
     /** Số user đăng ký mới trong kỳ (users.created_at). */
     private Long newRegistrationsInPeriod;
 
+    /** Danh sách user đăng ký mới trong kỳ (mới nhất trước). */
+    private List<RegisteredUserDTO> newRegisteredUsers;
+
     /**
      * Số user bắt đầu gói Feedback trong kỳ (subscription.start_date).
      * Keys: Free, Student, Pro.
@@ -242,6 +245,20 @@ public class AnalyticsResponse {
     public static class DailyWorkflowStats {
         private Long runCount;
         private Long totalDurationMs;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RegisteredUserDTO {
+        private Long userId;
+        private String email;
+        private String fullName;
+        /** ISO local datetime string from users.created_at */
+        private String createdAt;
+        /** Gói Feedback cao nhất trong kỳ (Free/Student/Pro). */
+        private String planName;
     }
 
     @Data

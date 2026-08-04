@@ -172,6 +172,23 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
             @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /**
+     * Danh sách user đăng ký mới trong kỳ (mới nhất trước).
+     * Columns: user_id, email, full_name, created_at
+     */
+    @Query(value = """
+        SELECT u.id, u.email, u.full_name, u.created_at
+        FROM users u
+        WHERE u.created_at >= :startDate
+          AND u.created_at <= :endDate
+          AND u.id NOT IN (:excludedUserIds)
+        ORDER BY u.created_at DESC
+        """, nativeQuery = true)
+    List<Object[]> listNewRegistrationsInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
+
+    /**
      * Số user bắt đầu gói Feedback (MONTHLY/YEARLY) trong kỳ — chuẩn hóa Free/Student/Pro.
      * Mỗi user chỉ đếm 1 lần / tier (nếu mua nhiều lần cùng tier).
      */

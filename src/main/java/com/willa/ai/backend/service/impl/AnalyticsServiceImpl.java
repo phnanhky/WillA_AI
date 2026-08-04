@@ -7,6 +7,7 @@ import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertAnalytics;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertCompletedJobRow;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertLeaderboardRow;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertPayrollRow;
+import com.willa.ai.backend.dto.response.AnalyticsResponse.RegisteredUserDTO;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.UserActivityDTO;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.WorkflowToolStats;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.WorkflowTypeStats;
@@ -109,6 +110,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         Map<String, Long> chatsByPlan = getChatsByPlan(startDt, endDt);
 
         Long newRegistrations = analyticsRepository.countNewRegistrations(startDt, endDt, excludedIds());
+        List<RegisteredUserDTO> newRegisteredUsers = listNewRegisteredUsers(startDt, endDt);
         Map<String, Long> feedbackPlanStarts = getFeedbackPlanStartsInPeriod(startDt, endDt);
         Long totalAiTokens = analyticsRepository.sumTokensInPeriod(startDt, endDt, excludedIds());
 
@@ -124,6 +126,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .totalChatsThisMonth(totalChatsThisMonth != null ? totalChatsThisMonth : 0)
             .totalChatsInPeriod(totalChatsInPeriod != null ? totalChatsInPeriod : 0)
             .newRegistrationsInPeriod(newRegistrations != null ? newRegistrations : 0)
+            .newRegisteredUsers(newRegisteredUsers)
             .feedbackPlanStartsInPeriod(feedbackPlanStarts)
             .totalAiTokensInPeriod(totalAiTokens != null ? totalAiTokens : 0)
             .dailyChatCounts(dailyChatCounts)
@@ -577,6 +580,33 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             ));
     }
     
+    private List<RegisteredUserDTO> listNewRegisteredUsers(LocalDateTime startDt, LocalDateTime endDt) {
+        Map<Long, String> highestPlanByUser = getHighestFeedbackPlanMap(startDt, endDt);
+        return analyticsRepository.listNewRegistrationsInPeriod(startDt, endDt, excludedIds()).stream()
+                .map(row -> {
+                    Long userId = asLong(row[0]);
+                    return RegisteredUserDTO.builder()
+                            .userId(userId)
+                            .email(row[1] != null ? row[1].toString() : "")
+                            .fullName(row[2] != null ? row[2].toString() : "")
+                            .createdAt(formatCreatedAt(row[3]))
+                            .planName(highestPlanByUser.getOrDefault(userId, "Free"))
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
+
+    private static String formatCreatedAt(Object value) {
+        if (value == null) return null;
+        if (value instanceof LocalDateTime ldt) {
+            return ldt.toString();
+        }
+        if (value instanceof java.sql.Timestamp ts) {
+            return ts.toLocalDateTime().toString();
+        }
+        return value.toString();
+    }
+
     private List<UserActivityDTO> getActiveUsersInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
         List<Object[]> results = analyticsRepository.getActiveUsersInPeriod(startDt, endDt, excludedIds());
         
