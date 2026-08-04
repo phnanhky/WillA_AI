@@ -858,7 +858,15 @@ public class ChatServiceImpl implements ChatService {
                 body.add("replyLang", replyLang);
             }
             JsonNode resultNode = callRegenImageWithAnalysisRecovery(email, sessionId, body);
-            String rawJson = resultNode.toString();
+            int regenIdx = imageIndex != null && imageIndex >= 0 ? imageIndex : 0;
+            String rawJson;
+            if (resultNode != null && resultNode.isObject()) {
+                ObjectNode tagged = ((ObjectNode) resultNode).deepCopy();
+                tagged.put("image_index", regenIdx);
+                rawJson = tagged.toString();
+            } else {
+                rawJson = resultNode != null ? resultNode.toString() : "";
+            }
             String storedContent = persistImagePayloadContent(rawJson);
             String regenImageUrl = extractImagePayloadUrl(storedContent);
             transactionTemplate.executeWithoutResult(status -> {
