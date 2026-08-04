@@ -38,7 +38,10 @@ public class ImageUploadCompressor {
         if (data == null || data.length == 0) {
             throw new IllegalArgumentException("Cannot upload empty file");
         }
-        if (!isImage(contentType, originalFilename)) {
+        // Luôn verify magic bytes nếu client khai báo / đặt tên như ảnh.
+        if (isImage(contentType, originalFilename) || FileMagicValidator.filenameLooksLikeImage(originalFilename)) {
+            FileMagicValidator.requireImage(data, originalFilename);
+        } else if (!FileMagicValidator.isImage(data)) {
             if (data.length > maxUploadBytes) {
                 throw new IllegalArgumentException(
                         "File must be under " + (maxUploadBytes / (1024 * 1024)) + " MB");
@@ -46,7 +49,8 @@ public class ImageUploadCompressor {
             return unchanged(data, contentType, originalFilename);
         }
         if (data.length <= maxUploadBytes) {
-            return unchanged(data, contentType, originalFilename);
+            var kind = FileMagicValidator.detect(data);
+            return new PreparedUpload(data, FileMagicValidator.mimeFor(kind), FileMagicValidator.extensionFor(kind));
         }
         try {
             return compressImage(data, originalFilename);

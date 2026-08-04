@@ -86,95 +86,100 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     @Override
     public AuthResponse register(RegisterRequest request) {
-        try {
-            System.out.println("Register: email=" + request.getEmail());
-            
-            if (userRepository.findByEmail(request.getEmail()).isPresent()) {
-                throw new RuntimeException("User already exists");
-            }
-
-            if (!request.getPassword().equals(request.getConfirmPassword())) {
-                throw new RuntimeException("Passwords do not match");
-            }
-
-            User user = User.builder()
-                    .email(request.getEmail())
-                    .fullName(request.getFullName())
-                    .phoneNumber(request.getPhoneNumber())
-                    .gender(request.getGender())
-                    .occupation(request.getOccupation())
-                    .dob(request.getDob())
-                    .password(passwordEncoder.encode(request.getPassword()))
-                    .role(Role.USER)
-                    .isEnabled(false)
-                    .isActive(true)
-                    .verificationToken(UUID.randomUUID().toString())
-                    .build();
-
-            user = userRepository.save(user);
-            assignDefaultWorkspacePlan(user);
-            assignDefaultWorkspaceSubscription(user);
-
-            // Vẫn chưa gen token ở bước này vì account isEnabled = false
-
-            // Assign Free Plan and initialize Wallet
-            Optional<Plan> defaultPlanOpt = planRepository.findByName("Free");
-            if (defaultPlanOpt.isPresent()) {
-                Plan freePlan = defaultPlanOpt.get();
-                Subscription freeSub = Subscription.builder()
-                        .user(user)
-                        .plan(freePlan)
-                        .startDate(LocalDateTime.now())
-                        .endDate(LocalDateTime.now().plusYears(100))
-                        .status(SubscriptionStatus.ACTIVE)
-                        .build();
-                subscriptionRepository.save(freeSub);
-
-                Wallet wallet = Wallet.builder()
-                        .user(user)
-                        .tokenBalance(Long.valueOf(freePlan.getTokenLimit()))
-                        .totalRecharged(Long.valueOf(freePlan.getTokenLimit()))
-                        .build();
-                walletRepository.save(wallet);
-            } else {
-                // Fallback if Free plan doesn't exist
-                Wallet wallet = Wallet.builder()
-                        .user(user)
-                        .tokenBalance(60000L)
-                        .totalRecharged(60000L)
-                        .build();
-                walletRepository.save(wallet);
-            }
-
-            // Send verification email
-            String verificationLink = frontendUrl + "/verify-email?token=" + user.getVerificationToken() + "&email=" + java.net.URLEncoder.encode(user.getEmail(), java.nio.charset.StandardCharsets.UTF_8);
-            try {
-                emailService.sendVerificationEmail(user.getEmail(), verificationLink);
-                System.out.println("Verification email sent to: " + user.getEmail());
-            } catch (Exception emailEx) {
-                System.out.println("Email sending failed: " + emailEx.getMessage());
-            }
-
-            // Send welcome email
-            try {
-                emailService.sendWelcomeEmail(user.getEmail(), user.getFullName());
-                System.out.println("Welcome email sent to: " + user.getEmail());
-            } catch (Exception emailEx) {
-                System.out.println("Welcome email sending failed: " + emailEx.getMessage());
-            }
-
-            // Không tạo access token / refresh token ở đây nữa để bắt người dùng phải Verify Email
-            // Return AuthResponse với userId và email nhưng accessToken/refreshToken là null
-            return AuthResponse.builder()
-                    .userId(user.getId())
-                    .email(user.getEmail())
-                    .build();
-
-        } catch (Exception e) {
-            System.out.println("Register error: " + e.getClass().getSimpleName() + " - " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("Registration failed: " + e.getMessage());
+        String email = request.getEmail() != null ? request.getEmail().trim().toLowerCase() : "";
+        if (email.isEmpty()) {
+            throw new IllegalArgumentException("Email is required");
         }
+        if (request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new IllegalArgumentException("Password is required");
+        }
+        if (!request.getPassword().equals(request.getConfirmPassword())) {
+            throw new IllegalArgumentException("Passwords do not match");
+        }
+        if (userRepository.findByEmail(email).isPresent()) {
+            throw new IllegalArgumentException("User already exists");
+        }
+
+        String fullName = request.getFullName() != null ? request.getFullName().trim() : "";
+        if (fullName.isEmpty()) {
+            throw new IllegalArgumentException("Full name is required");
+        }
+        if (fullName.length() > 255) {
+            throw new IllegalArgumentException("Full name must be at most 255 characters");
+        }
+        String phone = blankToNull(request.getPhoneNumber());
+        if (phone != null && phone.length() > 40) {
+            throw new IllegalArgumentException("Phone number must be at most 40 characters");
+        }
+        String occupation = blankToNull(request.getOccupation());
+        if (occupation != null && occupation.length() > 255) {
+            throw new IllegalArgumentException("Occupation must be at most 255 characters");
+        }
+
+        User user = User.builder()
+                .email(email)
+                .fullName(fullName)
+                .phoneNumber(phone)
+                .gender(request.getGender())
+                .occupation(occupation)
+                .dob(request.getDob())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .role(Role.USER)
+                .isEnabled(false)
+                .isActive(true)
+                .verificationToken(UUID.randomUUID().toString())
+                .build();
+
+        user = userRepository.save(user);
+        assignDefaultWorkspacePlan(user);
+        assignDefaultWorkspaceSubscription(user);
+
+        // Assign Free Plan and initialize Wallet
+        Optional<Plan> defaultPlanOpt = planRepository.findByName("Free");
+        if (defaultPlanOpt.isPresent()) {
+            Plan freePlan = defaultPlanOpt.get();
+            Subscription freeSub = Subscription.builder()
+                    .user(user)
+                    .plan(freePlan)
+                    .startDate(LocalDateTime.now())
+                    .endDate(LocalDateTime.now().plusYears(100))
+                    .status(SubscriptionStatus.ACTIVE)
+                    .build();
+            subscriptionRepository.save(freeSub);
+
+            Wallet wallet = Wallet.builder()
+                    .user(user)
+                    .tokenBalance(Long.valueOf(freePlan.getTokenLimit()))
+                    .totalRecharged(Long.valueOf(freePlan.getTokenLimit()))
+                    .build();
+            walletRepository.save(wallet);
+        } else {
+            Wallet wallet = Wallet.builder()
+                    .user(user)
+                    .tokenBalance(60000L)
+                    .totalRecharged(60000L)
+                    .build();
+            walletRepository.save(wallet);
+        }
+
+        String verificationLink = frontendUrl + "/verify-email?token=" + user.getVerificationToken()
+                + "&email=" + java.net.URLEncoder.encode(user.getEmail(), java.nio.charset.StandardCharsets.UTF_8);
+        try {
+            emailService.sendVerificationEmail(user.getEmail(), verificationLink);
+        } catch (Exception emailEx) {
+            System.out.println("Email sending failed: " + emailEx.getMessage());
+        }
+
+        try {
+            emailService.sendWelcomeEmail(user.getEmail(), user.getFullName());
+        } catch (Exception emailEx) {
+            System.out.println("Welcome email sending failed: " + emailEx.getMessage());
+        }
+
+        return AuthResponse.builder()
+                .userId(user.getId())
+                .email(user.getEmail())
+                .build();
     }
 
     @Override
@@ -551,5 +556,13 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         } catch (Exception ignored) {
             // workspace_plans chưa migrate — user vẫn có tier mặc định từ entity
         }
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

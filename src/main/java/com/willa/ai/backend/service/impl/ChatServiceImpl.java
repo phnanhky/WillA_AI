@@ -27,6 +27,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.willa.ai.backend.client.AiServerClient;
 import com.willa.ai.backend.client.AiServerClient.TokenUsage;
 import com.willa.ai.backend.config.QwenTokenEstimateProperties;
+import com.willa.ai.backend.util.FileMagicValidator;
 import com.willa.ai.backend.util.QwenVisionTokenMath;
 import com.willa.ai.backend.util.UploadSizeValidator;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -641,7 +642,6 @@ public class ChatServiceImpl implements ChatService {
             if (file == null || file.isEmpty()) {
                 continue;
             }
-            String fn = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
             String baseName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "image";
             try {
                 byte[] data = file.getBytes();
@@ -649,18 +649,19 @@ public class ChatServiceImpl implements ChatService {
                 totalBytes += data.length;
                 uploadSizeValidator.validateRequestTotal(totalBytes);
 
-                if (fn.endsWith(".pdf")) {
+                var kind = FileMagicValidator.requireChatUpload(data, file.getOriginalFilename());
+                if (kind == FileMagicValidator.Kind.PDF) {
                     List<byte[]> pages = advancedFileParserService.renderPdfToPngBytes(file);
                     for (int i = 0; i < pages.size(); i++) {
                         images.add(new ImagePart(pages.get(i), baseName + "-p" + (i + 1) + ".png", "image/png"));
                     }
-                } else if (fn.endsWith(".psd")) {
+                } else if (kind == FileMagicValidator.Kind.PSD) {
                     images.add(new ImagePart(advancedFileParserService.renderPsdToPngBytes(file), baseName + ".png", "image/png"));
-                } else if (fn.endsWith(".csv")) {
-                    // CSV không phải ảnh — bỏ qua, không gửi AI.
-                    continue;
                 } else {
-                    images.add(new ImagePart(data, baseName, file.getContentType()));
+                    images.add(new ImagePart(
+                            data,
+                            baseName,
+                            FileMagicValidator.mimeFor(kind)));
                 }
             } catch (IOException e) {
                 throw new RuntimeException("Lỗi đọc file: " + e.getMessage(), e);
@@ -1279,6 +1280,11 @@ public class ChatServiceImpl implements ChatService {
         User user = getUserByEmail(email);
         return workflowUsageService.track(user, WorkflowType.SUGGEST_STYLE, null, () -> {
             uploadSizeValidator.validateImage(file);
+            try {
+                FileMagicValidator.requireImage(file.getBytes(), file.getOriginalFilename());
+            } catch (IOException e) {
+                throw new RuntimeException("Lỗi đọc file: " + e.getMessage(), e);
+            }
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("file", AiServerClient.toFileResource(file));
             body.add("box_2d", box2d != null ? box2d : "[]");

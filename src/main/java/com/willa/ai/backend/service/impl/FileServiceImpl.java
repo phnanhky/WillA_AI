@@ -1,6 +1,7 @@
 package com.willa.ai.backend.service.impl;
 
 import com.willa.ai.backend.service.FileService;
+import com.willa.ai.backend.util.FileMagicValidator;
 import com.willa.ai.backend.util.ImageUploadCompressor;
 import com.willa.ai.backend.util.UploadSizeValidator;
 import lombok.RequiredArgsConstructor;
@@ -82,10 +83,12 @@ public class FileServiceImpl implements FileService {
         if (data == null || data.length == 0) {
             throw new IllegalArgumentException("Cannot upload empty file");
         }
+        FileMagicValidator.requireImage(data, originalFilename);
+        var kind = FileMagicValidator.detect(data);
         uploadSizeValidator.validateImageBytes(data.length, originalFilename);
         ImageUploadCompressor.PreparedUpload prepared =
-                imageUploadCompressor.prepare(data, contentType, originalFilename);
-        String uniqueFileName = UUID.randomUUID().toString() + prepared.extension();
+                imageUploadCompressor.prepare(data, FileMagicValidator.mimeFor(kind), originalFilename);
+        String uniqueFileName = UUID.randomUUID().toString() + FileMagicValidator.extensionFor(kind);
         return putObject(uniqueFileName, prepared.data(), prepared.contentType());
     }
 

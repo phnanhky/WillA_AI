@@ -1,6 +1,7 @@
 package com.willa.ai.backend.exception;
 
 import com.willa.ai.backend.dto.response.ApiResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -67,6 +68,23 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.builder()
                         .status(false)
                         .message(ex.getMessage())
+                        .build());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<?> handleDataIntegrityViolation(DataIntegrityViolationException ex, WebRequest request) {
+        String msg = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+        if (msg != null && msg.toLowerCase().contains("value too long")) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.builder()
+                            .status(false)
+                            .message("One or more fields exceed the maximum allowed length")
+                            .build());
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.builder()
+                        .status(false)
+                        .message("Data conflict. Please check your input and try again.")
                         .build());
     }
 

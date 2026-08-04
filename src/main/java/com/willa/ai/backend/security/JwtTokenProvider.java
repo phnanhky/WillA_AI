@@ -1,8 +1,11 @@
 package com.willa.ai.backend.security;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.security.SignatureException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -84,6 +87,13 @@ public class JwtTokenProvider {
         try {
             parseToken(token);
             return true;
+        } catch (ExpiredJwtException e) {
+            // Client còn giữ access token cũ — bình thường, FE sẽ refresh / login lại.
+            log.debug("JWT expired: {}", e.getMessage());
+            return false;
+        } catch (MalformedJwtException | SignatureException | IllegalArgumentException e) {
+            log.warn("JWT validation failed: {}", e.getMessage());
+            return false;
         } catch (Exception e) {
             log.error("JWT validation failed: {}", e.getMessage());
             return false;

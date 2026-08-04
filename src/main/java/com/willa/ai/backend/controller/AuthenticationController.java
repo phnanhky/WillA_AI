@@ -25,6 +25,8 @@ import com.willa.ai.backend.dto.response.ApiResponse;
 import com.willa.ai.backend.dto.response.AuthResponse;
 import com.willa.ai.backend.service.AuthenticationService;
 
+import jakarta.validation.Valid;
+
 @RestController
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = "*", maxAge = 3600)
@@ -35,21 +37,13 @@ public class AuthenticationController {
     private AuthenticationService authenticationService;
 
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
-        try {
-            AuthResponse response = authenticationService.register(request);
-            return ResponseEntity.ok(ApiResponse.builder()
-                    .status(true)
-                    .message("User registered successfully")
-                    .data(response)
-                    .build());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.builder()
-                            .status(false)
-                            .message(e.getMessage())
-                            .build());
-        }
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
+        AuthResponse response = authenticationService.register(request);
+        return ResponseEntity.ok(ApiResponse.builder()
+                .status(true)
+                .message("User registered successfully")
+                .data(response)
+                .build());
     }
 
     @PostMapping("/login")

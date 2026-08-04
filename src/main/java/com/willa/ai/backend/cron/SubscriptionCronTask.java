@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,10 +33,12 @@ public class SubscriptionCronTask {
      * Then assign the user back to the Free plan.
      */
     @Scheduled(cron = "0 0 0 * * *")
+    @Transactional
     public void processExpiredSubscriptions() {
         log.info("Running cron job: processExpiredSubscriptions");
         LocalDateTime now = LocalDateTime.now();
-        List<Subscription> activeSubscriptions = subscriptionRepository.findSubscriptionsByStatus(SubscriptionStatus.ACTIVE);
+        List<Subscription> activeSubscriptions =
+                subscriptionRepository.findByStatusWithPlanAndUser(SubscriptionStatus.ACTIVE);
         
         for (Subscription sub : activeSubscriptions) {
             if (sub.getPlan().getBillingCycle() == BillingCycle.ONE_TIME) {
