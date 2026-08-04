@@ -217,6 +217,41 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
             @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /**
+     * Danh sách user mua/bắt đầu gói Feedback Student|Pro trong kỳ.
+     * Columns: user_id, email, full_name, plan_tier, plan_name, started_at
+     * Mỗi user × tier một dòng (khớp COUNT DISTINCT / tier).
+     */
+    @Query(value = """
+        SELECT u.id,
+               u.email,
+               u.full_name,
+               CASE
+                   WHEN LOWER(p.name) LIKE '%pro%' THEN 'Pro'
+                   ELSE 'Student'
+               END AS plan_tier,
+               MAX(p.name) AS plan_name,
+               MAX(s.start_date) AS started_at
+        FROM subscriptions s
+        JOIN plans p ON p.id = s.plan_id
+        JOIN users u ON u.id = s.user_id
+        WHERE s.start_date >= :startDate
+          AND s.start_date <= :endDate
+          AND p.billing_cycle IN ('MONTHLY', 'YEARLY')
+          AND (LOWER(p.name) LIKE '%pro%' OR LOWER(p.name) LIKE '%student%')
+          AND s.user_id NOT IN (:excludedUserIds)
+        GROUP BY u.id, u.email, u.full_name,
+                 CASE
+                     WHEN LOWER(p.name) LIKE '%pro%' THEN 'Pro'
+                     ELSE 'Student'
+                 END
+        ORDER BY MAX(s.start_date) DESC
+        """, nativeQuery = true)
+    List<Object[]> listFeedbackPlanBuyersInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
+
+    /**
      * Gói Feedback cao nhất của mỗi user trong kỳ (Pro > Student > Free).
      * Không có sub overlapping → không trả row (caller mặc định Free).
      */
@@ -640,6 +675,42 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                  END
         """, nativeQuery = true)
     List<Object[]> countWorkspacePlanStartsByTierInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
+
+    /**
+     * Danh sách user mua/bắt đầu gói Workspace Student|Pro trong kỳ.
+     * Columns: user_id, email, full_name, plan_tier, plan_name, started_at
+     */
+    @Query(value = """
+        SELECT u.id,
+               u.email,
+               u.full_name,
+               CASE
+                   WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%PRO%' THEN 'Pro'
+                   ELSE 'Student'
+               END AS plan_tier,
+               MAX(COALESCE(wp.name, wp.code)) AS plan_name,
+               MAX(ws.start_date) AS started_at
+        FROM workspace_subscriptions ws
+        JOIN workspace_plans wp ON wp.id = ws.workspace_plan_id
+        JOIN users u ON u.id = ws.user_id
+        WHERE ws.start_date >= :startDate
+          AND ws.start_date <= :endDate
+          AND (
+              UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%PRO%'
+              OR UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%STUDENT%'
+          )
+          AND ws.user_id NOT IN (:excludedUserIds)
+        GROUP BY u.id, u.email, u.full_name,
+                 CASE
+                     WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%PRO%' THEN 'Pro'
+                     ELSE 'Student'
+                 END
+        ORDER BY MAX(ws.start_date) DESC
+        """, nativeQuery = true)
+    List<Object[]> listWorkspacePlanBuyersInPeriod(
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate,
             @Param("excludedUserIds") Collection<Long> excludedUserIds);

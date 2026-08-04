@@ -7,6 +7,7 @@ import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertAnalytics;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertCompletedJobRow;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertLeaderboardRow;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.ExpertPayrollRow;
+import com.willa.ai.backend.dto.response.AnalyticsResponse.PlanBuyerDTO;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.RegisteredUserDTO;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.UserActivityDTO;
 import com.willa.ai.backend.dto.response.AnalyticsResponse.WorkflowToolStats;
@@ -113,6 +114,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         List<RegisteredUserDTO> newRegisteredUsers = listNewRegisteredUsers(startDt, endDt);
         Map<String, Long> feedbackPlanStarts = getFeedbackPlanStartsInPeriod(startDt, endDt);
         Map<String, Long> workspacePlanStarts = getWorkspacePlanStartsInPeriod(startDt, endDt);
+        List<PlanBuyerDTO> feedbackPlanBuyers = listFeedbackPlanBuyersInPeriod(startDt, endDt);
+        List<PlanBuyerDTO> workspacePlanBuyers = listWorkspacePlanBuyersInPeriod(startDt, endDt);
         Long totalAiTokens = analyticsRepository.sumTokensInPeriod(startDt, endDt, excludedIds());
 
         WorkflowUsageAnalytics workflowUsage = buildWorkflowUsageAnalytics(startDt, endDt);
@@ -130,6 +133,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .newRegisteredUsers(newRegisteredUsers)
             .feedbackPlanStartsInPeriod(feedbackPlanStarts)
             .workspacePlanStartsInPeriod(workspacePlanStarts)
+            .feedbackPlanBuyersInPeriod(feedbackPlanBuyers)
+            .workspacePlanBuyersInPeriod(workspacePlanBuyers)
             .totalAiTokensInPeriod(totalAiTokens != null ? totalAiTokens : 0)
             .dailyChatCounts(dailyChatCounts)
             .topActiveUsers(topActiveUsers)
@@ -597,6 +602,29 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                             .build();
                 })
                 .collect(Collectors.toList());
+    }
+
+    private List<PlanBuyerDTO> listFeedbackPlanBuyersInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
+        return analyticsRepository.listFeedbackPlanBuyersInPeriod(startDt, endDt, excludedIds()).stream()
+                .map(this::mapPlanBuyerRow)
+                .collect(Collectors.toList());
+    }
+
+    private List<PlanBuyerDTO> listWorkspacePlanBuyersInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
+        return analyticsRepository.listWorkspacePlanBuyersInPeriod(startDt, endDt, excludedIds()).stream()
+                .map(this::mapPlanBuyerRow)
+                .collect(Collectors.toList());
+    }
+
+    private PlanBuyerDTO mapPlanBuyerRow(Object[] row) {
+        return PlanBuyerDTO.builder()
+                .userId(asLong(row[0]))
+                .email(row[1] != null ? row[1].toString() : "")
+                .fullName(row[2] != null ? row[2].toString() : "")
+                .planTier(row[3] != null ? row[3].toString() : "")
+                .planName(row[4] != null ? row[4].toString() : "")
+                .startedAt(formatCreatedAt(row[5]))
+                .build();
     }
 
     private static String formatCreatedAt(Object value) {

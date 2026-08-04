@@ -40,6 +40,12 @@ public class AnalyticsResponse {
      */
     private Map<String, Long> workspacePlanStartsInPeriod;
 
+    /** User mua/bắt đầu gói Feedback Student|Pro trong kỳ (khác với chỉ đăng ký). */
+    private List<PlanBuyerDTO> feedbackPlanBuyersInPeriod;
+
+    /** User mua/bắt đầu gói Workspace Student|Pro trong kỳ. */
+    private List<PlanBuyerDTO> workspacePlanBuyersInPeriod;
+
     /** Tổng token AI (ai_token_usages) trong kỳ lọc. */
     private Long totalAiTokensInPeriod;
     
@@ -264,6 +270,22 @@ public class AnalyticsResponse {
         private String planName;
         /** Gói Workspace hiện tại tại thời điểm search (Free/Student/Pro). */
         private String workspacePlanName;
+    }
+
+    /** User bắt đầu gói trả phí (Student/Pro) trong kỳ — khác với người chỉ đăng ký. */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PlanBuyerDTO {
+        private Long userId;
+        private String email;
+        private String fullName;
+        /** Student | Pro */
+        private String planTier;
+        private String planName;
+        /** ISO local datetime — subscription.start_date / workspace_subscriptions.start_date */
+        private String startedAt;
     }
 
     @Data
