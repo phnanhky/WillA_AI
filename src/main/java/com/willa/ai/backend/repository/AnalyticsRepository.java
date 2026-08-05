@@ -217,9 +217,9 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
             @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /**
-     * Danh sách user mua/bắt đầu gói Feedback Student|Pro trong kỳ.
+     * Danh sách lượt mua/bắt đầu gói Feedback Student|Pro trong kỳ.
+     * Mỗi subscription một dòng (không gom MAX) — cần để lọc mua tháng liên tục.
      * Columns: user_id, email, full_name, plan_tier, plan_name, started_at
-     * Mỗi user × tier một dòng (khớp COUNT DISTINCT / tier).
      */
     @Query(value = """
         SELECT u.id,
@@ -229,8 +229,8 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                    WHEN LOWER(p.name) LIKE '%pro%' THEN 'Pro'
                    ELSE 'Student'
                END AS plan_tier,
-               MAX(p.name) AS plan_name,
-               MAX(s.start_date) AS started_at
+               p.name AS plan_name,
+               s.start_date AS started_at
         FROM subscriptions s
         JOIN plans p ON p.id = s.plan_id
         JOIN users u ON u.id = s.user_id
@@ -239,12 +239,7 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
           AND p.billing_cycle IN ('MONTHLY', 'YEARLY')
           AND (LOWER(p.name) LIKE '%pro%' OR LOWER(p.name) LIKE '%student%')
           AND s.user_id NOT IN (:excludedUserIds)
-        GROUP BY u.id, u.email, u.full_name,
-                 CASE
-                     WHEN LOWER(p.name) LIKE '%pro%' THEN 'Pro'
-                     ELSE 'Student'
-                 END
-        ORDER BY MAX(s.start_date) DESC
+        ORDER BY s.start_date DESC
         """, nativeQuery = true)
     List<Object[]> listFeedbackPlanBuyersInPeriod(
             @Param("startDate") LocalDateTime startDate,
@@ -680,7 +675,8 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
             @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /**
-     * Danh sách user mua/bắt đầu gói Workspace Student|Pro trong kỳ.
+     * Danh sách lượt mua/bắt đầu gói Workspace Student|Pro trong kỳ.
+     * Mỗi subscription một dòng (không gom MAX) — cần để lọc mua tháng liên tục.
      * Columns: user_id, email, full_name, plan_tier, plan_name, started_at
      */
     @Query(value = """
@@ -691,8 +687,8 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                    WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%PRO%' THEN 'Pro'
                    ELSE 'Student'
                END AS plan_tier,
-               MAX(COALESCE(wp.name, wp.code)) AS plan_name,
-               MAX(ws.start_date) AS started_at
+               COALESCE(wp.name, wp.code) AS plan_name,
+               ws.start_date AS started_at
         FROM workspace_subscriptions ws
         JOIN workspace_plans wp ON wp.id = ws.workspace_plan_id
         JOIN users u ON u.id = ws.user_id
@@ -703,12 +699,7 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
               OR UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%STUDENT%'
           )
           AND ws.user_id NOT IN (:excludedUserIds)
-        GROUP BY u.id, u.email, u.full_name,
-                 CASE
-                     WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%PRO%' THEN 'Pro'
-                     ELSE 'Student'
-                 END
-        ORDER BY MAX(ws.start_date) DESC
+        ORDER BY ws.start_date DESC
         """, nativeQuery = true)
     List<Object[]> listWorkspacePlanBuyersInPeriod(
             @Param("startDate") LocalDateTime startDate,
