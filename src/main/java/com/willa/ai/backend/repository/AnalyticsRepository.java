@@ -218,8 +218,8 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
 
     /**
      * Danh sách lượt mua/bắt đầu gói Feedback Student|Pro trong kỳ.
-     * Mỗi subscription một dòng (không gom MAX) — cần để lọc mua tháng liên tục.
-     * Columns: user_id, email, full_name, plan_tier, plan_name, started_at
+     * Mỗi subscription một dòng — gồm start + end để tính gia hạn trong +1 tháng sau hết hạn.
+     * Columns: user_id, email, full_name, plan_tier, plan_name, started_at, ended_at
      */
     @Query(value = """
         SELECT u.id,
@@ -230,7 +230,8 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                    ELSE 'Student'
                END AS plan_tier,
                p.name AS plan_name,
-               s.start_date AS started_at
+               s.start_date AS started_at,
+               s.end_date AS ended_at
         FROM subscriptions s
         JOIN plans p ON p.id = s.plan_id
         JOIN users u ON u.id = s.user_id
@@ -676,8 +677,8 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
 
     /**
      * Danh sách lượt mua/bắt đầu gói Workspace Student|Pro trong kỳ.
-     * Mỗi subscription một dòng (không gom MAX) — cần để lọc mua tháng liên tục.
-     * Columns: user_id, email, full_name, plan_tier, plan_name, started_at
+     * Mỗi subscription một dòng — gồm start + end để tính gia hạn trong +1 tháng sau hết hạn.
+     * Columns: user_id, email, full_name, plan_tier, plan_name, started_at, ended_at
      */
     @Query(value = """
         SELECT u.id,
@@ -688,7 +689,8 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                    ELSE 'Student'
                END AS plan_tier,
                COALESCE(wp.name, wp.code) AS plan_name,
-               ws.start_date AS started_at
+               ws.start_date AS started_at,
+               ws.end_date AS ended_at
         FROM workspace_subscriptions ws
         JOIN workspace_plans wp ON wp.id = ws.workspace_plan_id
         JOIN users u ON u.id = ws.user_id

@@ -624,6 +624,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .planTier(row[3] != null ? row[3].toString() : "")
                 .planName(row[4] != null ? row[4].toString() : "")
                 .startedAt(formatCreatedAt(row[5]))
+                .endedAt(row.length > 6 ? formatCreatedAt(row[6]) : null)
                 .build();
     }
 

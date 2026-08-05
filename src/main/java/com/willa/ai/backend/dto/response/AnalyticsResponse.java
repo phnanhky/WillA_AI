@@ -286,6 +286,8 @@ public class AnalyticsResponse {
         private String planName;
         /** ISO local datetime — subscription.start_date / workspace_subscriptions.start_date */
         private String startedAt;
+        /** ISO local datetime — subscription.end_date / workspace_subscriptions.end_date */
+        private String endedAt;
     }
 
     @Data
