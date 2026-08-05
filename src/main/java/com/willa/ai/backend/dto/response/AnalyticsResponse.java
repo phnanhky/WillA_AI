@@ -48,6 +48,12 @@ public class AnalyticsResponse {
 
     /** Tổng token AI (ai_token_usages) trong kỳ lọc. */
     private Long totalAiTokensInPeriod;
+
+    /** Tổng input token Qwen (prompt_tokens) trong kỳ — đối soát tài chính. */
+    private Long totalAiInputTokensInPeriod;
+
+    /** Tổng output token Qwen (completion_tokens) trong kỳ — đối soát tài chính. */
+    private Long totalAiOutputTokensInPeriod;
     
     // Chi tiết người dùng
     private List<UserActivityDTO> topActiveUsers;
@@ -214,10 +220,8 @@ public class AnalyticsResponse {
         private List<WorkflowUserActivity> topUsersByWorkflowTime;
         /** workflow name → failed run count */
         private Map<String, Long> failedRunsByWorkflow;
-        /** Số lần & thời gian — luôn trả về (0 nếu chưa ai dùng) */
+        /** Số lần & thời gian Regen — luôn trả về (0 nếu chưa ai dùng) */
         private WorkflowToolStats regen;
-        private WorkflowToolStats prepareRegen;
-        private WorkflowToolStats extractLayers;
     }
 
     @Data
@@ -305,6 +309,10 @@ public class AnalyticsResponse {
         private Long totalDurationMs;
         /** Tổng token AI trong kỳ. */
         private Long aiTokensUsed;
+        /** Input token Qwen (prompt_tokens) trong kỳ. */
+        private Long aiInputTokens;
+        /** Output token Qwen (completion_tokens) trong kỳ. */
+        private Long aiOutputTokens;
         /** Số ngày DISTINCT có dùng AI trong kỳ. */
         private Long activeDaysInPeriod;
         /** Số ngày không dùng AI từ lần cuối → hôm nay. */
@@ -324,5 +332,9 @@ public class AnalyticsResponse {
         private String workspacePlanName;
         private Long chatCount;
         private Long aiTokensUsed;
+        /** Input token Qwen (prompt_tokens) trong kỳ. */
+        private Long aiInputTokens;
+        /** Output token Qwen (completion_tokens) trong kỳ. */
+        private Long aiOutputTokens;
     }
 }

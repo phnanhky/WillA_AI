@@ -258,7 +258,8 @@ public class ChatServiceImpl implements ChatService {
                             sessionKey, content, actionType, errorIndex, box2d, personaContext, replyLang, chatHistoryJson);
                     JsonNode rootNode = callAiChatWithAnalysisRecovery(email, sessionId, body);
                     aiResponseContent = contentFromAiNode(rootNode);
-                    TokenUsage usage = recordAiTokenUsage(user, rootNode, "CHAT");
+                    // Chỉ lưu input/output Qwen trả về (cho tài chính) — không ghi estimate.
+                    TokenUsage usage = saveQwenReportedTokenUsage(user, "CHAT", rootNode);
                     totalTokensCombined = usage.getTotalTokens();
                     actualInput = usage.getPromptTokens();
                     actualOutput = usage.getCompletionTokens();
@@ -284,7 +285,7 @@ public class ChatServiceImpl implements ChatService {
                             nodeToAdd = copy;
                         }
                         arrayNode.add(nodeToAdd);
-                        TokenUsage usage = recordAiTokenUsage(user, rootNode, "ANALYZE");
+                        TokenUsage usage = saveQwenReportedTokenUsage(user, "ANALYZE", rootNode);
                         totalTokensCombined += usage.getTotalTokens();
                         actualInput += usage.getPromptTokens();
                         actualOutput += usage.getCompletionTokens();
@@ -302,6 +303,7 @@ public class ChatServiceImpl implements ChatService {
 
                 reconcileReservedTokens(user, wallet, reserved, totalTokensCombined);
                 if (totalTokensCombined <= 0 && reserved > 0) {
+                    // Ví vẫn charge theo estimate; ai_token_usages chỉ có số Qwen báo (nếu có).
                     totalTokensCombined = (int) Math.min(Integer.MAX_VALUE, reserved);
                 }
                 long walletAfter = wallet.getTokenBalance() != null ? wallet.getTokenBalance() : 0L;
@@ -755,7 +757,7 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private TokenUsage deductTokensForAiCall(User user, Wallet wallet, JsonNode rootNode, String serviceType) {
-        TokenUsage usage = recordAiTokenUsage(user, rootNode, serviceType);
+        TokenUsage usage = saveQwenReportedTokenUsage(user, serviceType, rootNode);
         if (!usage.hasTokens()) {
             return usage;
         }
@@ -763,22 +765,40 @@ public class ChatServiceImpl implements ChatService {
         return usage;
     }
 
-    /** Ghi usage AI; không đụng wallet (dùng với reserve/reconcile). */
-    private TokenUsage recordAiTokenUsage(User user, JsonNode rootNode, String serviceType) {
+    /**
+     * Lưu đúng input/output token mà Qwen (DashScope) trả trong response AI server.
+     * Dùng cho đối soát tài chính — không ghi số estimate/reserve.
+     * Map: {@code usage.input_tokens} → prompt_tokens, {@code usage.output_tokens} → completion_tokens.
+     */
+    private TokenUsage saveQwenReportedTokenUsage(User user, String serviceType, JsonNode rootNode) {
         TokenUsage usage = aiServerClient.parseUsage(rootNode);
         if (!usage.hasTokens()) {
+            log.warn(
+                    "Token SKIP save [userId={}, service={}]: AI response thiếu usage input/output từ Qwen",
+                    user.getId(), serviceType);
             return usage;
         }
+        int prompt = usage.getPromptTokens();
+        int completion = usage.getCompletionTokens();
         int total = usage.getTotalTokens();
+        if (total <= 0) {
+            total = prompt + completion;
+        }
+        final int promptTokens = prompt;
+        final int completionTokens = completion;
+        final int totalTokens = total;
         transactionTemplate.executeWithoutResult(status -> aiTokenUsageRepository.save(AITokenUsage.builder()
                 .user(user)
                 .model(qwenModel)
-                .promptTokens(usage.getPromptTokens())
-                .completionTokens(usage.getCompletionTokens())
-                .totalTokens(total)
+                .promptTokens(promptTokens)
+                .completionTokens(completionTokens)
+                .totalTokens(totalTokens)
                 .serviceType(serviceType)
                 .build()));
-        return usage;
+        log.info(
+                "Token QWEN SAVED [userId={}, service={}, model={}]: input={}, output={}, total={}",
+                user.getId(), serviceType, qwenModel, promptTokens, completionTokens, totalTokens);
+        return new TokenUsage(promptTokens, completionTokens, totalTokens);
     }
 
     /**

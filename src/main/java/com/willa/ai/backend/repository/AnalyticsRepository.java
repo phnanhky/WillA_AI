@@ -67,7 +67,21 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                    WHERE atu.user_id = cs.user_id
                      AND atu.created_at >= :startDate
                      AND atu.created_at <= :endDate
-               ), 0) AS tokens_used
+               ), 0) AS tokens_used,
+               COALESCE((
+                   SELECT SUM(atu.prompt_tokens)
+                   FROM ai_token_usages atu
+                   WHERE atu.user_id = cs.user_id
+                     AND atu.created_at >= :startDate
+                     AND atu.created_at <= :endDate
+               ), 0) AS input_tokens,
+               COALESCE((
+                   SELECT SUM(atu.completion_tokens)
+                   FROM ai_token_usages atu
+                   WHERE atu.user_id = cs.user_id
+                     AND atu.created_at >= :startDate
+                     AND atu.created_at <= :endDate
+               ), 0) AS output_tokens
         FROM chat_sessions cs
         LEFT JOIN chat_messages cm ON cs.id = cm.session_id
             AND cm.created_at >= :startDate
@@ -356,9 +370,38 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
             @Param("endDate") LocalDateTime endDate,
             @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
-    /** Token AI theo user trong kỳ. */
+    /** Tổng input token Qwen (prompt_tokens) trong kỳ. */
     @Query(value = """
-        SELECT atu.user_id, COALESCE(SUM(atu.total_tokens), 0)
+        SELECT COALESCE(SUM(atu.prompt_tokens), 0)
+        FROM ai_token_usages atu
+        WHERE atu.created_at >= :startDate
+          AND atu.created_at <= :endDate
+          AND atu.user_id NOT IN (:excludedUserIds)
+        """, nativeQuery = true)
+    Long sumInputTokensInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
+
+    /** Tổng output token Qwen (completion_tokens) trong kỳ. */
+    @Query(value = """
+        SELECT COALESCE(SUM(atu.completion_tokens), 0)
+        FROM ai_token_usages atu
+        WHERE atu.created_at >= :startDate
+          AND atu.created_at <= :endDate
+          AND atu.user_id NOT IN (:excludedUserIds)
+        """, nativeQuery = true)
+    Long sumOutputTokensInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
+
+    /** Token AI theo user trong kỳ: user_id, total, input (prompt), output (completion). */
+    @Query(value = """
+        SELECT atu.user_id,
+               COALESCE(SUM(atu.total_tokens), 0),
+               COALESCE(SUM(atu.prompt_tokens), 0),
+               COALESCE(SUM(atu.completion_tokens), 0)
         FROM ai_token_usages atu
         WHERE atu.created_at >= :startDate
           AND atu.created_at <= :endDate

@@ -200,23 +200,49 @@ public class AiServerClient {
         }
         JsonNode usage = root.get("usage");
         if (usage != null && usage.isObject()) {
-            int input = usage.path("input_tokens").asInt(0);
-            int output = usage.path("output_tokens").asInt(0);
-            int total = usage.path("total_tokens").asInt(input + output);
+            // Qwen/DashScope + AI server: input_tokens / output_tokens (cũng nhận prompt/completion).
+            int input = firstPositiveInt(usage, "input_tokens", "prompt_tokens", "inputtoken");
+            int output = firstPositiveInt(usage, "output_tokens", "completion_tokens", "outputtoken");
+            int total = firstPositiveInt(usage, "total_tokens", "totaltoken");
+            if (total <= 0) {
+                total = input + output;
+            }
             if (total > 0 || input > 0 || output > 0) {
                 return new TokenUsage(input, output, total > 0 ? total : input + output);
             }
         }
         JsonNode analysis = root.get("analysis_data");
         if (analysis != null && analysis.isObject()) {
-            int input = analysis.path("inputtoken").asInt(0);
-            int output = analysis.path("outputtoken").asInt(0);
-            int total = analysis.path("totaltoken").asInt(input + output);
+            int input = firstPositiveInt(analysis, "inputtoken", "input_tokens", "prompt_tokens");
+            int output = firstPositiveInt(analysis, "outputtoken", "output_tokens", "completion_tokens");
+            int total = firstPositiveInt(analysis, "totaltoken", "total_tokens");
+            if (total <= 0) {
+                total = input + output;
+            }
             if (total > 0 || input > 0 || output > 0) {
                 return new TokenUsage(input, output, total > 0 ? total : input + output);
             }
         }
         return TokenUsage.empty();
+    }
+
+    private static int firstPositiveInt(JsonNode node, String... fieldNames) {
+        for (String name : fieldNames) {
+            JsonNode v = node.get(name);
+            if (v != null && v.isNumber()) {
+                int n = v.asInt(0);
+                if (n > 0) {
+                    return n;
+                }
+            }
+        }
+        for (String name : fieldNames) {
+            JsonNode v = node.get(name);
+            if (v != null && v.isNumber()) {
+                return Math.max(0, v.asInt(0));
+            }
+        }
+        return 0;
     }
 
     private JsonNode postMultipart(String url, MultiValueMap<String, Object> body) {
@@ -279,7 +305,7 @@ public class AiServerClient {
         }
 
         public boolean hasTokens() {
-            return totalTokens > 0;
+            return totalTokens > 0 || promptTokens > 0 || completionTokens > 0;
         }
 
         public TokenUsage plus(TokenUsage other) {

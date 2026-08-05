@@ -117,6 +117,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         List<PlanBuyerDTO> feedbackPlanBuyers = listFeedbackPlanBuyersInPeriod(startDt, endDt);
         List<PlanBuyerDTO> workspacePlanBuyers = listWorkspacePlanBuyersInPeriod(startDt, endDt);
         Long totalAiTokens = analyticsRepository.sumTokensInPeriod(startDt, endDt, excludedIds());
+        Long totalAiInputTokens = analyticsRepository.sumInputTokensInPeriod(startDt, endDt, excludedIds());
+        Long totalAiOutputTokens = analyticsRepository.sumOutputTokensInPeriod(startDt, endDt, excludedIds());
 
         WorkflowUsageAnalytics workflowUsage = buildWorkflowUsageAnalytics(startDt, endDt);
         featureUsageByActionType = enrichFeatureUsageWithWorkflows(featureUsageByActionType, workflowUsage);
@@ -136,6 +138,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .feedbackPlanBuyersInPeriod(feedbackPlanBuyers)
             .workspacePlanBuyersInPeriod(workspacePlanBuyers)
             .totalAiTokensInPeriod(totalAiTokens != null ? totalAiTokens : 0)
+            .totalAiInputTokensInPeriod(totalAiInputTokens != null ? totalAiInputTokens : 0)
+            .totalAiOutputTokensInPeriod(totalAiOutputTokens != null ? totalAiOutputTokens : 0)
             .dailyChatCounts(dailyChatCounts)
             .topActiveUsers(topActiveUsers)
             .featureUsageByActionType(featureUsageByActionType)
@@ -333,7 +337,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
         Map<Long, String> feedbackPlanByUser = getCurrentFeedbackPlanMap();
         Map<Long, String> workspacePlanByUser = getWorkspacePlanMap();
-        Map<Long, Long> tokensByUser = getTokensByUserMap(startDt, endDt);
+        Map<Long, long[]> tokensByUser = getTokenBreakdownByUserMap(startDt, endDt);
 
         List<Object[]> engagementRows = workflowUsageRepository.userAiEngagementInRange(startDt, endDt, excluded);
         Map<Long, long[]> engagementByUser = new HashMap<>();
@@ -367,6 +371,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .map(row -> {
                     Long userId = asLong(row[0]);
                     long[] eng = engagementByUser.getOrDefault(userId, new long[]{0L, 0L});
+                    long[] tokens = tokensByUser.getOrDefault(userId, new long[]{0L, 0L, 0L});
                     return WorkflowUserActivity.builder()
                             .userId(userId)
                             .email((String) row[1])
@@ -374,7 +379,9 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                             .workspacePlanName(workspacePlanByUser.getOrDefault(userId, "Free"))
                             .runCount(asLong(row[2]))
                             .totalDurationMs(asLong(row[3]))
-                            .aiTokensUsed(tokensByUser.getOrDefault(userId, 0L))
+                            .aiTokensUsed(tokens[0])
+                            .aiInputTokens(tokens[1])
+                            .aiOutputTokens(tokens[2])
                             .activeDaysInPeriod(eng[0])
                             .daysInactiveUntilNow(eng[1])
                             .build();
@@ -390,10 +397,6 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
         WorkflowToolStats regen = buildToolStats(
                 WorkflowType.REGEN, startDt, endDt, todayStart, weekStart, monthStart, now, failedRunsByWorkflow);
-        WorkflowToolStats prepareRegen = buildToolStats(
-                WorkflowType.PREPARE_REGEN, startDt, endDt, todayStart, weekStart, monthStart, now, failedRunsByWorkflow);
-        WorkflowToolStats extractLayers = buildToolStats(
-                WorkflowType.EXTRACT_LAYERS, startDt, endDt, todayStart, weekStart, monthStart, now, failedRunsByWorkflow);
 
         return WorkflowUsageAnalytics.builder()
                 .totalRuns(totalRuns)
@@ -413,8 +416,6 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .topUsersByWorkflowTime(topUsers)
                 .failedRunsByWorkflow(failedRunsByWorkflow)
                 .regen(regen)
-                .prepareRegen(prepareRegen)
-                .extractLayers(extractLayers)
                 .build();
     }
 
@@ -423,9 +424,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             WorkflowType.ANALYZE,
             WorkflowType.GENERATE,
             WorkflowType.REGEN,
-            WorkflowType.PREPARE_REGEN,
             WorkflowType.SUGGEST_STYLE,
-            WorkflowType.EXTRACT_LAYERS,
             WorkflowType.WORKSPACE,
     };
 
@@ -551,7 +550,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         return Math.round(value * 10.0) / 10.0;
     }
 
-    /** Bổ sung regen / tách layer vào map feature cũ (ai_token_usages không có các loại này). */
+    /** Bổ sung regen vào map feature cũ (ai_token_usages không có loại này). */
     private Map<String, Long> enrichFeatureUsageWithWorkflows(
             Map<String, Long> featureUsage,
             WorkflowUsageAnalytics workflowUsage) {
@@ -560,8 +559,6 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             return merged;
         }
         putWorkflowRunCount(merged, workflowUsage.getRegen());
-        putWorkflowRunCount(merged, workflowUsage.getPrepareRegen());
-        putWorkflowRunCount(merged, workflowUsage.getExtractLayers());
         return merged;
     }
 
@@ -654,6 +651,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                     .workspacePlanName(workspacePlanByUser.getOrDefault(userId, "Free"))
                     .chatCount(asLong(row[3]))
                     .aiTokensUsed(asLong(row[4]))
+                    .aiInputTokens(row.length > 5 ? asLong(row[5]) : 0L)
+                    .aiOutputTokens(row.length > 6 ? asLong(row[6]) : 0L)
                     .build();
             })
             .collect(Collectors.toList());
@@ -729,12 +728,17 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         return "Free";
     }
 
-    private Map<Long, Long> getTokensByUserMap(LocalDateTime startDt, LocalDateTime endDt) {
+    /** userId → [total, input, output] từ ai_token_usages (số Qwen trả về). */
+    private Map<Long, long[]> getTokenBreakdownByUserMap(LocalDateTime startDt, LocalDateTime endDt) {
         return analyticsRepository.sumTokensByUserInPeriod(startDt, endDt, excludedIds()).stream()
                 .collect(Collectors.toMap(
                         row -> asLong(row[0]),
-                        row -> asLong(row[1]),
-                        Long::sum,
+                        row -> new long[]{
+                                asLong(row[1]),
+                                row.length > 2 ? asLong(row[2]) : 0L,
+                                row.length > 3 ? asLong(row[3]) : 0L
+                        },
+                        (a, b) -> new long[]{a[0] + b[0], a[1] + b[1], a[2] + b[2]},
                         LinkedHashMap::new));
     }
     
