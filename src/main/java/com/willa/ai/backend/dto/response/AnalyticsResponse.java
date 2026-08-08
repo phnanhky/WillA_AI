@@ -52,6 +52,17 @@ public class AnalyticsResponse {
      */
     private Map<String, Long> workspacePlanStartRowsInPeriod;
 
+    /**
+     * Feedback paid Student|Pro — lượt start trong kỳ, breakdown theo status hiện tại.
+     * Keys ngoài: Student | Pro. Keys trong: ACTIVE, EXPIRED, CANCELLED, TOTAL.
+     */
+    private Map<String, Map<String, Long>> feedbackPaidStatusByTierInPeriod;
+
+    /**
+     * Workspace paid Student|Pro — lượt start trong kỳ, breakdown theo status hiện tại.
+     */
+    private Map<String, Map<String, Long>> workspacePaidStatusByTierInPeriod;
+
     /** Lượt mua/bắt đầu gói Feedback Student|Pro trong kỳ — mỗi subscription một dòng. */
     private List<PlanBuyerDTO> feedbackPlanBuyersInPeriod;
 
@@ -300,6 +311,8 @@ public class AnalyticsResponse {
         /** Student | Pro */
         private String planTier;
         private String planName;
+        /** ACTIVE | EXPIRED | CANCELLED | … */
+        private String status;
         /** ISO local datetime — subscription.start_date / workspace_subscriptions.start_date */
         private String startedAt;
         /** ISO local datetime — subscription.end_date / workspace_subscriptions.end_date */

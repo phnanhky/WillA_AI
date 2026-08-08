@@ -272,7 +272,8 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                END AS plan_tier,
                p.name AS plan_name,
                s.start_date AS started_at,
-               s.end_date AS ended_at
+               s.end_date AS ended_at,
+               s.status AS sub_status
         FROM subscriptions s
         JOIN plans p ON p.id = s.plan_id
         JOIN users u ON u.id = s.user_id
@@ -786,7 +787,8 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                END AS plan_tier,
                COALESCE(wp.name, wp.code) AS plan_name,
                ws.start_date AS started_at,
-               ws.end_date AS ended_at
+               ws.end_date AS ended_at,
+               ws.status AS sub_status
         FROM workspace_subscriptions ws
         JOIN workspace_plans wp ON wp.id = ws.workspace_plan_id
         JOIN users u ON u.id = ws.user_id

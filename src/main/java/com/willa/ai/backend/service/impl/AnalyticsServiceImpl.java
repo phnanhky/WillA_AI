@@ -118,6 +118,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         Map<String, Long> workspacePlanStartRows = getWorkspacePlanStartRowsInPeriod(startDt, endDt);
         List<PlanBuyerDTO> feedbackPlanBuyers = listFeedbackPlanBuyersInPeriod(startDt, endDt);
         List<PlanBuyerDTO> workspacePlanBuyers = listWorkspacePlanBuyersInPeriod(startDt, endDt);
+        Map<String, Map<String, Long>> feedbackPaidStatus = buildPaidStatusByTier(feedbackPlanBuyers);
+        Map<String, Map<String, Long>> workspacePaidStatus = buildPaidStatusByTier(workspacePlanBuyers);
         Long totalAiTokens = analyticsRepository.sumTokensInPeriod(startDt, endDt, excludedIds());
         Long totalAiInputTokens = analyticsRepository.sumInputTokensInPeriod(startDt, endDt, excludedIds());
         Long totalAiOutputTokens = analyticsRepository.sumOutputTokensInPeriod(startDt, endDt, excludedIds());
@@ -139,6 +141,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .feedbackPlanStartRowsInPeriod(feedbackPlanStartRows)
             .workspacePlanStartsInPeriod(workspacePlanStarts)
             .workspacePlanStartRowsInPeriod(workspacePlanStartRows)
+            .feedbackPaidStatusByTierInPeriod(feedbackPaidStatus)
+            .workspacePaidStatusByTierInPeriod(workspacePaidStatus)
             .feedbackPlanBuyersInPeriod(feedbackPlanBuyers)
             .workspacePlanBuyersInPeriod(workspacePlanBuyers)
             .totalAiTokensInPeriod(totalAiTokens != null ? totalAiTokens : 0)
@@ -626,7 +630,32 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .planName(row[4] != null ? row[4].toString() : "")
                 .startedAt(formatCreatedAt(row[5]))
                 .endedAt(row.length > 6 ? formatCreatedAt(row[6]) : null)
+                .status(row.length > 7 && row[7] != null ? row[7].toString() : null)
                 .build();
+    }
+
+    /** ACTIVE / EXPIRED / CANCELLED / TOTAL per Student|Pro from purchase rows. */
+    private Map<String, Map<String, Long>> buildPaidStatusByTier(List<PlanBuyerDTO> buyers) {
+        Map<String, Map<String, Long>> out = new LinkedHashMap<>();
+        for (String tier : List.of("Student", "Pro")) {
+            Map<String, Long> m = new LinkedHashMap<>();
+            m.put("ACTIVE", 0L);
+            m.put("EXPIRED", 0L);
+            m.put("CANCELLED", 0L);
+            m.put("TOTAL", 0L);
+            out.put(tier, m);
+        }
+        for (PlanBuyerDTO b : buyers) {
+            String tier = b.getPlanTier() != null ? b.getPlanTier() : "";
+            if (!out.containsKey(tier)) continue;
+            Map<String, Long> m = out.get(tier);
+            m.put("TOTAL", m.get("TOTAL") + 1);
+            String st = b.getStatus() != null ? b.getStatus().toUpperCase() : "";
+            if ("ACTIVE".equals(st) || "EXPIRED".equals(st) || "CANCELLED".equals(st)) {
+                m.put(st, m.get(st) + 1);
+            }
+        }
+        return out;
     }
 
     private static String formatCreatedAt(Object value) {
