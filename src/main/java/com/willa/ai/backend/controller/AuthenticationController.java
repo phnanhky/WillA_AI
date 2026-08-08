@@ -3,7 +3,6 @@ package com.willa.ai.backend.controller;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -122,37 +121,35 @@ public class AuthenticationController {
     public ResponseEntity<?> logout(@RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
         try {
             if (authorizationHeader == null || authorizationHeader.trim().isEmpty()) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(ApiResponse.builder()
-                                .status(false)
-                                .message("Missing authorization header")
-                                .build());
+                return ResponseEntity.ok(ApiResponse.builder()
+                        .status(true)
+                        .message("Logout successful")
+                        .build());
             }
 
             String trimmedHeader = authorizationHeader.trim();
             if (!trimmedHeader.toLowerCase().startsWith("bearer ")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(ApiResponse.builder()
-                                .status(false)
-                                .message("Invalid authorization header format")
-                                .build());
+                return ResponseEntity.ok(ApiResponse.builder()
+                        .status(true)
+                        .message("Logout successful")
+                        .build());
             }
 
-            String token = trimmedHeader.substring(7).trim(); // Remove "Bearer " prefix
-            authenticationService.logout(token);
-            
+            String token = trimmedHeader.substring(7).trim();
+            try {
+                authenticationService.logout(token);
+            } catch (Exception e) {
+                // Token hết hạn / invalid — client đã clear local; coi như logout xong.
+                if (e.getMessage() == null || !e.getMessage().contains("Invalid or expired token")) {
+                    throw e;
+                }
+            }
+
             return ResponseEntity.ok(ApiResponse.builder()
                     .status(true)
                     .message("Logout successful")
                     .build());
         } catch (Exception e) {
-            if (e.getMessage() != null && e.getMessage().contains("Invalid or expired token")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(ApiResponse.builder()
-                                .status(false)
-                                .message(e.getMessage())
-                                .build());
-            }
             return ResponseEntity.badRequest()
                     .body(ApiResponse.builder()
                             .status(false)

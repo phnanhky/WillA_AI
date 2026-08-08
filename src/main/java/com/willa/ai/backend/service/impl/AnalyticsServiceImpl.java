@@ -113,7 +113,9 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         Long newRegistrations = analyticsRepository.countNewRegistrations(startDt, endDt, excludedIds());
         List<RegisteredUserDTO> newRegisteredUsers = listNewRegisteredUsers(startDt, endDt);
         Map<String, Long> feedbackPlanStarts = getFeedbackPlanStartsInPeriod(startDt, endDt);
+        Map<String, Long> feedbackPlanStartRows = getFeedbackPlanStartRowsInPeriod(startDt, endDt);
         Map<String, Long> workspacePlanStarts = getWorkspacePlanStartsInPeriod(startDt, endDt);
+        Map<String, Long> workspacePlanStartRows = getWorkspacePlanStartRowsInPeriod(startDt, endDt);
         List<PlanBuyerDTO> feedbackPlanBuyers = listFeedbackPlanBuyersInPeriod(startDt, endDt);
         List<PlanBuyerDTO> workspacePlanBuyers = listWorkspacePlanBuyersInPeriod(startDt, endDt);
         Long totalAiTokens = analyticsRepository.sumTokensInPeriod(startDt, endDt, excludedIds());
@@ -134,7 +136,9 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             .newRegistrationsInPeriod(newRegistrations != null ? newRegistrations : 0)
             .newRegisteredUsers(newRegisteredUsers)
             .feedbackPlanStartsInPeriod(feedbackPlanStarts)
+            .feedbackPlanStartRowsInPeriod(feedbackPlanStartRows)
             .workspacePlanStartsInPeriod(workspacePlanStarts)
+            .workspacePlanStartRowsInPeriod(workspacePlanStartRows)
             .feedbackPlanBuyersInPeriod(feedbackPlanBuyers)
             .workspacePlanBuyersInPeriod(workspacePlanBuyers)
             .totalAiTokensInPeriod(totalAiTokens != null ? totalAiTokens : 0)
@@ -659,23 +663,27 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
 
     private Map<String, Long> getFeedbackPlanStartsInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
-        Map<String, Long> starts = new LinkedHashMap<>();
-        starts.put("Free", 0L);
-        starts.put("Student", 0L);
-        starts.put("Pro", 0L);
-        for (Object[] row : analyticsRepository.countFeedbackPlanStartsInPeriod(startDt, endDt, excludedIds())) {
-            String tier = row[0] != null ? row[0].toString() : "Free";
-            starts.put(tier, asLong(row[1]));
-        }
-        return starts;
+        return fillTierCounts(analyticsRepository.countFeedbackPlanStartsInPeriod(startDt, endDt, excludedIds()));
+    }
+
+    private Map<String, Long> getFeedbackPlanStartRowsInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
+        return fillTierCounts(analyticsRepository.countFeedbackPlanStartRowsInPeriod(startDt, endDt, excludedIds()));
     }
 
     private Map<String, Long> getWorkspacePlanStartsInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
+        return fillTierCounts(analyticsRepository.countWorkspacePlanStartsByTierInPeriod(startDt, endDt, excludedIds()));
+    }
+
+    private Map<String, Long> getWorkspacePlanStartRowsInPeriod(LocalDateTime startDt, LocalDateTime endDt) {
+        return fillTierCounts(analyticsRepository.countWorkspacePlanStartRowsByTierInPeriod(startDt, endDt, excludedIds()));
+    }
+
+    private Map<String, Long> fillTierCounts(List<Object[]> rows) {
         Map<String, Long> starts = new LinkedHashMap<>();
         starts.put("Free", 0L);
         starts.put("Student", 0L);
         starts.put("Pro", 0L);
-        for (Object[] row : analyticsRepository.countWorkspacePlanStartsByTierInPeriod(startDt, endDt, excludedIds())) {
+        for (Object[] row : rows) {
             String tier = row[0] != null ? row[0].toString() : "Free";
             starts.put(tier, asLong(row[1]));
         }

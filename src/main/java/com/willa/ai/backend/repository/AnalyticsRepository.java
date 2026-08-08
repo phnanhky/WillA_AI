@@ -203,7 +203,7 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
             @Param("excludedUserIds") Collection<Long> excludedUserIds);
 
     /**
-     * Số user bắt đầu gói Feedback (MONTHLY/YEARLY) trong kỳ — chuẩn hóa Free/Student/Pro.
+     * Marketing: số người bắt đầu gói Feedback (MONTHLY/YEARLY) trong kỳ — Free/Student/Pro.
      * Mỗi user chỉ đếm 1 lần / tier (nếu mua nhiều lần cùng tier).
      */
     @Query(value = """
@@ -226,6 +226,33 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                  END
         """, nativeQuery = true)
     List<Object[]> countFeedbackPlanStartsInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
+
+    /**
+     * Finance: số lượt bắt đầu gói Feedback trong kỳ (mỗi subscription = 1, gồm gia hạn).
+     */
+    @Query(value = """
+        SELECT CASE
+                   WHEN LOWER(p.name) LIKE '%pro%' THEN 'Pro'
+                   WHEN LOWER(p.name) LIKE '%student%' THEN 'Student'
+                   ELSE 'Free'
+               END AS plan_tier,
+               COUNT(*)
+        FROM subscriptions s
+        JOIN plans p ON p.id = s.plan_id
+        WHERE s.start_date >= :startDate
+          AND s.start_date <= :endDate
+          AND p.billing_cycle IN ('MONTHLY', 'YEARLY')
+          AND s.user_id NOT IN (:excludedUserIds)
+        GROUP BY CASE
+                   WHEN LOWER(p.name) LIKE '%pro%' THEN 'Pro'
+                   WHEN LOWER(p.name) LIKE '%student%' THEN 'Student'
+                   ELSE 'Free'
+                 END
+        """, nativeQuery = true)
+    List<Object[]> countFeedbackPlanStartRowsInPeriod(
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate,
             @Param("excludedUserIds") Collection<Long> excludedUserIds);
@@ -714,6 +741,32 @@ public interface AnalyticsRepository extends JpaRepository<ChatMessage, Long> {
                  END
         """, nativeQuery = true)
     List<Object[]> countWorkspacePlanStartsByTierInPeriod(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("excludedUserIds") Collection<Long> excludedUserIds);
+
+    /**
+     * Finance: số lượt bắt đầu gói Workspace trong kỳ (mỗi subscription = 1, gồm gia hạn).
+     */
+    @Query(value = """
+        SELECT CASE
+                   WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%PRO%' THEN 'Pro'
+                   WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%STUDENT%' THEN 'Student'
+                   ELSE 'Free'
+               END AS plan_tier,
+               COUNT(*)
+        FROM workspace_subscriptions ws
+        JOIN workspace_plans wp ON wp.id = ws.workspace_plan_id
+        WHERE ws.start_date >= :startDate
+          AND ws.start_date <= :endDate
+          AND ws.user_id NOT IN (:excludedUserIds)
+        GROUP BY CASE
+                   WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%PRO%' THEN 'Pro'
+                   WHEN UPPER(COALESCE(wp.code, wp.name, '')) LIKE '%STUDENT%' THEN 'Student'
+                   ELSE 'Free'
+                 END
+        """, nativeQuery = true)
+    List<Object[]> countWorkspacePlanStartRowsByTierInPeriod(
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate,
             @Param("excludedUserIds") Collection<Long> excludedUserIds);

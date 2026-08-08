@@ -29,21 +29,33 @@ public class AnalyticsResponse {
     private List<RegisteredUserDTO> newRegisteredUsers;
 
     /**
-     * Số user bắt đầu gói Feedback trong kỳ (subscription.start_date).
+     * Marketing: số người (DISTINCT user) bắt đầu gói Feedback trong kỳ.
      * Keys: Free, Student, Pro.
      */
     private Map<String, Long> feedbackPlanStartsInPeriod;
 
     /**
-     * Số user bắt đầu gói Workspace trong kỳ (workspace_subscriptions.start_date).
+     * Finance: số lượt subscription Feedback start trong kỳ (COUNT rows, gồm gia hạn).
+     * Keys: Free, Student, Pro.
+     */
+    private Map<String, Long> feedbackPlanStartRowsInPeriod;
+
+    /**
+     * Marketing: số người (DISTINCT user) bắt đầu gói Workspace trong kỳ.
      * Keys: Free, Student, Pro.
      */
     private Map<String, Long> workspacePlanStartsInPeriod;
 
-    /** User mua/bắt đầu gói Feedback Student|Pro trong kỳ (khác với chỉ đăng ký). */
+    /**
+     * Finance: số lượt workspace_subscriptions start trong kỳ (COUNT rows, gồm gia hạn).
+     * Keys: Free, Student, Pro.
+     */
+    private Map<String, Long> workspacePlanStartRowsInPeriod;
+
+    /** Lượt mua/bắt đầu gói Feedback Student|Pro trong kỳ — mỗi subscription một dòng. */
     private List<PlanBuyerDTO> feedbackPlanBuyersInPeriod;
 
-    /** User mua/bắt đầu gói Workspace Student|Pro trong kỳ. */
+    /** Lượt mua/bắt đầu gói Workspace Student|Pro trong kỳ — mỗi subscription một dòng. */
     private List<PlanBuyerDTO> workspacePlanBuyersInPeriod;
 
     /** Tổng token AI (ai_token_usages) trong kỳ lọc. */
