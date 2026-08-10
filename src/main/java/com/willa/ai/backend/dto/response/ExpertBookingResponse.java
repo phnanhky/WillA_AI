@@ -54,6 +54,8 @@ public class ExpertBookingResponse {
     private Long callSecondsRemaining;
     private Boolean canCall;
     private String quotaHint;
+    /** Expert hourly rate (VND/hour) — FE tính giá mua thêm phút. */
+    private Long expertHourlyRate;
 
     /** Thông tin STK khách gửi để ops chuyển hoàn. */
     private String refundBankName;

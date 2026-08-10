@@ -20,6 +20,7 @@ import com.willa.ai.backend.service.CouponService;
 import com.willa.ai.backend.service.EmailService;
 import com.willa.ai.backend.service.ExpertBookingPolicy;
 import com.willa.ai.backend.service.ExpertBookingRealtimeService;
+import com.willa.ai.backend.service.ExpertBookingService;
 import com.willa.ai.backend.service.PaymentService;
 import com.willa.ai.backend.service.SubscriptionService;
 import com.willa.ai.backend.service.WorkspaceSubscriptionService;
@@ -76,6 +77,10 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Autowired
     private ExpertBookingRepository expertBookingRepository;
+
+    @Autowired
+    @org.springframework.context.annotation.Lazy
+    private ExpertBookingService expertBookingService;
 
     @Autowired
     private ExpertBookingRealtimeService expertBookingRealtimeService;
@@ -397,6 +402,7 @@ public class PaymentServiceImpl implements PaymentService {
             System.out.println("Thanh toán thành công đơn hàng: " + orderCode + ". Đã cộng token/subscription.");
             sendPlanThankYouEmail(payment, payment.getPlan().getName());
         } else {
+            expertBookingService.applyPaidCallTopupIfAny(payment.getId());
             expertBookingRepository.findByPaymentId(payment.getId()).ifPresent(booking -> {
                 if (booking.getStatus() == ExpertBookingStatus.PENDING_PAYMENT) {
                     LocalDateTime now = LocalDateTime.now();

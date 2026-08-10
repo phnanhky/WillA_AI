@@ -1,6 +1,7 @@
 package com.willa.ai.backend.controller;
 
 import com.willa.ai.backend.dto.request.AddExpertBookingMaterialsRequest;
+import com.willa.ai.backend.dto.request.AddExpertCallMinutesRequest;
 import com.willa.ai.backend.dto.request.CreateExpertBookingRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingCallEventRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingFeedbackRequest;
@@ -219,6 +220,25 @@ public class ExpertBookingController {
                     .message("Bank details saved")
                     .data(expertBookingService.saveRefundBankDetails(
                             authentication.getName(), bookingId, request))
+                    .build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/{bookingId}/add-call-minutes")
+    @Operation(summary = "Mua thêm phút call (PayOS) theo hourly rate — đơn chưa Complete")
+    public ResponseEntity<ApiResponse> addCallMinutes(
+            @PathVariable Long bookingId,
+            @RequestBody AddExpertCallMinutesRequest request,
+            Authentication authentication) {
+        try {
+            int minutes = request != null && request.getMinutes() != null ? request.getMinutes() : 0;
+            return ResponseEntity.ok(ApiResponse.builder()
+                    .status(true)
+                    .message("Checkout for extra call minutes")
+                    .data(expertBookingService.purchaseExtraCallMinutes(
+                            authentication.getName(), bookingId, minutes))
                     .build());
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.builder().status(false).message(e.getMessage()).build());

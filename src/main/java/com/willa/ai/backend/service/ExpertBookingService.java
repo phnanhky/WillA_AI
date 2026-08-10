@@ -73,4 +73,10 @@ public interface ExpertBookingService {
             String userEmail, Long bookingId, String content, boolean asAdmin);
 
     ExpertBookingResponse saveRefundBankDetails(String clientEmail, Long bookingId, ExpertRefundBankDetailsRequest request);
+
+    /** Client mua thêm phút call trên đơn chưa Complete — PayOS theo hourly rate. */
+    ExpertBookingCheckoutResponse purchaseExtraCallMinutes(String clientEmail, Long bookingId, int minutes);
+
+    /** PayOS webhook/confirm: cộng phút vào booking nếu payment là call top-up. */
+    void applyPaidCallTopupIfAny(Long paymentId);
 }

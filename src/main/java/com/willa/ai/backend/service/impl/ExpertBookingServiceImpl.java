@@ -3,6 +3,7 @@ package com.willa.ai.backend.service.impl;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.willa.ai.backend.dto.request.AddExpertBookingMaterialsRequest;
+import com.willa.ai.backend.dto.request.AddExpertCallMinutesRequest;
 import com.willa.ai.backend.dto.request.CreateExpertBookingRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingAttachmentRequest;
 import com.willa.ai.backend.dto.request.ExpertBookingCallEventRequest;
@@ -21,6 +22,7 @@ import com.willa.ai.backend.entity.ExpertBooking;
 import com.willa.ai.backend.entity.ExpertBookingAttachment;
 import com.willa.ai.backend.entity.ExpertBookingCallEvent;
 import com.willa.ai.backend.entity.ExpertBookingCallSession;
+import com.willa.ai.backend.entity.ExpertBookingCallTopup;
 import com.willa.ai.backend.entity.ExpertBookingMessage;
 import com.willa.ai.backend.entity.ExpertRefundSupportMessage;
 import com.willa.ai.backend.entity.Payment;
@@ -33,6 +35,7 @@ import com.willa.ai.backend.entity.enums.Role;
 import com.willa.ai.backend.repository.ExpertBookingAttachmentRepository;
 import com.willa.ai.backend.repository.ExpertBookingCallEventRepository;
 import com.willa.ai.backend.repository.ExpertBookingCallSessionRepository;
+import com.willa.ai.backend.repository.ExpertBookingCallTopupRepository;
 import com.willa.ai.backend.repository.ExpertBookingMessageRepository;
 import com.willa.ai.backend.repository.ExpertBookingRepository;
 import com.willa.ai.backend.repository.ExpertRefundSupportMessageRepository;
@@ -74,6 +77,7 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
     private final ExpertRefundSupportMessageRepository refundSupportMessageRepository;
     private final ExpertBookingCallEventRepository callEventRepository;
     private final ExpertBookingCallSessionRepository callSessionRepository;
+    private final ExpertBookingCallTopupRepository callTopupRepository;
     private final WorkspaceExpertRepository expertRepository;
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
@@ -114,6 +118,90 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
                 .booking(response)
                 .checkout(checkout)
                 .build();
+    }
+
+    @Override
+    public ExpertBookingCheckoutResponse purchaseExtraCallMinutes(String clientEmail, Long bookingId, int minutes) {
+        if (minutes < 1 || minutes > 480) {
+            throw new IllegalArgumentException("Số phút phải từ 1 đến 480");
+        }
+        User client = userRepository.findByEmail(clientEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        ExpertBooking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy booking"));
+        if (!booking.getClient().getId().equals(client.getId())) {
+            throw new IllegalArgumentException("Booking không thuộc về bạn");
+        }
+        ExpertBookingStatus st = booking.getStatus();
+        if (st != ExpertBookingStatus.IN_PROGRESS && st != ExpertBookingStatus.AWAITING_EXPERT) {
+            throw new IllegalArgumentException("Chỉ mua thêm phút khi đơn đang chờ Accept hoặc đang hỗ trợ");
+        }
+        WorkspaceExpert expert = booking.getExpert();
+        Long hourlyRate = expert.getHourlyRate();
+        if (hourlyRate == null || hourlyRate <= 0) {
+            throw new IllegalArgumentException("Expert này chưa đặt giá theo giờ — không mua thêm phút được");
+        }
+        // Giá = ceil(hourlyRate * minutes / 60)
+        long amount = (hourlyRate * minutes + 59L) / 60L;
+        if (amount < MIN_PAYMENT) {
+            throw new IllegalArgumentException(
+                    "Số tiền tối thiểu 1.000 VND — hãy tăng số phút (rate "
+                            + hourlyRate + " VND/giờ)");
+        }
+
+        Long orderCode = System.currentTimeMillis() / 1000;
+        Payment payment = paymentRepository.save(Payment.builder()
+                .orderCode(orderCode)
+                .amount(amount)
+                .description("WillA Expert +" + minutes + " phút call")
+                .status(PaymentStatus.PENDING)
+                .user(client)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build());
+
+        callTopupRepository.save(ExpertBookingCallTopup.builder()
+                .booking(booking)
+                .payment(payment)
+                .minutes(minutes)
+                .amountVnd(amount)
+                .status("PENDING")
+                .build());
+
+        CheckoutResponseData checkout = paymentService.createCheckoutForPayment(payment);
+        return ExpertBookingCheckoutResponse.builder()
+                .booking(mapToResponse(booking))
+                .checkout(checkout)
+                .build();
+    }
+
+    @Override
+    public void applyPaidCallTopupIfAny(Long paymentId) {
+        if (paymentId == null) {
+            return;
+        }
+        callTopupRepository.findByPaymentId(paymentId).ifPresent(topup -> {
+            if ("PAID".equalsIgnoreCase(topup.getStatus())) {
+                return;
+            }
+            ExpertBooking booking = topup.getBooking();
+            int currentLimit = booking.getCallMinutesLimit() != null && booking.getCallMinutesLimit() > 0
+                    ? booking.getCallMinutesLimit()
+                    : ExpertBookingPolicy.callMinutesFor(booking.getBookingType(), booking.getHourlyHours());
+            booking.setCallMinutesLimit(currentLimit + topup.getMinutes());
+            bookingRepository.save(booking);
+            topup.setStatus("PAID");
+            topup.setPaidAt(LocalDateTime.now());
+            callTopupRepository.save(topup);
+            ExpertBookingResponse response = mapToResponse(booking);
+            expertBookingRealtimeService.publishBookingUpdated(booking, response);
+            log.info(
+                    "Applied call top-up: bookingId={} +{} min → limit={} paymentId={}",
+                    booking.getId(),
+                    topup.getMinutes(),
+                    booking.getCallMinutesLimit(),
+                    paymentId);
+        });
     }
 
     @Override
@@ -1167,6 +1255,7 @@ public class ExpertBookingServiceImpl implements ExpertBookingService {
                 .callSecondsRemaining(callRemaining)
                 .canCall(canCall)
                 .quotaHint(buildQuotaHint(booking))
+                .expertHourlyRate(expert.getHourlyRate())
                 .refundBankName(booking.getRefundBankName())
                 .refundAccountNumber(booking.getRefundAccountNumber())
                 .refundAccountHolder(booking.getRefundAccountHolder())

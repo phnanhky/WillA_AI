@@ -104,6 +104,7 @@ public class ExpertBookingsTableMigration {
             ensureCallTrackingTables(connection, statement);
             ensureRefundSupportSchema(connection, statement);
             ensureHourlyValiditySchema(connection, statement);
+            ensureCallTopupTable(connection, statement);
             return "migrated";
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to migrate expert booking tables", e);
@@ -155,6 +156,27 @@ public class ExpertBookingsTableMigration {
             statement.execute(
                     "CREATE INDEX idx_expert_refund_msg_booking ON expert_refund_support_messages(booking_id)");
             log.info("Created expert_refund_support_messages table");
+        }
+    }
+
+    /** Mua thêm phút call trên booking đang mở (PayOS top-up). */
+    private static void ensureCallTopupTable(Connection connection, Statement statement) throws SQLException {
+        if (!tableExists(connection, "expert_booking_call_topups")) {
+            statement.execute("""
+                    CREATE TABLE expert_booking_call_topups (
+                      id BIGSERIAL PRIMARY KEY,
+                      booking_id BIGINT NOT NULL REFERENCES expert_bookings(id) ON DELETE CASCADE,
+                      payment_id BIGINT NOT NULL UNIQUE REFERENCES payments(id) ON DELETE CASCADE,
+                      minutes INT NOT NULL,
+                      amount_vnd BIGINT NOT NULL,
+                      status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                      paid_at TIMESTAMP
+                    )
+                    """);
+            statement.execute(
+                    "CREATE INDEX idx_expert_call_topup_booking ON expert_booking_call_topups(booking_id)");
+            log.info("Created expert_booking_call_topups table");
         }
     }
 
