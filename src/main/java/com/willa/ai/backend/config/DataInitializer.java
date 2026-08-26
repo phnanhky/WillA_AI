@@ -44,10 +44,17 @@ public class DataInitializer implements CommandLineRunner {
     private static final String PLAIN_PASSWORD = "123456789";
 
     private static final List<String> EMAILS = List.of(
-            "pphunghaa@gmail.com",
-            "zanpep245@gmail.com",
-            "minhnguyenvoo22@gmail.com",
-            "keylovevy2111@gmail.com"
+            "tranthingocang16@gmail.com",
+            "minikha04@gmail.com",
+            "ductoanngyn@gmail.com",
+            "trinhthangbin99@gmail.com",
+            "thachchihiu@gmail.com",
+            "camlyyy16@gmail.com",
+            "baoan0510@gmail.com",
+            "khanhnguyetlt@gmail.com",
+            "thanhtrucnt36@gmail.com",
+            "maikieuanh45@gmail.com",
+            "khanhchint96@gmail.com"
     );
 
     private final UserRepository userRepository;
