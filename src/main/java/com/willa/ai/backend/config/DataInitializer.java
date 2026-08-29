@@ -24,16 +24,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 
 /**
  * One-off seed accounts, mỗi account cách nhau 5–60 giây (random).
+ * {@code created_at} bắt đầu 26/08/2026 13:00 (Asia/Ho_Chi_Minh), rồi cộng dồn gap như logic cũ.
  * Password: {@code 123456789}. Deploy xong → xóa {@code @Component} hoặc làm rỗng {@link #run}.
  */
 @Component
@@ -42,20 +41,42 @@ import java.util.concurrent.TimeUnit;
 public class DataInitializer implements CommandLineRunner {
 
     private static final String PLAIN_PASSWORD = "123456789";
+    private static final ZoneId SEED_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    /** Mốc tạo account đầu tiên (26/08/2026 13:00). */
+    private static final LocalDateTime SEED_START = LocalDateTime.of(2026, 8, 26, 13, 0, 0);
 
     private static final List<String> EMAILS = List.of(
-            "tranthingocang16@gmail.com",
-            "minikha04@gmail.com",
-            "ductoanngyn@gmail.com",
-            "trinhthangbin99@gmail.com",
-            "thachchihiu@gmail.com",
-            "camlyyy16@gmail.com",
-            "baoan0510@gmail.com",
-            "khanhnguyetlt@gmail.com",
-            "thanhtrucnt36@gmail.com",
-            "maikieuanh45@gmail.com",
-            "khanhchint96@gmail.com"
-    );
+    "nynic17012004@gmail.com",
+    "finnieart17@gmail.com",
+    "nguyenphamhoangn@gmail.com",
+    "hoangvy26052005@gmail.com",
+    "2253801013015@email.hcmulaw.edu.vn",
+    "giabaonguyenngoc1510@gmail.com",
+    "chihoihs47a1.ulaw@gmail.com",
+    "nganngowr@gmail.com",
+    "kimhangannguyen@gmail.com",
+    "itzgametimer@gmail.com",
+    "22130111@student.hcmus.edu.vn",
+    "loken97512@robustq.com",
+    "nichayrade2605@gmail.com",
+    "nguyennguyen17032004@gmail.com",
+    "tranquanghuyvn94@gmail.com",
+    "phamthuhuong1992x@gmail.com",
+    "maibuithithanh95@gmail.com",
+    "dovanhaimail88@gmail.com",
+    "vuhoanglong2k1vn@gmail.com",
+    "trinhngocanhv95@gmail.com",
+    "tuanhoangminh1998z@gmail.com",
+    "khanhphanquoc797@gmail.com",
+    "dangthithuhavn93@gmail.com",
+    "ngoducthangwork88@gmail.com",
+    "yenduonghai1990x@gmail.com",
+    "khoivuongdinh96@gmail.com",
+    "toquangvinh2000vn@gmail.com",
+    "bachdaoxuanmail98@gmail.com",
+    "trangdinhthu1991z@gmail.com",
+    "luongvantoanv85@gmail.com"
+);
 
     private final UserRepository userRepository;
     private final WalletRepository walletRepository;
@@ -69,41 +90,38 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     public void run(String... args) {
         String encoded = passwordEncoder.encode(PLAIN_PASSWORD);
-        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "data-init-staggered");
-            t.setDaemon(true);
-            return t;
-        });
-
-        long delaySeconds = 0L;
+        long offsetSeconds = 0L;
         for (int i = 0; i < EMAILS.size(); i++) {
-            final String email = EMAILS.get(i);
-            final int index = i + 1;
-            final long runAt = delaySeconds;
-            scheduler.schedule(() -> {
-                try {
-                    transactionTemplate.executeWithoutResult(status -> {
-                        upsertActiveAccount(email, encoded);
-                        log.info("Init account {}/{} done (delay={}s): {}", index, EMAILS.size(), runAt, email);
-                    });
-                } catch (Exception e) {
-                    log.error("Init failed for {}: {}", email, e.getMessage(), e);
-                } finally {
-                    if (index == EMAILS.size()) {
-                        scheduler.shutdown();
-                    }
-                }
-            }, delaySeconds, TimeUnit.SECONDS);
-
+            String email = EMAILS.get(i);
+            int index = i + 1;
+            LocalDateTime createdAt = SEED_START.plusSeconds(offsetSeconds);
+            try {
+                final long runAt = offsetSeconds;
+                transactionTemplate.executeWithoutResult(status -> {
+                    upsertActiveAccount(email, encoded, createdAt);
+                    log.info(
+                            "Init account {}/{} createdAt={} (offset={}s): {}",
+                            index,
+                            EMAILS.size(),
+                            createdAt,
+                            runAt,
+                            email);
+                });
+            } catch (Exception e) {
+                log.error("Init failed for {}: {}", email, e.getMessage(), e);
+            }
             if (i < EMAILS.size() - 1) {
-                delaySeconds += ThreadLocalRandom.current().nextInt(5, 61); // 5–60s inclusive
+                offsetSeconds += ThreadLocalRandom.current().nextInt(5, 61); // 5–60s inclusive
             }
         }
-
-        log.info("Scheduled staggered init for {} accounts (5–60s random gaps)", EMAILS.size());
+        log.info(
+                "Staggered init for {} accounts from {} {} (5–60s random gaps)",
+                EMAILS.size(),
+                SEED_START,
+                SEED_ZONE);
     }
 
-    private void upsertActiveAccount(String email, String encodedPassword) {
+    private void upsertActiveAccount(String email, String encodedPassword, LocalDateTime createdAt) {
         String normalized = email.trim().toLowerCase(Locale.ROOT);
         Optional<User> existing = userRepository.findByEmail(normalized);
         if (existing.isPresent()) {
@@ -113,7 +131,8 @@ public class DataInitializer implements CommandLineRunner {
             user.setIsActive(true);
             user.setVerificationToken(null);
             userRepository.save(user);
-            ensureEntitlements(user);
+            userRepository.overwriteCreatedAt(user.getId(), createdAt);
+            ensureEntitlements(user, createdAt);
             log.info("Activated existing account: {}", normalized);
             return;
         }
@@ -128,16 +147,18 @@ public class DataInitializer implements CommandLineRunner {
                 .isStudent(false)
                 .requiresReview(false)
                 .workspacePlanTier(WorkspacePlanTier.FREE_WORKSPACE)
+                .createdAt(createdAt)
+                .updatedAt(createdAt)
                 .build();
         user = userRepository.save(user);
-        ensureEntitlements(user);
+        ensureEntitlements(user, createdAt);
         log.info("Created active account: {}", normalized);
     }
 
-    private void ensureEntitlements(User user) {
+    private void ensureEntitlements(User user, LocalDateTime createdAt) {
         assignDefaultWorkspacePlan(user);
-        ensureWorkspaceSubscription(user);
-        ensureFeedbackSubscriptionAndWallet(user);
+        ensureWorkspaceSubscription(user, createdAt);
+        ensureFeedbackSubscriptionAndWallet(user, createdAt);
     }
 
     private void assignDefaultWorkspacePlan(User user) {
@@ -155,7 +176,7 @@ public class DataInitializer implements CommandLineRunner {
         }
     }
 
-    private void ensureWorkspaceSubscription(User user) {
+    private void ensureWorkspaceSubscription(User user, LocalDateTime createdAt) {
         try {
             boolean hasActive = workspaceSubscriptionRepository
                     .findByUserId(user.getId(), Pageable.unpaged())
@@ -169,8 +190,8 @@ public class DataInitializer implements CommandLineRunner {
             workspaceSubscriptionRepository.save(WorkspaceSubscription.builder()
                     .user(user)
                     .workspacePlan(freePlan)
-                    .startDate(LocalDateTime.now())
-                    .endDate(LocalDateTime.now().plusYears(100))
+                    .startDate(createdAt)
+                    .endDate(createdAt.plusYears(100))
                     .status(SubscriptionStatus.ACTIVE)
                     .build());
         } catch (Exception e) {
@@ -178,7 +199,7 @@ public class DataInitializer implements CommandLineRunner {
         }
     }
 
-    private void ensureFeedbackSubscriptionAndWallet(User user) {
+    private void ensureFeedbackSubscriptionAndWallet(User user, LocalDateTime createdAt) {
         Plan freePlan = planRepository.findByName("Free").orElse(null);
         long tokenLimit = freePlan != null ? freePlan.getTokenLimit() : 60_000L;
 
@@ -197,8 +218,8 @@ public class DataInitializer implements CommandLineRunner {
             subscriptionRepository.save(Subscription.builder()
                     .user(user)
                     .plan(freePlan)
-                    .startDate(LocalDateTime.now())
-                    .endDate(LocalDateTime.now().plusYears(100))
+                    .startDate(createdAt)
+                    .endDate(createdAt.plusYears(100))
                     .status(SubscriptionStatus.ACTIVE)
                     .build());
         }
