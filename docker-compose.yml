@@ -1,14 +1,5 @@
-# DEPRECATED path — dùng bản chuẩn: /opt/willa/infra/docker-compose.yml (repo: infra/docker-compose.yml)
-# Giữ file này đồng bộ với infra/ để deploy workflow và tài liệu cũ vẫn tham chiếu được.
-
-# VPS: /opt/willa/infra/docker-compose.yml
-# Host Caddy: https://willaai.tech → 127.0.0.1:3000 (FE proxy /api, /ws-stomp → backend)
-#
-# Setup:
-#   cp .env.example .env   # chỉnh mật khẩu + VITE_*
-#   docker compose --env-file .env up -d --build
-#
-# Secrets JWT/PayOS/R2: /opt/willa/be/.env và /opt/willa/ai/.env
+# Local stack for the Java backend, Qwen AI server, and frontend.
+# Run from this directory: docker compose up -d --build
 
 name: willa
 
@@ -84,11 +75,13 @@ services:
       start_period: 60s
 
   ai-server:
-    build: /opt/willa/ai
+    build:
+      context: ../qwenv3vagenAI
+      dockerfile: Dockerfile
     container_name: ai-server
     restart: unless-stopped
     env_file:
-      - /opt/willa/ai/.env
+      - ../qwenv3vagenAI/.env
     environment:
       PUBLIC_BASE_URL: ${AI_PUBLIC_BASE_URL:-https://willaai.tech/ai}
       AI_ROUTER_REPLY_LANG: ${AI_ROUTER_REPLY_LANG:-auto}
@@ -104,11 +97,13 @@ services:
         condition: service_healthy
 
   backend:
-    build: /opt/willa/be
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: willa-backend
     restart: unless-stopped
     env_file:
-      - /opt/willa/be/.env
+      - .env
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO:-validate}
@@ -155,7 +150,7 @@ services:
 
   frontend:
     build:
-      context: /opt/willa/fe
+      context: ../ewill-fe
       dockerfile: Dockerfile
       args:
         VITE_WILLA_API_URL: ${VITE_WILLA_API_URL:-}
@@ -169,24 +164,15 @@ services:
         VITE_GA_SEND_USER_ID: ${VITE_GA_SEND_USER_ID:-0}
     container_name: willa-frontend
     restart: unless-stopped
-
-  # Python AI Server (Qwen)
-  ai-server:
-    build:
-      context: ../qwenv3vagenAI-main
-      dockerfile: Dockerfile
-    container_name: willa-ai-server
-    env_file:
-      - .env       # Tái sử dụng file .env từ thư mục Java BE để lấy DASHSCOPE_API_KEY
-    depends_on:
-      backend:
-        condition: service_healthy
-      ai-server:
-        condition: service_started
     ports:
       - "127.0.0.1:3000:80"
     networks:
       - willa-net
+    depends_on:
+      backend:
+        condition: service_started
+      ai-server:
+        condition: service_started
 
 volumes:
   pgdata:
